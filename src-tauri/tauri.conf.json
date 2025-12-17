@@ -13,6 +13,7 @@
     "windows": [
       {
         "title": "falkoe",
+        "devtools": true,
         "width": 800,
         "height": 600
       }
