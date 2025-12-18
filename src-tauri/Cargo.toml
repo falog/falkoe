@@ -5,14 +5,7 @@ description = "A Tauri App"
 authors = ["fal"]
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [lib]
-# The `_lib` suffix may seem redundant but it is necessary
-# to make the lib name unique and wouldn't conflict with the bin name.
-# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-#name = "my_app_lib"
-#crate-type = ["staticlib", "cdylib", "rlib"]
 name = "falkoe_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
@@ -30,7 +23,6 @@ hound = "3.4.0"
 once_cell = "1.19"
 tauri-plugin-mic-recorder = "2.0.0"
 tauri-plugin-shell = "2"
-whisper-rs = "0.15.1"
 anyhow = "1.0"
 log = "0.4"
 rubato = "0.16.2"
@@ -38,3 +30,11 @@ ureq = "2"
 reqwest = { version = "0.12", features = ["blocking"] }
 dirs = "5"
 chrono = "0.4"
+
+# デフォルトの whisper-rs (Linux, Windows, macOS x86_64 用)
+[target.'cfg(not(all(target_os = "macos", target_arch = "aarch64")))'.dependencies]
+whisper-rs = "0.15.1"
+
+# macOS ARM64 専用の whisper-rs 設定
+[target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
+whisper-rs = { version = "0.15.1", default-features = false, features = [] }

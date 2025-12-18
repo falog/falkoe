@@ -1,0 +1,18 @@
+# src-tauri/.cargo/config.toml
+# このファイルを作成してください
+
+[target.aarch64-apple-darwin]
+rustflags = [
+    "-C", "link-arg=-undefined",
+    "-C", "link-arg=dynamic_lookup",
+]
+
+[env]
+# macOS ARM64 でのビルド時の環境変数
+WHISPER_NO_I8MM = "1"
+WHISPER_NO_AVX = "1"
+WHISPER_NO_AVX2 = "1"
+WHISPER_NO_FMA = "1"
+
+# Accelerate フレームワークは使用
+GGML_NO_ACCELERATE = "0"
