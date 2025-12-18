@@ -28,6 +28,7 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             libssl-dev \
+            libasound2-dev \
             build-essential
 
       # ---- Node / pnpm ----
