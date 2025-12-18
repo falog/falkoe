@@ -1,5 +1,5 @@
 import { Button, message, Space, Typography } from "antd";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { startRecording, stopRecording } from "tauri-plugin-mic-recorder-api";
 import { readFile, readTextFile } from "@tauri-apps/plugin-fs";
 import { invoke } from "@tauri-apps/api/core";
@@ -83,29 +83,50 @@ const RecorderScreen = ({ sentence, onBack }: RecorderScreenProps) => {
     Record<string, Transcript | null>
   >({});
   const [status, setStatus] = useState<string>("idle");
+  const modelMissingShown = useRef(false);
+  const [progress, setProgress] = useState<number | null>(null);
 
   /** sentence 切り替え時にリセット */
   useEffect(() => {
     setRecordings([]);
     setAudioUrls({});
     setTranscripts({});
+    refreshFiles();
   }, [sentence.id]);
 
-  /** model status */
+  /** model status (pull once + push) */
   useEffect(() => {
-    const unlisten = listen<string>("model-status", (e) => {
-      setStatus(e.payload);
-    });
-    return () => {
-      unlisten.then((f) => f());
-    };
-  }, []);
-
-  useEffect(() => {
+    // 起動時に pull
     invoke<string>("get_model_status")
       .then(setStatus)
       .catch(() => setStatus("idle"));
+
+    // 以降は push
+    const unlistenPromise = listen<string>("model-status", (e) => {
+      setStatus(e.payload);
+    });
+
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten());
+    };
   }, []);
+  /** model download progress */
+  useEffect(() => {
+    const unlistenPromise = listen<number>("model-progress", (e) => {
+      setProgress(e.payload);
+    });
+
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, []);
+  /** downloading に入った瞬間に理由を表示 */
+  useEffect(() => {
+    if (status === "downloading" && !modelMissingShown.current) {
+      modelMissingShown.current = true;
+      message.info("音声認識モデルがありません。ダウンロードを開始します。");
+    }
+  }, [status]);
 
   const refreshFiles = async () => {
     const list = await invoke<string[]>("list_recordings", {
@@ -135,10 +156,6 @@ const RecorderScreen = ({ sentence, onBack }: RecorderScreenProps) => {
       message.error(String(e));
     }
   };
-
-  useEffect(() => {
-    refreshFiles();
-  }, [sentence.id]);
 
   /** transcript started */
   useEffect(() => {
@@ -205,7 +222,7 @@ const RecorderScreen = ({ sentence, onBack }: RecorderScreenProps) => {
       }
     };
     run();
-  }, [recordings]);
+  }, [recordings, transcripts]);
 
   return (
     <Space orientation="vertical" style={{ width: "100%" }}>
@@ -233,6 +250,11 @@ const RecorderScreen = ({ sentence, onBack }: RecorderScreenProps) => {
       </div>
       <Typography.Text type="secondary">Model status: {status}</Typography.Text>
 
+      {status === "downloading" && (
+        <Typography.Text type="secondary">
+          Downloading model… {progress ?? 0}%
+        </Typography.Text>
+      )}
       <Space>
         <Button
           type="primary"

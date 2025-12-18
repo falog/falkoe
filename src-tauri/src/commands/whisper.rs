@@ -369,12 +369,12 @@ if audio.len() < MIN_SAMPLES {
 pub fn transcribe(wav_path: &str, model_path: &Path) -> Result<Transcript> {
     let audio = load_wav_as_f32(wav_path)?;
 
+    println!("before WhisperContext::new_with_params");
     let ctx = WhisperContext::new_with_params(
         model_path.to_str().unwrap(),
         WhisperContextParameters::default(),
     )?;
-
-    // ★ ここが重要
+    println!("after WhisperContext::new_with_params");
     let mut state = ctx.create_state()?;
 
     let mut params = FullParams::new(

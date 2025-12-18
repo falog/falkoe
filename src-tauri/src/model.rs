@@ -1,46 +1,78 @@
-use std::{fs, path::PathBuf};
-use anyhow::Result;
-use tauri::{AppHandle,Emitter,Manager};
 use std::sync::{Mutex, OnceLock};
+use std::path::PathBuf;
+use std::io::{Read, Write};
+use std::fs::{self, File};
+use tauri::{AppHandle,Emitter, Manager};
 
-static MODEL_STATUS: OnceLock<Mutex<&'static str>> = OnceLock::new();
-
-fn set_status(app: &AppHandle, status: &'static str) -> anyhow::Result<()> {
-    let m = MODEL_STATUS.get_or_init(|| Mutex::new("idle"));
-    *m.lock().unwrap() = status;
-    app.emit("model-status", status)?;
-    Ok(())
-}
-
+static MODEL_STATUS: OnceLock<Mutex<String>> = OnceLock::new();
 
 const MODEL_URL: &str =
     "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin";
 
-    
-pub fn ensure_model(app: &AppHandle) -> Result<PathBuf> {
+/// setup() で必ず呼ぶ
+pub fn init_model_state() {
+    let _ = MODEL_STATUS.set(Mutex::new("idle".to_string()));
+}
+
+pub fn set_status(app: &AppHandle, status: &str) {
+    if let Some(mutex) = MODEL_STATUS.get() {
+        *mutex.lock().unwrap() = status.to_string();
+    }
+    let _ = app.emit("model-status", status);
+}
+
+pub fn get_model_status() -> String {
+    MODEL_STATUS
+        .get()
+        .map(|m| m.lock().unwrap().clone())
+        .unwrap_or_else(|| "idle".to_string())
+}
+
+pub fn ensure_model(app: &AppHandle) -> anyhow::Result<std::path::PathBuf> {
+    println!("ensure_model: called");
+
     let dir = app.path().app_data_dir().unwrap();
     let model_path = dir.join("ggml-base.en.bin");
 
     if model_path.exists() {
-        set_status(app, "ready")?;
+        set_status(app, "ready");
         return Ok(model_path);
     }
 
-    set_status(app, "downloading")?;
+    let _ = app.emit("model-missing", ());
+    set_status(app, "downloading");
 
     fs::create_dir_all(&dir)?;
-    let bytes = reqwest::blocking::get(MODEL_URL)?.bytes()?;
-    fs::write(&model_path, &bytes)?;
 
-    set_status(app, "ready")?;
+    let mut resp = reqwest::blocking::get(MODEL_URL)?;
+    let total = resp
+        .content_length()
+        .unwrap_or(0);
+
+    let mut file = File::create(&model_path)?;
+    let mut downloaded: u64 = 0;
+    let mut buf = [0u8; 8192];
+
+    loop {
+        let n = resp.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+
+        file.write_all(&buf[..n])?;
+        downloaded += n as u64;
+
+        if total > 0 {
+            let percent = (downloaded * 100 / total) as u8;
+            let _ = app.emit("model-progress", percent);
+        }
+    }
+
+    file.flush()?;
+
+    let _ = app.emit("model-progress", 100u8);
+    set_status(app, "ready");
+
+    println!("ensure_model: return");
     Ok(model_path)
 }
-
-#[tauri::command]
-pub fn get_model_status() -> String {
-    MODEL_STATUS
-        .get()
-        .map(|m| m.lock().unwrap().to_string())
-        .unwrap_or_else(|| "idle".to_string())
-}
-
