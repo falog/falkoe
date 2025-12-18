@@ -7,11 +7,13 @@ on:
 
 jobs:
   build:
+    runs-on: ${{ matrix.os }}
+    env:
+      WHISPER_NO_I8MM: "1"
+
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-
-    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout
@@ -55,16 +57,7 @@ jobs:
         uses: swatinem/rust-cache@v2
 
       # ---- Tauri build ----
-      # ---- Tauri build (macOS: whisper workaround) ----
-      - name: Build Tauri app (macOS)
-        if: matrix.os == 'macos-latest'
-        run: pnpm tauri build
-        env:
-          WHISPER_NO_I8MM: "1"
-
-      # ---- Tauri build (others) ----
       - name: Build Tauri app
-        if: matrix.os != 'macos-latest'
         run: pnpm tauri build
 
       # ---- Upload artifacts ----
