@@ -11,7 +11,8 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest]
+        # macOS は whisper-rs のビルド問題により一時的に除外
 
     steps:
       - name: Checkout
@@ -53,16 +54,6 @@ jobs:
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
-
-      # ---- macOS specific: Set build flags for whisper-rs ----
-      - name: Set macOS build environment
-        if: matrix.os == 'macos-latest'
-        run: |
-          echo "WHISPER_NO_AVX=1" >> $GITHUB_ENV
-          echo "WHISPER_NO_AVX2=1" >> $GITHUB_ENV
-          echo "WHISPER_NO_FMA=1" >> $GITHUB_ENV
-          echo "GGML_NO_ACCELERATE=0" >> $GITHUB_ENV
-          echo "WHISPER_NO_I8MM=1" >> $GITHUB_ENV
 
       # ---- Tauri build ----
       - name: Build Tauri app
