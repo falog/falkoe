@@ -36,5 +36,5 @@ chrono = "0.4"
 whisper-rs = "0.15.1"
 
 # macOS ARM64 専用の whisper-rs 設定
-#[target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
-#whisper-rs = { version = "0.15.1", default-features = false, features = [] }
+[target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
+whisper-rs = { version = "0.15.1", features = ["apple-accelerate"] }
