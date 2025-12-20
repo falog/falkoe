@@ -1,7 +1,7 @@
 [package]
 name = "falkoe"
-version = "0.1.0"
-description = "A Tauri App"
+version = "0.1.1"
+description = "Falkoe Tauri Application"
 authors = ["fal"]
 edition = "2021"
 
@@ -36,5 +36,5 @@ chrono = "0.4"
 whisper-rs = "0.15.1"
 
 # macOS ARM64 専用の whisper-rs 設定
-[target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
-whisper-rs = { version = "0.15.1", default-features = false, features = [] }
+#[target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
+#whisper-rs = { version = "0.15.1", default-features = false, features = [] }
