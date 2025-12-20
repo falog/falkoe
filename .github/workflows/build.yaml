@@ -71,15 +71,19 @@ jobs:
         run: pnpm tauri build
 
       # ---- Build (macOS: no-openmp) ----
-      - name: Build Tauri app (macOS no-openmp)
-        if: matrix.os == 'macos-14'
+      - name: Build Tauri app (macOS)
+        if: runner.os == 'macOS'
         env:
-          MACOSX_DEPLOYMENT_TARGET: "10.15"
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+          CMAKE_OSX_DEPLOYMENT_TARGET: "11.0"
+          CMAKE_ARGS: "-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0"
           GGML_NO_OPENMP: "1"
           WHISPER_NO_OPENMP: "1"
         run: |
-          pnpm tauri build -- \
-            --features no-openmp
+          export MACOSX_DEPLOYMENT_TARGET=11.0
+          export CMAKE_OSX_DEPLOYMENT_TARGET=11.0
+          export CMAKE_ARGS="-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0"
+          pnpm tauri build -- --features no-openmp
 
       # ---- Upload artifacts (mainブランチ) ----
       - name: Upload artifacts

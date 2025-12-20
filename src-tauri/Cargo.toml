@@ -31,16 +31,9 @@ ureq = "2"
 reqwest = { version = "0.12", features = ["blocking", "rustls-tls"] }
 dirs = "5"
 chrono = "0.4"
-
-# デフォルトの whisper-rs (Linux, Windows, macOS x86_64 用)
-[target.'cfg(not(all(target_os = "macos", target_arch = "aarch64")))'.dependencies]
-whisper-rs = "0.15.1"
-
-# macOS ARM64 専用の whisper-rs 設定
-[target.'cfg(target_os = "macos")'.dependencies]
 whisper-rs = { version = "0.15.1", default-features = false }
 
 [features]
-default = ["openmp"]
+default = []
 openmp = []
 no-openmp = []
