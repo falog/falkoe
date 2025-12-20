@@ -74,6 +74,7 @@ jobs:
       - name: Build Tauri app (macOS no-openmp)
         if: matrix.os == 'macos-14'
         env:
+          MACOSX_DEPLOYMENT_TARGET: "10.15"
           GGML_NO_OPENMP: "1"
           WHISPER_NO_OPENMP: "1"
         run: |
