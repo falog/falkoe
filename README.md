@@ -110,6 +110,13 @@ sudo apt remove falkoe
 
 ---
 
+## ⚠ Windows SmartScreen Notice
+
+This application is currently unsigned.
+Click "More info" → "Run anyway" on first launch.
+
+---
+
 ## 👤 Author
 
 **fal**
