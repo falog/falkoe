@@ -65,9 +65,7 @@ jobs:
       - name: Build Tauri app
         run: pnpm tauri build
         env:
-          # macOS環境なら自動的にaarch64としてビルドされます
-          # WHISPER_METAL さえあれば Cargo.toml の設定と連動します
-          WHISPER_METAL: ${{ contains(matrix.os, 'macos') && '1' || '0' }}
+          WHISPER_METAL: "0"
 
       # ---- Upload artifacts (mainブランチへのpush時) ----
       - name: Upload artifacts
