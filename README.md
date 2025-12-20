@@ -110,6 +110,14 @@ sudo apt remove falkoe
 
 ---
 
+## Download
+
+Pre-built binaries are available on the GitHub Releases page.
+
+https://github.com/falog/falkoe/releases
+
+---
+
 ## ⚠ Windows SmartScreen Notice
 
 This application is currently unsigned.
