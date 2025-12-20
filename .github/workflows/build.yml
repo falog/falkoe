@@ -64,6 +64,10 @@ jobs:
       # ---- Build ----
       - name: Build Tauri app
         run: pnpm tauri build
+        env:
+          # macOSビルド時にMetal(GPU加速)を有効化
+          # matrix.os が macos-latest の時だけ WHISPER_METAL=1 を設定
+          WHISPER_METAL: ${{ matrix.os == 'macos-latest' && '1' || '' }}
 
       # ---- Upload artifacts (mainブランチへのpush時) ----
       - name: Upload artifacts
