@@ -9,6 +9,7 @@ edition = "2021"
 name = "falkoe_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -36,5 +37,10 @@ chrono = "0.4"
 whisper-rs = "0.15.1"
 
 # macOS ARM64 専用の whisper-rs 設定
-[target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
-whisper-rs = "0.15.1"
+[target.'cfg(target_os = "macos")'.dependencies]
+whisper-rs = { version = "0.15.1", default-features = false }
+
+[features]
+default = ["openmp"]
+openmp = []
+no-openmp = []

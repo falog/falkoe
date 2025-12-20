@@ -15,8 +15,12 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-14 # ← 追加（Apple Silicon）
 
     steps:
       - name: Checkout
@@ -61,11 +65,22 @@ jobs:
         with:
           workspaces: src-tauri
 
-      # ---- Build ----
+      # ---- Build (Linux / Windows) ----
       - name: Build Tauri app
+        if: matrix.os != 'macos-14'
         run: pnpm tauri build
 
-      # ---- Upload artifacts (mainブランチへのpush時) ----
+      # ---- Build (macOS: no-openmp) ----
+      - name: Build Tauri app (macOS no-openmp)
+        if: matrix.os == 'macos-14'
+        env:
+          GGML_NO_OPENMP: "1"
+          WHISPER_NO_OPENMP: "1"
+        run: |
+          pnpm tauri build -- \
+            --features no-openmp
+
+      # ---- Upload artifacts (mainブランチ) ----
       - name: Upload artifacts
         if: github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
