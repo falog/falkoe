@@ -16,7 +16,7 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest, macos-13]
 
     steps:
       - name: Checkout
@@ -64,8 +64,6 @@ jobs:
       # ---- Build ----
       - name: Build Tauri app
         run: pnpm tauri build
-        env:
-          WHISPER_METAL: "0"
 
       # ---- Upload artifacts (mainブランチへのpush時) ----
       - name: Upload artifacts
