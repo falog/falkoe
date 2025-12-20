@@ -65,9 +65,10 @@ jobs:
       - name: Build Tauri app
         run: pnpm tauri build
         env:
-          # macOSビルド時にMetal(GPU加速)を有効化
-          # matrix.os が macos-latest の時だけ WHISPER_METAL=1 を設定
+          # macOS の場合のみ Metal (GPU加速) を有効にする
           WHISPER_METAL: ${{ matrix.os == 'macos-latest' && '1' || '' }}
+          # 以前のログで aarch64- という記述があったため、念のためターゲットを明示
+          CARGO_BUILD_TARGET: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
 
       # ---- Upload artifacts (mainブランチへのpush時) ----
       - name: Upload artifacts
