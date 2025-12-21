@@ -6,4 +6,5 @@ fn main() {
         println!("cargo:rustc-env=GGML_NO_OPENMP=1");
         println!("cargo:rustc-env=WHISPER_NO_OPENMP=1");
     }
+    tauri_build::build()
 }
