@@ -1,4 +1,4 @@
-import { Button, message, Space, Typography, Flex } from "antd";
+import { Button, message, Space, Typography } from "antd";
 import { useEffect, useState, useRef } from "react";
 import { startRecording, stopRecording } from "tauri-plugin-mic-recorder-api";
 import { readFile, readTextFile } from "@tauri-apps/plugin-fs";
@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { PlayCircleOutlined } from "@ant-design/icons";
 import type { Sentence } from "../components/ExampleList";
+import RecordingItem from "../components/RecordingItem";
 
 type RecorderScreenProps = {
   sentence: Sentence;
@@ -310,7 +311,7 @@ const RecorderScreen = ({ sentence, onBack }: RecorderScreenProps) => {
   useEffect(() => {
     const run = async () => {
       for (const rec of recordings) {
-        await loadAudio(rec.path);
+        // await loadAudio(rec.path);
 
         if (transcripts[rec.path] === undefined) {
           const transcript = await loadTranscript(rec.path);
@@ -322,7 +323,13 @@ const RecorderScreen = ({ sentence, onBack }: RecorderScreenProps) => {
       }
     };
     run();
-  }, [recordings, transcripts]);
+  }, [recordings]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(audioUrls).forEach(URL.revokeObjectURL);
+    };
+  }, []);
 
   return (
     <Space orientation="vertical" style={{ width: "100%" }}>
@@ -418,48 +425,18 @@ const RecorderScreen = ({ sentence, onBack }: RecorderScreenProps) => {
           <Typography.Text type="secondary">No recordings yet</Typography.Text>
         )}
 
-        {recordings.map((rec, i) => {
-          const transcript = transcripts[rec.path];
-
-          return (
-            <div key={rec.path}>
-              <Flex align="center" justify="space-between">
-                <div>
-                  <strong>Take {recordings.length - i}</strong> /{" "}
-                  {rec.dateLabel}
-                </div>
-
-                <Button onClick={() => addToAnki(rec)}>Ankiに追加</Button>
-              </Flex>
-
-              <audio
-                controls
-                src={audioUrls[rec.path]}
-                style={{ width: "100%" }}
-              />
-
-              {transcript && transcript.segments.length > 0 && (
-                <div style={{ fontSize: 14, marginTop: 4 }}>
-                  {transcript.segments.map((s, i) => (
-                    <div key={i}>{s.text.trim()}</div>
-                  ))}
-                </div>
-              )}
-
-              {transcript?.segments?.length === 0 && (
-                <div style={{ fontSize: 12, color: "#888" }}>
-                  （音声が検出されませんでした）
-                </div>
-              )}
-
-              {transcript === null && (
-                <div style={{ fontSize: 12, color: "#888" }}>
-                  （文字起こし中…）
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {recordings.map((rec, i) => (
+          <RecordingItem
+            key={rec.path}
+            rec={rec}
+            index={i}
+            total={recordings.length}
+            transcript={transcripts[rec.path]}
+            audioUrl={audioUrls[rec.path]}
+            loadAudio={loadAudio}
+            addToAnki={addToAnki}
+          />
+        ))}
       </Space>
     </Space>
   );
