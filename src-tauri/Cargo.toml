@@ -28,10 +28,11 @@ anyhow = "1.0"
 log = "0.4"
 rubato = "0.16.2"
 ureq = "2"
-reqwest = { version = "0.12", features = ["blocking", "rustls-tls"] }
+reqwest = { version = "0.12", features = ["blocking", "rustls-tls", "json", "stream"] }
 dirs = "5"
 chrono = "0.4"
 whisper-rs = { version = "0.15.1", default-features = false }
+base64 = "0.21"
 
 [features]
 default = []

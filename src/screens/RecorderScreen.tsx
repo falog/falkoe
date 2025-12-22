@@ -1,4 +1,4 @@
-import { Button, message, Space, Typography } from "antd";
+import { Button, message, Space, Typography, Flex } from "antd";
 import { useEffect, useState, useRef } from "react";
 import { startRecording, stopRecording } from "tauri-plugin-mic-recorder-api";
 import { readFile, readTextFile } from "@tauri-apps/plugin-fs";
@@ -36,8 +36,26 @@ type FinalResultPayload = {
   score: number;
 };
 
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = reader.result;
+      if (typeof result === "string") {
+        // data:audio/wav;base64,XXXX を除去
+        resolve(result.split(",")[1]);
+      } else {
+        reject(new Error("Failed to convert blob to base64"));
+      }
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
 const parseRecording = (path: string): Recording => {
-  const name = path.split("/").pop() ?? "";
+  const name = path.split(/[/\\]/).pop() ?? "";
+
   const m = name.match(/^(\d{8})_(\d{1,6})/);
 
   let dateLabel = "";
@@ -73,6 +91,15 @@ async function loadTranscript(wavPath: string): Promise<Transcript | null> {
   } catch {
     return null;
   }
+}
+
+async function ankiRequest(payload: any) {
+  const res = await fetch("http://127.0.0.1:8765", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return res.json();
 }
 
 const RecorderScreen = ({ sentence, onBack }: RecorderScreenProps) => {
@@ -130,14 +157,87 @@ const RecorderScreen = ({ sentence, onBack }: RecorderScreenProps) => {
 
   const refreshFiles = async () => {
     const list = await invoke<string[]>("list_recordings", {
-      sentenceId: sentence.id, // ← これが必要
+      sentenceId: sentence.id,
     });
 
-    const parsed = list
-      .map(parseRecording)
-      .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    const parsed = list.map(parseRecording).sort((a, b) => {
+      if (!a.timestamp && !b.timestamp) return 0;
+      if (!a.timestamp) return 1;
+      if (!b.timestamp) return -1;
+      return b.timestamp.localeCompare(a.timestamp);
+    });
 
     setRecordings(parsed);
+  };
+
+  const langToDeckSegment: Record<string, string> = {
+    eng: "English",
+    jpn: "Japanese",
+  };
+
+  function getDeckName(lang: string) {
+    const langName = langToDeckSegment[lang] ?? lang;
+    return `Falkoe::${langName}::Pronunciation`;
+  }
+
+  const addToAnki = async (rec: Recording) => {
+    try {
+      const deckName = getDeckName(sentence.lang);
+
+      // デッキを保証
+      await ankiRequest({
+        action: "createDeck",
+        version: 6,
+        params: { deck: deckName },
+      });
+
+      const modelAudioFilename = `model_${sentence.id}.wav`;
+
+      const modelAudioBase64 = await invoke<string>("fetch_audio_base64", {
+        url: sentence.audioUrl,
+      });
+
+      await ankiRequest({
+        action: "storeMediaFile",
+        version: 6,
+        params: {
+          filename: modelAudioFilename,
+          data: modelAudioBase64,
+        },
+      });
+
+      const bytes = await readFile(rec.path);
+      const blob = new Blob([bytes], { type: "audio/wav" });
+      const audioBase64 = await blobToBase64(blob);
+      const filename = `sentence_${sentence.id}_${rec.timestamp}.wav`;
+
+      await ankiRequest({
+        action: "storeMediaFile",
+        version: 6,
+        params: { filename, data: audioBase64 },
+      });
+
+      const res = await ankiRequest({
+        action: "addNote",
+        version: 6,
+        params: {
+          note: {
+            deckName,
+            modelName: "Basic",
+            fields: {
+              Front: `Model pronunciation<br>[sound:${modelAudioFilename}]<br><br>${sentence.text}`,
+              Back: `Your pronunciation<br>[sound:${filename}]`,
+            },
+            tags: ["falkoe", "pronunciation", sentence.lang],
+          },
+        },
+      });
+
+      console.log("added note id:", res);
+      message.success("Ankiに追加しました");
+    } catch (e) {
+      message.error("Ankiへの追加に失敗しました");
+    }
   };
 
   const loadAudio = async (path: string) => {
@@ -323,9 +423,14 @@ const RecorderScreen = ({ sentence, onBack }: RecorderScreenProps) => {
 
           return (
             <div key={rec.path}>
-              <div>
-                <strong>Take {recordings.length - i}</strong> / {rec.dateLabel}
-              </div>
+              <Flex align="center" justify="space-between">
+                <div>
+                  <strong>Take {recordings.length - i}</strong> /{" "}
+                  {rec.dateLabel}
+                </div>
+
+                <Button onClick={() => addToAnki(rec)}>Ankiに追加</Button>
+              </Flex>
 
               <audio
                 controls

@@ -1201,6 +1201,7 @@ name = "falkoe"
 version = "0.1.1"
 dependencies = [
  "anyhow",
+ "base64 0.21.7",
  "chrono",
  "cpal 0.16.0",
  "dirs 5.0.1",
