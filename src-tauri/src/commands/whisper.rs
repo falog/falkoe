@@ -68,11 +68,12 @@ pub fn run_whisper(
     app: AppHandle,
     path: String,
     sentence_id: u64,
+    lang: String,
 ) -> Result<(), String> {
     let app_handle = app.clone();
 
     std::thread::spawn(move || {
-        if let Err(e) = run_whisper_inner(&app_handle, &path, sentence_id) {
+        if let Err(e) = run_whisper_inner(&app_handle, &path, sentence_id, &lang) {
             eprintln!("whisper error: {e}");
         }
     });
@@ -84,6 +85,7 @@ fn run_whisper_inner(
     app: &AppHandle,
     wav_path: &str,
     _sentence_id: u64,
+    lang: &str,
 ) -> Result<()> {
 
     println!("=== run_whisper_inner START ===");
@@ -92,7 +94,13 @@ fn run_whisper_inner(
     let model_path = ensure_model(app)?;
     println!("model_path = {:?}", model_path);
 
-    let transcript = transcribe(wav_path, &model_path)?;
+    let whisper_lang =match lang {
+        "eng" => Some("en"),
+        "jpn" => Some("ja"),
+        _ => None,
+    };
+    let transcript = transcribe(wav_path, &model_path, whisper_lang)?;
+
     println!("transcribe OK, segments = {}", transcript.segments.len());
 
     save_transcript_json(wav_path, &transcript)?;
@@ -365,8 +373,8 @@ if audio.len() < MIN_SAMPLES {
 
     Ok(Transcript { segments })
 }
-    */
-pub fn transcribe(wav_path: &str, model_path: &Path) -> Result<Transcript> {
+*/
+pub fn transcribe(wav_path: &str, model_path: &Path, whisper_lang: Option<&str>) -> Result<Transcript> {
     let audio = load_wav_as_f32(wav_path)?;
 
     println!("before WhisperContext::new_with_params");
@@ -381,7 +389,9 @@ pub fn transcribe(wav_path: &str, model_path: &Path) -> Result<Transcript> {
         SamplingStrategy::Greedy { best_of: 1 }
     );
 
-    params.set_language(Some("en"));
+    println!("set_language {:?}", whisper_lang);
+    println!("model_path = {:?}", model_path);
+    params.set_language(whisper_lang);
     params.set_translate(false);
 
     // ❌ streaming / chunk 系は一切使わない

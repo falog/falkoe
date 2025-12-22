@@ -7,8 +7,8 @@ use tauri::{AppHandle,Emitter, Manager};
 static MODEL_STATUS: OnceLock<Mutex<String>> = OnceLock::new();
 
 const MODEL_URL: &str =
-    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin";
-
+    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin";
+    
 /// setup() で必ず呼ぶ
 pub fn init_model_state() {
     let _ = MODEL_STATUS.set(Mutex::new("idle".to_string()));
@@ -32,7 +32,7 @@ pub fn ensure_model(app: &AppHandle) -> anyhow::Result<std::path::PathBuf> {
     println!("ensure_model: called");
 
     let dir = app.path().app_data_dir().unwrap();
-    let model_path = dir.join("ggml-base.en.bin");
+    let model_path = dir.join("ggml-small.bin");
 
     if model_path.exists() {
         set_status(app, "ready");

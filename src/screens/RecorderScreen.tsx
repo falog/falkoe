@@ -294,6 +294,7 @@ const RecorderScreen = ({ sentence, onBack }: RecorderScreenProps) => {
               await invoke("run_whisper", {
                 path: movedPath,
                 sentenceId: sentence.id,
+                lang: sentence.lang,
               });
             } catch {
               message.info(
