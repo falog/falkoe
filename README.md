@@ -302,7 +302,7 @@ Alternatively, you can allow it from
 
 ### Prerequisites / 前提条件
 
-- Node.js (LTS v20+ or latest v22+)
+- Node.js v22+ (LTS)
 - Rust (latest stable)
 - Tauri CLI
 
