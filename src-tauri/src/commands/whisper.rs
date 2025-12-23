@@ -5,8 +5,8 @@ use crate::model::ensure_model;
 use anyhow::{Result, bail};
 use hound;
 use whisper_rs::*;
-use tauri::{AppHandle, Emitter};
-use std::{fs, path::Path};
+use tauri::{AppHandle, Emitter, Manager};
+use std::{fs, path::{Path,PathBuf}, process::Command};
 use rubato::{
     Resampler,
     SincFixedIn,
@@ -60,7 +60,66 @@ pub struct PartialSegment {
 }
 
 
+#[tauri::command]
+pub fn run_whisper_model(
+    app: AppHandle,
+    url: String,
+    sentence_id: u64,
+    lang: String,
+) -> Result<(), String> {
+    let wav_path = download_and_convert_to_wav(&app, &url, sentence_id)?;
 
+    std::thread::spawn(move || {
+        if let Err(e) = run_whisper_inner(&app, &wav_path, sentence_id, &lang) {
+            eprintln!("whisper error: {e}");
+        }
+    });
+
+    Ok(())
+}
+
+
+
+fn download_and_convert_to_wav(
+    app: &AppHandle,
+    url: &str,
+    sentence_id: u64,
+) -> Result<String, String> {
+  let base_dir = app
+    .path()
+    .app_data_dir()
+    .map_err(|e| e.to_string())?;
+
+    fs::create_dir_all(&base_dir).map_err(|e| e.to_string())?;
+
+    let mp3_path = base_dir.join(format!("model_{sentence_id}.mp3"));
+    let wav_path = base_dir.join(format!("model_{sentence_id}.wav"));
+
+
+    let resp = reqwest::blocking::get(url).map_err(|e| e.to_string())?;
+    let bytes = resp.bytes().map_err(|e| e.to_string())?;
+    fs::write(&mp3_path, &bytes).map_err(|e| e.to_string())?;
+
+    let status = Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-i",
+            mp3_path.to_str().unwrap(),
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
+            wav_path.to_str().unwrap(),
+        ])
+        .status()
+        .map_err(|e| e.to_string())?;
+
+    if !status.success() {
+        return Err("ffmpeg failed".into());
+    }
+
+    Ok(wav_path.to_string_lossy().to_string())
+}
 
 
 #[tauri::command]

@@ -2,6 +2,7 @@ use crate::commands::whisper::run_whisper;
 use crate::commands::recordings::{list_recordings, move_recorded_audio};
 use crate::commands::status::get_model_status;
 use crate::commands::audio::fetch_audio_base64;
+use crate::commands::whisper::run_whisper_model;
 use tauri_plugin_mic_recorder::init as mic_recorder;
 
 mod model;
@@ -24,6 +25,7 @@ pub fn run() {
         .plugin(mic_recorder())
         .invoke_handler(tauri::generate_handler![
             run_whisper,
+            run_whisper_model,
             list_recordings,
             get_model_status,
             move_recorded_audio,

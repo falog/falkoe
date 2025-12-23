@@ -1,7 +1,7 @@
 import { Button, message, Space, Typography } from "antd";
 import { useEffect, useState, useRef } from "react";
 import { startRecording, stopRecording } from "tauri-plugin-mic-recorder-api";
-import { readFile, readTextFile } from "@tauri-apps/plugin-fs";
+import { readFile, readTextFile, BaseDirectory } from "@tauri-apps/plugin-fs";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { PlayCircleOutlined } from "@ant-design/icons";
@@ -14,7 +14,7 @@ type RecorderScreenProps = {
 };
 
 type Recording = {
-  path: string; // フルパス（唯一のキー）
+  path: string;
   fileName: string;
   timestamp: string;
   dateLabel: string;
@@ -43,7 +43,6 @@ function blobToBase64(blob: Blob): Promise<string> {
     reader.onloadend = () => {
       const result = reader.result;
       if (typeof result === "string") {
-        // data:audio/wav;base64,XXXX を除去
         resolve(result.split(",")[1]);
       } else {
         reject(new Error("Failed to convert blob to base64"));
@@ -113,6 +112,8 @@ const RecorderScreen = ({ sentence, onBack }: RecorderScreenProps) => {
   const [status, setStatus] = useState<string>("idle");
   const modelMissingShown = useRef(false);
   const [progress, setProgress] = useState<number | null>(null);
+  const [modelText, setModelText] = useState<string | null>(null);
+  const [waitingModel, setWaitingModel] = useState(false);
 
   /** sentence 切り替え時にリセット */
   useEffect(() => {
@@ -279,6 +280,7 @@ const RecorderScreen = ({ sentence, onBack }: RecorderScreenProps) => {
       if (!wavPath.includes(`/tatoeba/${sentence.id}/`)) return;
 
       const transcript = await loadTranscript(wavPath);
+      setWaitingModel(false);
       setTranscripts((prev) => ({
         ...prev,
         [wavPath]: transcript,
@@ -295,6 +297,12 @@ const RecorderScreen = ({ sentence, onBack }: RecorderScreenProps) => {
       (e) => {
         const result = e.payload;
 
+        if (waitingModel) {
+          setModelText(result.segments.map((s) => s.text).join(" "));
+          setWaitingModel(false);
+          return;
+        }
+
         setTranscripts((prev) => ({
           ...prev,
           [result.wav_path]: { segments: result.segments },
@@ -305,7 +313,7 @@ const RecorderScreen = ({ sentence, onBack }: RecorderScreenProps) => {
     return () => {
       unlistenPromise.then((unlisten) => unlisten());
     };
-  }, []);
+  }, [waitingModel]);
 
   /** recordings が変わったら audio / transcript をロード */
   useEffect(() => {
@@ -331,6 +339,20 @@ const RecorderScreen = ({ sentence, onBack }: RecorderScreenProps) => {
     };
   }, []);
 
+  async function loadModelTranscript(
+    sentenceId: number
+  ): Promise<Transcript | null> {
+    try {
+      const filename = `model_${sentenceId}.json`;
+      const text = await readTextFile(filename, {
+        baseDir: BaseDirectory.AppData,
+      });
+      return JSON.parse(text) as Transcript;
+    } catch {
+      return null;
+    }
+  }
+
   return (
     <Space orientation="vertical" style={{ width: "100%" }}>
       <Button onClick={onBack}>← 戻る</Button>
@@ -354,7 +376,33 @@ const RecorderScreen = ({ sentence, onBack }: RecorderScreenProps) => {
         <Typography.Title level={4} style={{ margin: 0, flex: 1 }}>
           {sentence.text}
         </Typography.Title>
+        <Button
+          onClick={async () => {
+            console.log("model recognize clicked");
+
+            const cached = await loadModelTranscript(sentence.id);
+            if (cached) {
+              setModelText(cached.segments.map((s) => s.text).join(" "));
+              return;
+            }
+            setWaitingModel(true);
+            invoke("run_whisper_model", {
+              url: sentence.audioUrl,
+              sentenceId: sentence.id,
+              lang: sentence.lang,
+            });
+          }}
+        >
+          模範音声を音声認識する
+        </Button>
       </div>
+      {modelText && (
+        <Typography.Paragraph>
+          <strong>Model transcript:</strong>
+          <br />
+          {modelText}
+        </Typography.Paragraph>
+      )}
       <Typography.Text type="secondary">Model status: {status}</Typography.Text>
 
       {status === "downloading" && (

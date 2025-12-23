@@ -79,12 +79,15 @@ const WordInputScreen = ({
   return (
     <Space orientation="vertical" style={{ width: "100%" }}>
       <Typography.Title level={4}>例文検索</Typography.Title>
+      {/*<Checkbox
       <Checkbox
         checked={useSpeech}
         onChange={(e) => setUseSpeech(e.target.checked)}
       >
+      
         音声認識を使う
       </Checkbox>
+      */}
       {useSpeech && (
         <Space
           orientation="vertical"
