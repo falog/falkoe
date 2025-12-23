@@ -237,26 +237,28 @@ chmod +x falkoe-*.AppImage
 
 ### 🍎 macOS
 
-Finder から `.app` を開いてください。
+Download the `.dmg` file and open it.
 
-初回起動時に警告が表示された場合は：
+`.dmg` ファイルをダウンロードして開いてください。
 
-1. アプリを右クリック
-2. 「開く」を選択
-3. 確認ダイアログでもう一度「開く」をクリック
-
-または  
-**システム設定 → プライバシーとセキュリティ** から許可できます。
+1. Drag **Falkoe.app** to the **Applications** folder
+2. Open Falkoe from Applications
 
 ---
 
-Open the `.app` bundle from Finder.
+1. **Falkoe.app** を **アプリケーション** フォルダにドラッグ
+2. アプリケーションからFalkoeを起動
 
 If macOS blocks the app on first launch:
 
-1. Right-click the app
+初回起動時に警告が表示された場合は：
+
+1. Right-click the app in Applications
 2. Select **Open**
 3. Click **Open** again to confirm
+
+または  
+**システム設定 → プライバシーとセキュリティ** から許可できます。
 
 Alternatively, you can allow it from  
 **System Settings → Privacy & Security**.
@@ -281,7 +283,7 @@ Alternatively, you can allow it from
 
 - **Windows**: MSI
 - **Linux**: DEB / RPM / AppImage
-- **macOS**: .app
+- **macOS**: .dmg
 
 ---
 
@@ -337,7 +339,7 @@ src-tauri/target/release/bundle/
 
 - **Windows**: `.msi`
 - **Linux**: `.deb`, `.rpm`, `.AppImage`
-- **macOS**: `.app`
+- **macOS**: `.dmg`
 
 ---
 
