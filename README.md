@@ -302,7 +302,7 @@ Alternatively, you can allow it from
 
 ### Prerequisites / 前提条件
 
-- Node.js v22+ (LTS)
+- Node.js (LTS v24+)
 - Rust (latest stable)
 - Tauri CLI
 
@@ -314,17 +314,17 @@ git clone https://github.com/falog/falkoe.git
 cd falkoe
 
 # Install dependencies
-npm install
+pnpm install
 
 # Run development server
-npm run tauri dev
+pnpm run tauri dev
 ```
 
 ### Build
 
 ```bash
 # Build for your platform
-npm run tauri build
+pnpm tauri build
 ```
 
 Bundled files are generated under:
