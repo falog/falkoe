@@ -95,7 +95,7 @@ All the voices needed for language learning come together here.
 
 ---
 
-This is **"Falkoe-fication."**  
+This is **"Fal-fication."**  
 Join me, and let's become **"Falkoe voices."**
 
 ---
