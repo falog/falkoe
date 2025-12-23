@@ -29,8 +29,6 @@ pub fn get_model_status() -> String {
 }
 
 pub fn ensure_model(app: &AppHandle) -> anyhow::Result<std::path::PathBuf> {
-    println!("ensure_model: called");
-
     let dir = app.path().app_data_dir().unwrap();
     let model_path = dir.join("ggml-small.bin");
 

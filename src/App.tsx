@@ -9,6 +9,7 @@ const App = () => {
   const [word, setWord] = useState("");
   const [sentences, setSentences] = useState<Sentence[]>([]);
   const [selected, setSelected] = useState<Sentence | null>(null);
+  const [wordcount, setWordcount] = useState("10-");
 
   return (
     <>
@@ -18,8 +19,10 @@ const App = () => {
           setLang={setLang}
           word={word}
           sentences={sentences}
+          wordcount={wordcount}
           onWordChange={setWord}
           onSearchResult={setSentences}
+          onWordcount={setWordcount}
           onSelect={(s) => {
             setSelected(s);
             setScreen("record");

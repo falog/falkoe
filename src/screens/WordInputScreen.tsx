@@ -8,25 +8,42 @@ const LANG_OPTIONS = [
   { value: "jpn", label: "Japanese" },
 ];
 
-//const [lang, setLang] = useState<string>("eng");
+const WORD_COUNT = [
+  { value: "1-", label: "1 word or more" },
+  { value: "2-", label: "2 words or more" },
+  { value: "3-", label: "3 words or more" },
+  { value: "4-", label: "4 words or more" },
+  { value: "5-", label: "5 words or more" },
+  { value: "6-", label: "6 words or more" },
+  { value: "7-", label: "7 words or more" },
+  { value: "8-", label: "8 words or more" },
+  { value: "9-", label: "9 words or more" },
+  { value: "10-", label: "10 words or more" },
+];
 
 type WordInputScreenProps = {
   lang: string;
   setLang: (lang: string) => void;
   word: string;
   sentences: Sentence[];
+  wordcount: string;
   onWordChange: (v: string) => void;
   onSearchResult: (s: Sentence[]) => void;
+  onWordcount: (wc: string) => void;
   onSelect: (s: Sentence) => void;
   onUseSpeech: (args: { file: File; lang: string }) => void;
 };
 
-async function fetchExamples(word: string, lang: string): Promise<Sentence[]> {
+async function fetchExamples(
+  word: string,
+  lang: string,
+  wordcount: string
+): Promise<Sentence[]> {
   const url =
     `https://api.tatoeba.org/unstable/sentences` +
     `?lang=${encodeURIComponent(lang)}` +
     `&q=${encodeURIComponent(word)}` +
-    `&word_count=10-` +
+    `&word_count=${encodeURIComponent(wordcount)}` +
     `&has_audio=yes` +
     `&sort=words`;
 
@@ -48,7 +65,9 @@ const WordInputScreen = ({
   setLang,
   word,
   sentences,
+  wordcount,
   onWordChange,
+  onWordcount,
   onSearchResult,
   onSelect,
   onUseSpeech,
@@ -65,7 +84,7 @@ const WordInputScreen = ({
     setError(null);
 
     try {
-      const result = await fetchExamples(word.trim(), lang);
+      const result = await fetchExamples(word.trim(), lang, wordcount);
       onSearchResult(result);
       console.log("result:", result.length);
     } catch (e) {
@@ -113,6 +132,14 @@ const WordInputScreen = ({
         value={lang}
         onChange={setLang}
         options={LANG_OPTIONS}
+        style={{ width: 160 }}
+      />
+      ワード数を選択してください：
+      <Select
+        value={wordcount}
+        disabled={useSpeech}
+        onChange={onWordcount}
+        options={WORD_COUNT}
         style={{ width: 160 }}
       />
       <Input.Search

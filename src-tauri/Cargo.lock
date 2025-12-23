@@ -3,6 +3,32 @@
 version = 4
 
 [[package]]
+name = "Falkoe"
+version = "0.2.1"
+dependencies = [
+ "anyhow",
+ "base64 0.21.7",
+ "chrono",
+ "cpal 0.16.0",
+ "dirs 5.0.1",
+ "hound",
+ "log",
+ "once_cell",
+ "reqwest",
+ "rubato",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-fs",
+ "tauri-plugin-mic-recorder",
+ "tauri-plugin-opener",
+ "tauri-plugin-shell",
+ "ureq",
+ "whisper-rs",
+]
+
+[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1194,32 +1220,6 @@ checksum = "8be9f3dfaaffdae2972880079a491a1a8bb7cbed0b8dd7a347f668b4150a3b93"
 dependencies = [
  "event-listener",
  "pin-project-lite",
-]
-
-[[package]]
-name = "falkoe"
-version = "0.1.1"
-dependencies = [
- "anyhow",
- "base64 0.21.7",
- "chrono",
- "cpal 0.16.0",
- "dirs 5.0.1",
- "hound",
- "log",
- "once_cell",
- "reqwest",
- "rubato",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-fs",
- "tauri-plugin-mic-recorder",
- "tauri-plugin-opener",
- "tauri-plugin-shell",
- "ureq",
- "whisper-rs",
 ]
 
 [[package]]
