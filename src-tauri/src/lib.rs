@@ -4,6 +4,7 @@ use crate::commands::status::get_model_status;
 use crate::commands::audio::fetch_audio_base64;
 use crate::commands::whisper::{run_whisper_model, run_whisper_uploaded};
 use crate::commands::sentences::{find_audio_by_sentence, upsert_sentence_manifest_text};
+use crate::commands::linking::render_linking;
 use tauri_plugin_mic_recorder::init as mic_recorder;
 
 mod model;
@@ -18,6 +19,12 @@ pub fn run() {
             let handle = app.handle().clone();
             std::thread::spawn(move || {
                 let _ = model::ensure_model(&handle);
+            });
+
+            // CMUdictも初回だけ重いので、バックグラウンドでウォームアップ
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                let _ = crate::commands::linking::warmup_cmudict(&handle);
             });
 
             Ok(())
@@ -36,6 +43,7 @@ pub fn run() {
             fetch_audio_base64,
             find_audio_by_sentence,
             upsert_sentence_manifest_text,
+            render_linking,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

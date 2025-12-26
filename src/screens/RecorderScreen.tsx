@@ -1,5 +1,5 @@
-import { Button, message, Modal, Space, Spin, Typography } from "antd";
-import { useEffect, useState, useRef } from "react";
+import { Button, message, Modal, Space, Spin, Typography, Radio } from "antd";
+import { useEffect, useState, useRef, type ReactNode } from "react";
 import { startRecording, stopRecording } from "tauri-plugin-mic-recorder-api";
 import { readFile, readTextFile, BaseDirectory } from "@tauri-apps/plugin-fs";
 import { invoke } from "@tauri-apps/api/core";
@@ -9,6 +9,9 @@ import type { Sentence } from "../components/ExampleList";
 import RecordingItem from "../components/RecordingItem";
 import type { SpeechSource } from "../types/speech";
 import { sha256 } from "../utils/hash";
+import { renderLinkingRust } from "../utils/linkingInvoke";
+import type { RenderLinkingResult } from "../types/linking";
+import type { DisplayMode } from "../types/linking";
 
 type RecorderScreenProps = {
   source: SpeechSource;
@@ -220,6 +223,66 @@ const RecorderScreen = ({ source, onBack }: RecorderScreenProps) => {
     null
   );
   const [displayText, setDisplayText] = useState<string>(sentence.text);
+  const [linkingResult, setLinkingResult] =
+    useState<RenderLinkingResult | null>(null);
+  const [linkingDisplayMode, setLinkingDisplayMode] =
+    useState<DisplayMode>("phoneme");
+
+  function renderLegend(): ReactNode {
+    return (
+      <Typography.Text type="secondary" style={{ display: "block" }}>
+        <Typography.Text type="danger">強く読む</Typography.Text>
+        {" / "}
+        <Typography.Text type="warning">少しだけ強く</Typography.Text>
+        {" / "}
+        <Typography.Text type="secondary">流す</Typography.Text>
+      </Typography.Text>
+    );
+  }
+
+  function stressType(mark: string): "danger" | "warning" | "secondary" {
+    switch (mark) {
+      case "▲":
+        return "danger";
+      case "△":
+        return "warning";
+      default:
+        return "secondary";
+    }
+  }
+
+  function renderStressColored(text: string): ReactNode {
+    const marks = new Set(["▲", "△", "▽"]);
+    const stops = new Set(["▲", "△", "▽", "|", ")", "("]);
+
+    const out: ReactNode[] = [];
+    let i = 0;
+
+    while (i < text.length) {
+      const ch = text[i];
+      if (marks.has(ch)) {
+        const start = i;
+        // 記号自体は表示しない
+        i += 1;
+        const segStart = i;
+        while (i < text.length && !stops.has(text[i])) i += 1;
+        const seg = text.slice(segStart, i);
+        out.push(
+          <Typography.Text key={`s-${start}`} type={stressType(ch)}>
+            {seg}
+          </Typography.Text>
+        );
+        continue;
+      }
+
+      const start = i;
+      i += 1;
+      while (i < text.length && !marks.has(text[i])) i += 1;
+      out.push(<span key={`t-${start}`}>{text.slice(start, i)}</span>);
+    }
+
+    return out;
+  }
   const autoStartedRef = useRef(false);
   const [headerAudioUrl, setHeaderAudioUrl] = useState<string | null>(
     source.kind === "uploaded" && source.file
@@ -233,6 +296,36 @@ const RecorderScreen = ({ source, onBack }: RecorderScreenProps) => {
   useEffect(() => {
     setDisplayText(sentence.text);
   }, [sentence.text]);
+
+  // Linking表示（英語のみ）
+  useEffect(() => {
+    const text = (displayText || sentence.text || "").trim();
+    if (!text || sentence.lang !== "eng") {
+      setLinkingResult(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    renderLinkingRust(text, {
+      linkingMode: true,
+      displayMode: linkingDisplayMode,
+      useDict: true,
+    })
+      .then((res) => {
+        if (cancelled) return;
+        setLinkingResult(res);
+      })
+      .catch((e) => {
+        console.warn("render_linking failed", e);
+        if (cancelled) return;
+        setLinkingResult(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [displayText, sentence.text, sentence.lang, linkingDisplayMode]);
 
   /** アップロード音声を保存 or 既存保存パスの適用 */
   useEffect(() => {
@@ -820,6 +913,29 @@ const RecorderScreen = ({ source, onBack }: RecorderScreenProps) => {
             : "模範音声を音声認識する"}
         </Button>
       </div>
+
+      {linkingResult?.joined && (
+        <>
+          <Space size={8} style={{ display: "flex" }}>
+            <Typography.Text type="secondary">表示:</Typography.Text>
+            <Radio.Group
+              size="small"
+              value={linkingDisplayMode}
+              onChange={(e) => setLinkingDisplayMode(e.target.value)}
+              options={[
+                { label: "phoneme", value: "phoneme" },
+                { label: "kana", value: "kana" },
+              ]}
+              optionType="button"
+              buttonStyle="solid"
+            />
+          </Space>
+          {renderLegend()}
+          <Typography.Text style={{ display: "block" }}>
+            {renderStressColored(linkingResult.joined)}
+          </Typography.Text>
+        </>
+      )}
       {modelText && (
         <Typography.Paragraph>
           <strong>Model transcript:</strong>
