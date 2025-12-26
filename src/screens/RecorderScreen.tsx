@@ -93,6 +93,15 @@ function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
+function isHttpUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url);
+}
+
+function guessExtFromPath(p: string): string {
+  const m = p.match(/\.([a-z0-9]+)$/i);
+  return (m?.[1] ?? "wav").toLowerCase();
+}
+
 const parseRecording = (path: string): Recording => {
   const name = path.split(/[/\\]/).pop() ?? "";
 
@@ -190,6 +199,7 @@ const RecorderScreen = ({ source, onBack }: RecorderScreenProps) => {
   const [modelText, setModelText] = useState<string | null>(null);
   const [waitingModel, setWaitingModel] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [recognizing, setRecognizing] = useState<Record<string, boolean>>({});
   const [uploadedAudioPath, setUploadedAudioPath] = useState<string | null>(
     null
   );
@@ -426,6 +436,12 @@ const RecorderScreen = ({ source, onBack }: RecorderScreenProps) => {
 
   const addToAnki = async (rec: Recording) => {
     try {
+      console.log("[RecorderScreen] addToAnki start", {
+        rec,
+        sentence,
+        sentenceHash,
+      });
+
       const deckName = getDeckName(sentence.lang);
 
       // デッキを保証
@@ -435,11 +451,35 @@ const RecorderScreen = ({ source, onBack }: RecorderScreenProps) => {
         params: { deck: deckName },
       });
 
-      const modelAudioFilename = `model_${sentence.id}.wav`;
+      const cardText = (displayText || sentence.text || "").trim();
 
-      const modelAudioBase64 = await invoke<string>("fetch_audio_base64", {
-        url: sentence.audioUrl,
-      });
+      // model audio (模範音声)
+      let modelAudioBase64: string;
+      let modelAudioFilename: string;
+
+      if (source.kind === "uploaded") {
+        if (!uploadedAudioPath) {
+          throw new Error("uploaded audio path is not ready");
+        }
+        const bytes = await readFile(uploadedAudioPath);
+        const blob = new Blob([bytes]);
+        modelAudioBase64 = await blobToBase64(blob);
+        const ext = guessExtFromPath(uploadedAudioPath);
+        modelAudioFilename = `model_${sentenceHash}.${ext}`;
+      } else if (isHttpUrl(sentence.audioUrl)) {
+        modelAudioBase64 = await invoke<string>("fetch_audio_base64", {
+          url: sentence.audioUrl,
+        });
+        // Tatoebaはmp3が多いので拡張子はmp3に寄せる
+        modelAudioFilename = `model_${sentenceHash}.mp3`;
+      } else {
+        // recorded などローカルパス
+        const bytes = await readFile(sentence.audioUrl);
+        const blob = new Blob([bytes]);
+        modelAudioBase64 = await blobToBase64(blob);
+        const ext = guessExtFromPath(sentence.audioUrl);
+        modelAudioFilename = `model_${sentenceHash}.${ext}`;
+      }
 
       await ankiRequest({
         action: "storeMediaFile",
@@ -453,7 +493,7 @@ const RecorderScreen = ({ source, onBack }: RecorderScreenProps) => {
       const bytes = await readFile(rec.path);
       const blob = new Blob([bytes], { type: "audio/wav" });
       const audioBase64 = await blobToBase64(blob);
-      const filename = `sentence_${sentence.id}_${rec.timestamp}.wav`;
+      const filename = `sentence_${sentenceHash}_${rec.timestamp}.wav`;
 
       await ankiRequest({
         action: "storeMediaFile",
@@ -469,7 +509,7 @@ const RecorderScreen = ({ source, onBack }: RecorderScreenProps) => {
             deckName,
             modelName: "Basic",
             fields: {
-              Front: `Model pronunciation<br>[sound:${modelAudioFilename}]<br><br>${sentence.text}`,
+              Front: `Model pronunciation<br>[sound:${modelAudioFilename}]<br><br>${cardText}`,
               Back: `Your pronunciation<br>[sound:${filename}]`,
             },
             tags: ["falkoe", "pronunciation", sentence.lang],
@@ -480,7 +520,8 @@ const RecorderScreen = ({ source, onBack }: RecorderScreenProps) => {
       console.log("added note id:", res);
       message.success("Ankiに追加しました");
     } catch (e) {
-      message.error("Ankiへの追加に失敗しました");
+      console.error("[RecorderScreen] addToAnki failed", e);
+      message.error("Ankiへの追加に失敗しました: " + String(e));
     }
   };
 
@@ -541,6 +582,13 @@ const RecorderScreen = ({ source, onBack }: RecorderScreenProps) => {
         setIsTranscribing(false);
         const result = e.payload;
 
+        setRecognizing((prev) => {
+          if (!prev[result.wav_path]) return prev;
+          const next = { ...prev };
+          delete next[result.wav_path];
+          return next;
+        });
+
         if (waitingModel) {
           setModelText(result.segments.map((s) => s.text).join(" "));
           setWaitingModel(false);
@@ -573,6 +621,29 @@ const RecorderScreen = ({ source, onBack }: RecorderScreenProps) => {
       unlistenPromise.then((unlisten) => unlisten());
     };
   }, [waitingModel]);
+
+  const recognizeRecording = async (rec: Recording) => {
+    if (status !== "ready") return;
+    if (recognizing[rec.path]) return;
+
+    setRecognizing((prev) => ({ ...prev, [rec.path]: true }));
+    setIsTranscribing(true);
+    try {
+      await invoke("run_whisper", {
+        path: rec.path,
+        sentenceHash: sentenceHash,
+        lang: sentence.lang,
+      });
+    } catch (e) {
+      setRecognizing((prev) => {
+        const next = { ...prev };
+        delete next[rec.path];
+        return next;
+      });
+      setIsTranscribing(false);
+      message.error("音声認識の開始に失敗しました: " + String(e));
+    }
+  };
 
   /** recordings が変わったら audio / transcript をロード */
   useEffect(() => {
@@ -793,6 +864,8 @@ const RecorderScreen = ({ source, onBack }: RecorderScreenProps) => {
             index={i}
             total={recordings.length}
             transcript={transcripts[rec.path]}
+            recognizing={!!recognizing[rec.path]}
+            recognize={recognizeRecording}
             audioUrl={audioUrls[rec.path]}
             loadAudio={loadAudio}
             addToAnki={addToAnki}

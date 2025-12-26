@@ -7,6 +7,8 @@ type Props = {
   index: number;
   total: number;
   transcript: Transcript | null | undefined;
+  recognizing?: boolean;
+  recognize?: (rec: Recording) => void;
   audioUrl?: string;
   loadAudio: (path: string) => Promise<void>;
   addToAnki: (rec: Recording) => void;
@@ -17,6 +19,8 @@ export default function RecordingItem({
   index,
   total,
   transcript,
+  recognizing,
+  recognize,
   audioUrl,
   loadAudio,
   addToAnki,
@@ -36,7 +40,21 @@ export default function RecordingItem({
         <div>
           <strong>Take {total - index}</strong> / {rec.dateLabel}
         </div>
-        <Button onClick={() => addToAnki(rec)}>Ankiに追加</Button>
+        <Flex gap={8}>
+          {transcript === null && recognize && (
+            <Button loading={!!recognizing} onClick={() => recognize(rec)}>
+              音声認識
+            </Button>
+          )}
+          <Button
+            onClick={() => {
+              console.log("[RecordingItem] Anki clicked", rec);
+              addToAnki(rec);
+            }}
+          >
+            Ankiに追加
+          </Button>
+        </Flex>
       </Flex>
 
       <audio
@@ -64,10 +82,6 @@ export default function RecordingItem({
         <div style={{ fontSize: 12, color: "#888" }}>
           （音声が検出されませんでした）
         </div>
-      )}
-
-      {transcript === null && (
-        <div style={{ fontSize: 12, color: "#888" }}>（文字起こし中…）</div>
       )}
     </div>
   );
