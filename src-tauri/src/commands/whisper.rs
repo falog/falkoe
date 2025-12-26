@@ -1,12 +1,12 @@
 #![allow(dead_code)]
 
-use crate::model::ensure_model;
+use crate::model::{ensure_model, hash_sentence};
 
 use anyhow::{Result, bail};
 use hound;
 use whisper_rs::*;
 use tauri::{AppHandle, Emitter, Manager};
-use std::{fs, path::{Path,PathBuf}, process::Command};
+use std::{fs, path::Path, process::Command};
 use rubato::{
     Resampler,
     SincFixedIn,
@@ -17,6 +17,7 @@ use rubato::{
 use std::sync::{OnceLock, Mutex};
 use whisper_rs::{WhisperContext, WhisperContextParameters};
 use std::io::Write;
+use std::path::PathBuf;
 
 
 #[derive(serde::Serialize, Clone)]
@@ -53,6 +54,15 @@ pub struct Transcript {
 }
 
 #[derive(serde::Serialize, Clone)]
+pub struct SentenceManifest {
+    pub audio_id: String,
+    pub sentence_id: Option<String>,
+    pub lang: String,
+    pub text: Option<String>,
+    pub last_wav_path: Option<String>,
+}
+
+#[derive(serde::Serialize, Clone)]
 pub struct PartialSegment {
     pub start: f32,
     pub end: f32,
@@ -64,18 +74,75 @@ pub struct PartialSegment {
 pub fn run_whisper_model(
     app: AppHandle,
     url: String,
-    sentence_id: u64,
+    sentence_hash: String,
     lang: String,
 ) -> Result<(), String> {
-    let wav_path = download_and_convert_to_wav(&app, &url, sentence_id)?;
+    let wav_path = download_and_convert_to_wav(&app, &url, &sentence_hash)?;
 
     std::thread::spawn(move || {
-        if let Err(e) = run_whisper_inner(&app, &wav_path, sentence_id, &lang) {
-            eprintln!("whisper error: {e}");
+        if let Err(e) = run_whisper_model_inner(&app, &wav_path, &sentence_hash, &lang) {
+            eprintln!("whisper model error: {e}");
         }
     });
 
     Ok(())
+}
+
+#[tauri::command]
+pub fn run_whisper_uploaded(
+    app: AppHandle,
+    uploaded_path: String,
+    sentence_hash: String,
+    lang: String,
+) -> Result<(), String> {
+    let wav_path = convert_uploaded_to_wav(&app, &uploaded_path, &sentence_hash)?;
+
+    std::thread::spawn(move || {
+        if let Err(e) = run_whisper_model_inner(&app, &wav_path, &sentence_hash, &lang) {
+            eprintln!("whisper uploaded error: {e}");
+        }
+    });
+
+    Ok(())
+}
+
+fn convert_uploaded_to_wav(
+    app: &AppHandle,
+    uploaded_path: &str,
+    sentence_hash: &str,
+) -> Result<String, String> {
+    let base_dir = app
+        .path()
+        .document_dir()
+        .map_err(|e| e.to_string())?
+        .join("falkoe")
+        .join("sentences")
+        .join(sentence_hash)
+        .join("uploaded");
+
+    fs::create_dir_all(&base_dir).map_err(|e| e.to_string())?;
+
+    let wav_path = base_dir.join("uploaded.wav");
+
+    let status = Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-i",
+            uploaded_path,
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
+            wav_path.to_str().unwrap(),
+        ])
+        .status()
+        .map_err(|e| e.to_string())?;
+
+    if !status.success() {
+        return Err("ffmpeg conversion failed".into());
+    }
+
+    Ok(wav_path.to_string_lossy().to_string())
 }
 
 
@@ -83,17 +150,21 @@ pub fn run_whisper_model(
 fn download_and_convert_to_wav(
     app: &AppHandle,
     url: &str,
-    sentence_id: u64,
+    sentence_hash: &str,
 ) -> Result<String, String> {
   let base_dir = app
     .path()
-    .app_data_dir()
-    .map_err(|e| e.to_string())?;
+    .document_dir()
+    .map_err(|e| e.to_string())?
+    .join("falkoe")
+    .join("sentences")
+    .join(sentence_hash)
+    .join("model");
 
     fs::create_dir_all(&base_dir).map_err(|e| e.to_string())?;
 
-    let mp3_path = base_dir.join(format!("model_{sentence_id}.mp3"));
-    let wav_path = base_dir.join(format!("model_{sentence_id}.wav"));
+    let mp3_path = base_dir.join("model.mp3");
+    let wav_path = base_dir.join("model.wav");
 
 
     let resp = reqwest::blocking::get(url).map_err(|e| e.to_string())?;
@@ -126,13 +197,13 @@ fn download_and_convert_to_wav(
 pub fn run_whisper(
     app: AppHandle,
     path: String,
-    sentence_id: u64,
+    sentence_hash: String,
     lang: String,
 ) -> Result<(), String> {
     let app_handle = app.clone();
 
     std::thread::spawn(move || {
-        if let Err(e) = run_whisper_inner(&app_handle, &path, sentence_id, &lang) {
+        if let Err(e) = run_whisper_inner(&app_handle, &path, &sentence_hash, &lang) {
             eprintln!("whisper error: {e}");
         }
     });
@@ -143,7 +214,7 @@ pub fn run_whisper(
 fn run_whisper_inner(
     app: &AppHandle,
     wav_path: &str,
-    _sentence_id: u64,
+    sentence_hash: &str,
     lang: &str,
 ) -> Result<()> {
 
@@ -165,11 +236,64 @@ fn run_whisper_inner(
     save_transcript_json(wav_path, &transcript)?;
     println!("json saved");
 
-    let _full_text = transcript.segments
+    let full_text = transcript
+        .segments
         .iter()
-        .map(|s| s.text.clone())
+        .map(|s| s.text.trim())
+        .filter(|t| !t.is_empty())
         .collect::<Vec<_>>()
         .join(" ");
+
+    save_sentence_manifest_json(app, sentence_hash, lang, &full_text, wav_path)?;
+
+    let score = 0.0;
+
+    let final_result = FinalResult {
+        status: "final".into(),
+        wav_path: wav_path.to_string(),
+        segments: transcript.segments.clone(),
+        score,
+    };
+
+    app.emit("transcript-final", final_result)?;
+
+    Ok(())
+}
+
+fn run_whisper_model_inner(
+    app: &AppHandle,
+    wav_path: &str,
+    sentence_hash: &str,
+    lang: &str,
+) -> Result<()> {
+
+    println!("=== run_whisper_model_inner START ===");
+    println!("wav_path = {}", wav_path);
+
+    let model_path = ensure_model(app)?;
+    println!("model_path = {:?}", model_path);
+
+    let whisper_lang = match lang {
+        "eng" => Some("en"),
+        "jpn" => Some("ja"),
+        _ => None,
+    };
+    let transcript = transcribe(wav_path, &model_path, whisper_lang)?;
+
+    println!("transcribe OK, segments = {}", transcript.segments.len());
+
+    save_transcript_json(wav_path, &transcript)?;
+    println!("json saved");
+
+    let full_text = transcript
+        .segments
+        .iter()
+        .map(|s| s.text.trim())
+        .filter(|t| !t.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    save_sentence_manifest_json(app, sentence_hash, lang, &full_text, wav_path)?;
 
     let score = 0.0;
 
@@ -489,6 +613,47 @@ fn save_transcript_json(wav_path: &str, transcript: &Transcript) -> Result<()> {
     let json = serde_json::to_string_pretty(transcript)?;
     fs::write(&json_path, json)?;
     println!("saved transcript: {:?}", json_path);
+    Ok(())
+}
+
+fn sentence_base_dir(app: &AppHandle, sentence_hash: &str) -> Result<PathBuf> {
+    Ok(app
+        .path()
+        .document_dir()?
+        .join("falkoe")
+        .join("sentences")
+        .join(sentence_hash))
+}
+
+fn save_sentence_manifest_json(
+    app: &AppHandle,
+    sentence_hash: &str,
+    lang: &str,
+    full_text: &str,
+    wav_path: &str,
+) -> Result<()> {
+    let base_dir = sentence_base_dir(app, sentence_hash)?;
+    fs::create_dir_all(&base_dir)?;
+
+    let text = full_text.trim();
+    let sentence_id = if text.is_empty() {
+        None
+    } else {
+        Some(hash_sentence(text, lang))
+    };
+
+    let manifest = SentenceManifest {
+        audio_id: sentence_hash.to_string(),
+        sentence_id,
+        lang: lang.to_string(),
+        text: if text.is_empty() { None } else { Some(text.to_string()) },
+        last_wav_path: Some(wav_path.to_string()),
+    };
+
+    let manifest_path = base_dir.join("manifest.json");
+    let json = serde_json::to_string_pretty(&manifest)?;
+    fs::write(&manifest_path, json)?;
+    println!("saved manifest: {:?}", manifest_path);
     Ok(())
 }
 

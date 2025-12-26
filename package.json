@@ -9,6 +9,9 @@
     "preview": "vite preview",
     "tauri": "tauri"
   },
+  "engines": {
+    "node": ">=24 <25"
+  },
   "dependencies": {
     "@ant-design/icons": "^6.1.0",
     "@tauri-apps/api": "^2",

@@ -42,7 +42,7 @@ const ExampleList = ({ sentences, onSelect, disabled }: ExampleListProps) => {
               disabled={disabled}
               onClick={() => onSelect(item)}
             >
-              この例文で録音
+              この例文で練習
             </Button>,
           ]}
         >
