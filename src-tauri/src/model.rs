@@ -1,8 +1,8 @@
 use std::sync::{Mutex, OnceLock};
-use std::path::PathBuf;
 use std::io::{Read, Write};
 use std::fs::{self, File};
 use tauri::{AppHandle,Emitter, Manager};
+use sha2::{Sha256, Digest};
 
 static MODEL_STATUS: OnceLock<Mutex<String>> = OnceLock::new();
 
@@ -73,4 +73,15 @@ pub fn ensure_model(app: &AppHandle) -> anyhow::Result<std::path::PathBuf> {
 
     println!("ensure_model: return");
     Ok(model_path)
+}
+
+/// SHA256ハッシュを生成（text + lang の組み合わせから）
+/// アップロード音声の保存時などに使用予定
+#[allow(dead_code)]
+pub fn hash_sentence(text: &str, lang: &str) -> String {
+    let combined = format!("{}:{}", text, lang);
+    let mut hasher = Sha256::new();
+    hasher.update(combined.as_bytes());
+    let result = hasher.finalize();
+    format!("{:x}", result)
 }

@@ -33,6 +33,7 @@ dirs = "5"
 chrono = "0.4"
 whisper-rs = { version = "0.15.1", default-features = false }
 base64 = "0.21"
+sha2 = "0.10"
 
 [features]
 default = []

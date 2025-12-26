@@ -1,4 +1,4 @@
-use base64;
+use base64::Engine;
 use reqwest;
 
 #[tauri::command]
@@ -10,5 +10,5 @@ pub async fn fetch_audio_base64(url: String) -> Result<String, String> {
         .await
         .map_err(|e| e.to_string())?;
 
-    Ok(base64::encode(bytes))
+    Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
 }

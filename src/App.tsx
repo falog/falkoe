@@ -2,14 +2,15 @@ import { useState } from "react";
 import WordInputScreen from "./screens/WordInputScreen";
 import RecorderScreen from "./screens/RecorderScreen";
 import { Sentence } from "./components/ExampleList";
+import type { SpeechSource } from "./types/speech";
 
 const App = () => {
   const [screen, setScreen] = useState<"word" | "record">("word");
-  const [lang, setLang] = useState<string>("eng");
+  const [lang, setLang] = useState("eng");
   const [word, setWord] = useState("");
   const [sentences, setSentences] = useState<Sentence[]>([]);
-  const [selected, setSelected] = useState<Sentence | null>(null);
-  const [wordcount, setWordcount] = useState("10-");
+  const [wordcount, setWordcount] = useState("5-");
+  const [source, setSource] = useState<SpeechSource | null>(null);
 
   return (
     <>
@@ -24,23 +25,21 @@ const App = () => {
           onSearchResult={setSentences}
           onWordcount={setWordcount}
           onSelect={(s) => {
-            setSelected(s);
+            setSource({
+              kind: "tatoeba",
+              sentence: s,
+            });
             setScreen("record");
           }}
-          onUseSpeech={(file) => {
-            setSelected({
-              id: -1,
-              text: "（音声認識結果がここに入る予定）",
-              audioUrl: URL.createObjectURL(file.file),
-              lang: file.lang,
-            });
+          onUseSpeech={(speechSource) => {
+            setSource(speechSource);
             setScreen("record");
           }}
         />
       )}
 
-      {screen === "record" && selected && (
-        <RecorderScreen sentence={selected} onBack={() => setScreen("word")} />
+      {screen === "record" && source && (
+        <RecorderScreen source={source} onBack={() => setScreen("word")} />
       )}
     </>
   );
