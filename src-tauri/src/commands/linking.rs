@@ -217,6 +217,26 @@ fn is_vowel_phoneme(p: &str) -> bool {
     p.chars().last().is_some_and(|c| c.is_ascii_digit())
 }
 
+fn phoneme_base(p: &str) -> &str {
+    p.strip_suffix(['0', '1', '2']).unwrap_or(p)
+}
+
+fn starts_with_vowel(phonemes: &[String]) -> bool {
+    phonemes
+        .first()
+        .is_some_and(|p| is_vowel_phoneme(p.as_str()))
+}
+
+fn ends_with_vowel(phonemes: &[String]) -> bool {
+    phonemes
+        .last()
+        .is_some_and(|p| is_vowel_phoneme(p.as_str()))
+}
+
+fn ends_with_consonant(phonemes: &[String]) -> bool {
+    phonemes.last().is_some_and(|p| !is_vowel_phoneme(p.as_str()))
+}
+
 fn stress_mark(stress: u8) -> &'static str {
     match stress {
         1 => "▲",
@@ -225,12 +245,112 @@ fn stress_mark(stress: u8) -> &'static str {
     }
 }
 
+fn maybe_insert_glide(prev: &mut Vec<String>, next: &[String]) -> bool {
+    // V + V を「繋いで聞こえる」感じに寄せる（go on / I am など）
+    if !ends_with_vowel(prev) || !starts_with_vowel(next) {
+        return false;
+    }
+
+    let Some(last) = prev.last() else {
+        return false;
+    };
+    let base = phoneme_base(last);
+
+    // 簡易ルール: 前の母音に応じて Y/W を挿入
+    let glide = match base {
+        // 前が /i/ 系 → y
+        "IY" | "IH" | "EY" | "AY" => Some("Y"),
+        // 前が /u,o/ 系 → w
+        "UW" | "UH" | "OW" | "AW" => Some("W"),
+        _ => None,
+    };
+
+    if let Some(g) = glide {
+        prev.push(g.to_string());
+        return true;
+    }
+
+    false
+}
+
+fn apply_connected_speech_rules(
+    prev_word: &str,
+    prev_phonemes: &mut Vec<String>,
+    next_word: &str,
+    next_phonemes: &mut Vec<String>,
+) -> bool {
+    // ルール適用後、「ひとかたまりチャンクにまとめるべきか」を返す。
+    // ここでは発音が繋がりやすいケース（C-V / V-V / よくある同化）を対象にする。
+
+    let mut should_join = false;
+
+    // (1) H-dropping for common pronouns: meet him -> meet'im
+    // HH + vowel の場合に HH を落として母音開始にする
+    if matches!(next_word, "him" | "her" | "his" | "he") {
+        if next_phonemes.first().is_some_and(|p| p == "HH")
+            && next_phonemes
+                .get(1)
+                .is_some_and(|p| is_vowel_phoneme(p.as_str()))
+        {
+            next_phonemes.remove(0);
+        }
+    }
+
+    // (2) T/D + Y -> CH/JH (did you / meet you)
+    if let (Some(last), Some(first)) = (prev_phonemes.last_mut(), next_phonemes.first()) {
+        if first == "Y" {
+            match last.as_str() {
+                "T" => {
+                    *last = "CH".to_string();
+                    next_phonemes.remove(0);
+                    should_join = true;
+                }
+                "D" => {
+                    *last = "JH".to_string();
+                    next_phonemes.remove(0);
+                    should_join = true;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // (3) V + V glide insertion
+    if maybe_insert_glide(prev_phonemes, next_phonemes) {
+        should_join = true;
+    }
+
+    // (4) General C-V (and V-V) linking: have an / an appointment / him at
+    // ルール適用後の状態で判断する
+    if ends_with_consonant(prev_phonemes) && starts_with_vowel(next_phonemes) {
+        return true;
+    }
+    if ends_with_vowel(prev_phonemes) && starts_with_vowel(next_phonemes) {
+        return true;
+    }
+
+    // (5) Even if not C-V, we may want to join when we applied a special rule.
+    if should_join {
+        return true;
+    }
+
+    // Optional: if previous is a known weak form + next begins with vowel,
+    // it tends to be perceived as connected. Keep it conservative.
+    if matches!(prev_word, "to" | "a" | "the" | "of" | "for" | "and")
+        && starts_with_vowel(next_phonemes)
+    {
+        return true;
+    }
+
+    false
+}
+
 fn is_weak_vowel(p: &str) -> bool {
     matches!(p, "AH0" | "ER0" | "IH0" | "UH0" | "EH0" | "AO0")
 }
 
 fn phoneme_to_display(p: &str, stress: u8, mode: DisplayMode) -> String {
-    let base = p.strip_suffix(['0', '1', '2']).unwrap_or(p);
+    let base = phoneme_base(p);
 
     // 弱母音は曖昧音として残す
     if is_weak_vowel(p) && stress == 0 {
@@ -426,7 +546,8 @@ fn kana_cv(cons: &str, vowel: &str, long: bool) -> String {
     let (v0, v_rest) = split_vowel_kana(vowel);
 
     let base = match cons {
-        "" => vowel.to_string(),
+        // 母音のみ（二重母音は v0 + v_rest で表現）
+        "" => v0.to_string(),
 
         "K" => match v0 {
             "ア" => "カ",
@@ -621,8 +742,8 @@ fn kana_cv(cons: &str, vowel: &str, long: bool) -> String {
         }
         .to_string(),
 
-        // fallback: keep old single-phoneme mapping
-        _ => cons.to_string() + vowel,
+        // fallback: keep old single-phoneme mapping (use v0 + v_rest)
+        _ => cons.to_string() + v0,
     };
 
     if long && (base == "ア" || base == "イ" || base == "ウ" || base == "エ" || base == "オ") {
@@ -726,6 +847,7 @@ fn fixed_linking(w: &str, next: &str) -> Option<&'static [&'static str]> {
 fn weak_form(word: &str) -> Option<&'static [&'static str]> {
     match word {
         "to" => Some(&["T", "AH0"]),
+        "an" => Some(&["AH0", "N"]),
         "a" => Some(&["AH0"]),
         "the" => Some(&["DH", "AH0"]),
         "of" => Some(&["AH0", "V"]),
@@ -776,48 +898,55 @@ pub fn render_linking(
     while i < words.len() {
         let w = &words[i];
 
-        // 固定リンキング
+        let mut group_words: Vec<String> = Vec::new();
+        let mut group_phonemes: Vec<String>;
+
+        // 固定リンキング（have to / used to など）
         if linking_mode && i + 1 < words.len() {
             let next = &words[i + 1];
             if let Some(fixed) = fixed_linking(w, next) {
-                let phonemes: Vec<String> = fixed.iter().map(|s| (*s).to_string()).collect();
-                let sylls = syllabify(&phonemes);
-
-                let mut parts: Vec<String> = Vec::new();
-                for syl in sylls {
-                    if !syl.phonemes.iter().any(|p| is_vowel_phoneme(p)) {
-                        continue;
-                    }
-
-                    let disp = match mode {
-                        DisplayMode::Kana => syllable_to_kana(&syl.phonemes),
-                        _ => syl
-                            .phonemes
-                            .iter()
-                            .map(|p| phoneme_to_display(p, syl.stress, mode))
-                            .collect::<Vec<_>>()
-                            .join(""),
-                    };
-                    if !disp.is_empty() {
-                        parts.push(format!("{}{}", stress_mark(syl.stress), disp));
-                    }
-                }
-
-                let rendered = format!("{} {}({})", w, next, parts.join(""));
-                chunks.push(RenderChunk {
-                    words: vec![w.clone(), next.clone()],
-                    phonemes,
-                    rendered,
-                });
+                group_words.push(w.clone());
+                group_words.push(next.clone());
+                group_phonemes = fixed.iter().map(|s| (*s).to_string()).collect();
                 i += 2;
-                continue;
+            } else {
+                group_words.push(w.clone());
+                group_phonemes = get_phonemes(w, dict.as_deref());
+                i += 1;
             }
+        } else {
+            group_words.push(w.clone());
+            group_phonemes = get_phonemes(w, dict.as_deref());
+            i += 1;
         }
 
-        // 通常単語
-        let phonemes = get_phonemes(w, dict.as_deref());
-        let sylls = syllabify(&phonemes);
+        // 一般リンキング: ネイティブっぽく繋がりやすい境界は同一チャンクへ
+        while linking_mode && i < words.len() {
+            let next_word = words[i].clone();
+            let mut next_phonemes = get_phonemes(&next_word, dict.as_deref());
 
+            let prev_word = group_words
+                .last()
+                .map(|s| s.as_str())
+                .unwrap_or("");
+
+            let join = apply_connected_speech_rules(
+                prev_word,
+                &mut group_phonemes,
+                &next_word,
+                &mut next_phonemes,
+            );
+
+            if !join {
+                break;
+            }
+
+            group_words.push(next_word);
+            group_phonemes.extend(next_phonemes);
+            i += 1;
+        }
+
+        let sylls = syllabify(&group_phonemes);
         let mut parts: Vec<String> = Vec::new();
         for syl in sylls {
             if !syl.phonemes.iter().any(|p| is_vowel_phoneme(p)) {
@@ -838,13 +967,12 @@ pub fn render_linking(
             }
         }
 
-        let rendered = format!("{}({})", w, parts.join(""));
+        let rendered = format!("{}({})", group_words.join(" "), parts.join(""));
         chunks.push(RenderChunk {
-            words: vec![w.clone()],
-            phonemes,
+            words: group_words,
+            phonemes: group_phonemes,
             rendered,
         });
-        i += 1;
     }
 
     let joined = chunks
