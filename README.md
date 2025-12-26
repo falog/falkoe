@@ -237,16 +237,43 @@ chmod +x falkoe-*.AppImage
 
 ### 🍎 macOS
 
-Download the `.dmg` file and open it.
+#### Install
+
+基本は `.dmg` を使います。
+
+1. Releases から `.dmg` をダウンロードして開く
+2. 表示された `Falkoe.app` を `Applications`（アプリケーション）へドラッグ
+3. `Applications` から起動
+
+※ もし `.dmg` が無い場合は、`Falkoe.app`（または `.app` を含むアーカイブ）をダウンロードして `Applications` に移動してください。
+
+#### ⚠️ Gatekeeper について / Notice
+
+本アプリは現在、コード署名されていません。
+
+初回起動時に警告が出る場合は、`Falkoe.app` を **右クリック → 開く** で起動できます。
+
+---
+
+Download the `.dmg` file and open it:
+
+1. Download and open the `.dmg` from Releases
+2. Drag `Falkoe.app` into `Applications`
+3. Launch it from `Applications`
+
+If the `.dmg` is not available, download `Falkoe.app` (or an archive containing it) and move it into `Applications`.
+
+This application is currently unsigned.
+If Gatekeeper blocks the first launch, you can open it via **Right-click → Open**.
 
 `.dmg` ファイルをダウンロードして開いてください。
 
-1. Drag **Falkoe.app** to the **Applications** folder
+1. Drag **Falkoe.dmg** to the **Applications** folder
 2. Open Falkoe from Applications
 
 ---
 
-1. **Falkoe.app** を **アプリケーション** フォルダにドラッグ
+1. **Falkoe.dmg** を **アプリケーション** フォルダにドラッグ
 2. アプリケーションからFalkoeを起動
 
 If macOS blocks the app on first launch:
