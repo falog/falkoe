@@ -144,12 +144,28 @@ async function loadTranscript(wavPath: string): Promise<Transcript | null> {
 }
 
 async function ankiRequest(payload: any) {
-  const res = await fetch("http://127.0.0.1:8765", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  return res.json();
+  const urls = ["http://127.0.0.1:8765", "http://localhost:8765"];
+
+  let lastError: unknown;
+
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const json = await res.json();
+      return json;
+    } catch (e) {
+      lastError = e;
+    }
+  }
+
+  throw new Error(
+    `AnkiConnectに接続できませんでした（既定: 127.0.0.1:8765）。Ankiを起動し、AnkiConnectアドオンが有効か確認してください。詳細: ${String(lastError)}`
+  );
 }
 
 const RecorderScreen = ({ source, onBack }: RecorderScreenProps) => {
@@ -520,8 +536,15 @@ const RecorderScreen = ({ source, onBack }: RecorderScreenProps) => {
       console.log("added note id:", res);
       message.success("Ankiに追加しました");
     } catch (e) {
-      console.error("[RecorderScreen] addToAnki failed", e);
-      message.error("Ankiへの追加に失敗しました: " + String(e));
+      console.error("[RecorderScreen] addToAnki failed" + e, e);
+      const details = e instanceof Error ? e.message : String(e);
+      message.error({
+        content: (
+          <span style={{ whiteSpace: "pre-line" }}>
+            {`Ankiへの追加に失敗しました：\n${details}`}
+          </span>
+        ),
+      });
     }
   };
 
@@ -550,6 +573,12 @@ const RecorderScreen = ({ source, onBack }: RecorderScreenProps) => {
         ...prev,
         [wavPath]: null,
       }));
+
+      // 自動文字起こし中は「音声認識」ボタンを出さないため recognizing 扱いにする
+      setRecognizing((prev) => ({
+        ...prev,
+        [wavPath]: true,
+      }));
     });
     return () => {
       unlisten.then((f) => f());
@@ -565,6 +594,14 @@ const RecorderScreen = ({ source, onBack }: RecorderScreenProps) => {
       const transcript = await loadTranscript(wavPath);
       setWaitingModel(false);
       setIsTranscribing(false);
+
+      setRecognizing((prev) => {
+        if (!prev[wavPath]) return prev;
+        const next = { ...prev };
+        delete next[wavPath];
+        return next;
+      });
+
       setTranscripts((prev) => ({
         ...prev,
         [wavPath]: transcript,
@@ -731,6 +768,8 @@ const RecorderScreen = ({ source, onBack }: RecorderScreenProps) => {
           onClick={async () => {
             console.log("model recognize clicked");
 
+            if (waitingModel) return;
+
             if (source.kind === "uploaded") {
               if (!uploadedAudioPath) return;
               const cached = await loadUploadedTranscript(uploadedAudioPath);
@@ -771,7 +810,10 @@ const RecorderScreen = ({ source, onBack }: RecorderScreenProps) => {
               });
             }
           }}
-          disabled={source.kind === "uploaded" && !uploadedAudioPath}
+          loading={waitingModel}
+          disabled={
+            (source.kind === "uploaded" && !uploadedAudioPath) || waitingModel
+          }
         >
           {source.kind === "uploaded"
             ? "アップロード音声を音声認識する"
@@ -827,15 +869,31 @@ const RecorderScreen = ({ source, onBack }: RecorderScreenProps) => {
               return;
             }
 
+            // この録音はこれから文字起こしするので、ボタンが出ないように先に状態を立てる
+            setRecognizing((prev) => ({
+              ...prev,
+              [movedPath]: true,
+            }));
+            setTranscripts((prev) => ({
+              ...prev,
+              [movedPath]: null,
+            }));
+            setIsTranscribing(true);
+
             try {
               await invoke("run_whisper", {
                 path: movedPath,
                 sentenceHash: sentenceHash,
                 lang: sentence.lang,
               });
-
-              setIsTranscribing(true);
             } catch {
+              setRecognizing((prev) => {
+                if (!prev[movedPath]) return prev;
+                const next = { ...prev };
+                delete next[movedPath];
+                return next;
+              });
+              setIsTranscribing(false);
               message.info(
                 "録音は保存されました（文字起こしは後で実行できます）"
               );

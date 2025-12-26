@@ -41,7 +41,7 @@ export default function RecordingItem({
           <strong>Take {total - index}</strong> / {rec.dateLabel}
         </div>
         <Flex gap={8}>
-          {transcript === null && recognize && (
+          {transcript === null && recognize && !recognizing && (
             <Button loading={!!recognizing} onClick={() => recognize(rec)}>
               音声認識
             </Button>
