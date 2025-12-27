@@ -2,7 +2,13 @@ import { spawn } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 
-const args = process.argv.slice(2);
+const rawArgs = process.argv.slice(2);
+
+// pnpm / shells can sometimes preserve quotes in argv on Windows.
+// Strip a single pair of wrapping quotes so downstream CLIs don't choke.
+const args = rawArgs.map((arg) =>
+  arg.replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1")
+);
 
 // In dev, Tauri may resolve bundled resources from src-tauri/target/debug/resources.
 // Sync resources on each dev start so replaced audio/index.json are picked up.
@@ -34,10 +40,13 @@ if (args[0] === "dev") {
   }
 }
 
-const bin = process.platform === "win32" ? "tauri.cmd" : "tauri";
+// On Windows, spawning *.cmd directly can fail with EINVAL depending on how the
+// environment is set up. Using `shell: true` routes through cmd.exe.
+const bin = process.platform === "win32" ? "tauri" : "tauri";
 const child = spawn(bin, args, {
   stdio: "inherit",
   env: process.env,
+  shell: process.platform === "win32",
 });
 
 child.on("exit", (code) => process.exit(code ?? 0));
