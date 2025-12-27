@@ -1,6 +1,6 @@
 [package]
 name = "Falkoe"
-version = "0.2.3"
+version = "0.2.4"
 description = "Falkoe Tauri Application"
 authors = ["fal"]
 edition = "2021"
