@@ -48,6 +48,7 @@
     "ɫ": {
       "ipa": "ɫ",
       "audio": "ipa/audio/consonants/l_dark.wav",
+      "explainAudio": "ipa/audio/consonants/l_dark_explain.wav",
       "examples": ["feel", "ball"]
     },
     "m": {
@@ -73,6 +74,7 @@
     "r": {
       "ipa": "ɹ",
       "audio": "ipa/audio/consonants/r.wav",
+      "explainAudio": "ipa/audio/consonants/r_explain.wav",
       "examples": ["red", "very"]
     },
     "s": {
@@ -126,11 +128,13 @@
     "iː": {
       "ipa": "iː",
       "audio": "ipa/audio/vowels/ee.wav",
+      "explainAudio": "ipa/audio/vowels/ee_explain.wav",
       "examples": ["fleece", "see"]
     },
     "ɪ": {
       "ipa": "ɪ",
       "audio": "ipa/audio/vowels/i_short.wav",
+      "explainAudio": "ipa/audio/vowels/i_short_explain.wav",
       "examples": ["kit", "sit"]
     },
     "eɪ": {
@@ -141,21 +145,25 @@
     "ɛ": {
       "ipa": "ɛ",
       "audio": "ipa/audio/vowels/epsilon.wav",
+      "explainAudio": "ipa/audio/vowels/epsilon_explain.wav",
       "examples": ["dress", "bed"]
     },
     "æ": {
       "ipa": "æ",
       "audio": "ipa/audio/vowels/ash.wav",
+      "explainAudio": "ipa/audio/vowels/ash_explain.wav",
       "examples": ["trap", "cat"]
     },
     "ɑː": {
       "ipa": "ɑː",
       "audio": "ipa/audio/vowels/ah.wav",
+      "explainAudio": "ipa/audio/vowels/ah_explain.wav",
       "examples": ["palm", "father"]
     },
     "ʌ": {
       "ipa": "ʌ",
       "audio": "ipa/audio/vowels/strut.wav",
+      "explainAudio": "ipa/audio/vowels/strut_explain.wav",
       "examples": ["strut", "luck"]
     },
     "ə": {
@@ -167,36 +175,43 @@
     "ɔː": {
       "ipa": "ɔː",
       "audio": "ipa/audio/vowels/or.wav",
+      "explainAudio": "ipa/audio/vowels/or_explain.wav",
       "examples": ["thought", "law"]
     },
     "oʊ": {
       "ipa": "oʊ",
       "audio": "ipa/audio/vowels/ow.wav",
+      "explainAudio": "ipa/audio/vowels/ow_explain.wav",
       "examples": ["go", "home"]
     },
     "ʊ": {
       "ipa": "ʊ",
       "audio": "ipa/audio/vowels/foot.wav",
+      "explainAudio": "ipa/audio/vowels/foot_explain.wav",
       "examples": ["foot", "good"]
     },
     "uː": {
       "ipa": "uː",
       "audio": "ipa/audio/vowels/oo.wav",
+      "explainAudio": "ipa/audio/vowels/oo_explain.wav",
       "examples": ["goose", "too"]
     },
     "aɪ": {
       "ipa": "aɪ",
       "audio": "ipa/audio/vowels/ai.wav",
+      "explainAudio": "ipa/audio/vowels/ai_explain.wav",
       "examples": ["price", "my"]
     },
     "aʊ": {
       "ipa": "aʊ",
       "audio": "ipa/audio/vowels/au.wav",
+      "explainAudio": "ipa/audio/vowels/au_explain.wav",
       "examples": ["mouth", "how"]
     },
     "ɔɪ": {
       "ipa": "ɔɪ",
       "audio": "ipa/audio/vowels/oi.wav",
+      "explainAudio": "ipa/audio/vowels/oi_explain.wav",
       "examples": ["choice", "boy"]
     }
   },
