@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { cpSync, existsSync, mkdirSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 
 const args = process.argv.slice(2);
@@ -18,6 +18,9 @@ if (args[0] === "dev") {
   );
 
   if (existsSync(srcResourcesDir)) {
+    // Mirror sync: if a file is deleted from src-tauri/resources, we don't want
+    // it to linger in src-tauri/target/debug/resources.
+    rmSync(copiedResourcesDir, { recursive: true, force: true });
     mkdirSync(copiedResourcesDir, { recursive: true });
     cpSync(srcResourcesDir, copiedResourcesDir, {
       recursive: true,
