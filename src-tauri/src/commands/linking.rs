@@ -284,6 +284,16 @@ fn apply_connected_speech_rules(
 
     let mut should_join = false;
 
+    // (0) the -> /ði/ before vowels (the apples)
+    if prev_word == "the" && starts_with_vowel(next_phonemes) {
+        let n = prev_phonemes.len();
+        if n >= 2 && prev_phonemes[n - 2] == "DH" && phoneme_base(&prev_phonemes[n - 1]) == "AH" {
+            // Keep it unstressed by default
+            prev_phonemes[n - 1] = "IY0".to_string();
+            should_join = true;
+        }
+    }
+
     // (1) H-dropping for common pronouns: meet him -> meet'im
     // HH + vowel の場合に HH を落として母音開始にする
     if matches!(next_word, "him" | "her" | "his" | "he") {
@@ -346,7 +356,73 @@ fn apply_connected_speech_rules(
 }
 
 fn is_weak_vowel(p: &str) -> bool {
-    matches!(p, "AH0" | "ER0" | "IH0" | "UH0" | "EH0" | "AO0")
+    // CMUdictの reduced vowel は色々あるが、IPA表示で過剰にəに寄せすぎないため
+    // ここでは代表的な schwa / r-colored schwa に限定する。
+    matches!(p, "AH0" | "ER0")
+}
+
+fn arpabet_to_ipa(base: &str, stress: u8) -> Option<&'static str> {
+    // General American-ish, learner-friendly mapping.
+    // base は末尾の stress digit を落としたもの。
+    Some(match base {
+        // vowels
+        "IY" => "i",
+        "IH" => "ɪ",
+        "EY" => "eɪ",
+        "EH" => "ɛ",
+        "AE" => "æ",
+        "AA" => "ɑ",
+        "AH" => {
+            if stress == 0 {
+                "ə"
+            } else {
+                "ʌ"
+            }
+        }
+        "AO" => "ɔ",
+        "OW" => "oʊ",
+        "UH" => "ʊ",
+        "UW" => "u",
+        "AY" => "aɪ",
+        "AW" => "aʊ",
+        "OY" => "ɔɪ",
+        "ER" => {
+            if stress == 0 {
+                "ɚ"
+            } else {
+                "ɝ"
+            }
+        }
+
+        // consonants
+        "P" => "p",
+        "B" => "b",
+        "T" => "t",
+        "D" => "d",
+        "K" => "k",
+        "G" => "ɡ",
+        "F" => "f",
+        "V" => "v",
+        "TH" => "θ",
+        "DH" => "ð",
+        "S" => "s",
+        "Z" => "z",
+        "SH" => "ʃ",
+        "ZH" => "ʒ",
+        "HH" | "H" => "h",
+        "CH" => "tʃ",
+        "JH" => "dʒ",
+        "M" => "m",
+        "N" => "n",
+        "NG" => "ŋ",
+        "L" => "l",
+        "R" => "ɹ",
+        "W" => "w",
+        "Y" => "j",
+
+        // common affix / symbols
+        _ => return None,
+    })
 }
 
 fn phoneme_to_display(p: &str, stress: u8, mode: DisplayMode) -> String {
@@ -362,7 +438,9 @@ fn phoneme_to_display(p: &str, stress: u8, mode: DisplayMode) -> String {
     }
 
     match mode {
-        DisplayMode::Phoneme => base.to_ascii_lowercase(),
+        DisplayMode::Phoneme => arpabet_to_ipa(base, stress)
+            .unwrap_or_else(|| base)
+            .to_string(),
         DisplayMode::Kana => {
             // 最小実装: Python/TS版のカタカナ表と同じ
             let v = match base {
