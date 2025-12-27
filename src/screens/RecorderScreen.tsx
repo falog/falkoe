@@ -1,4 +1,13 @@
-import { Button, message, Modal, Space, Spin, Typography, Radio } from "antd";
+import {
+  Button,
+  message,
+  Modal,
+  Space,
+  Spin,
+  Typography,
+  Radio,
+  theme,
+} from "antd";
 import { useEffect, useState, useRef, type ReactNode } from "react";
 import { startRecording, stopRecording } from "tauri-plugin-mic-recorder-api";
 import { readFile, readTextFile, BaseDirectory } from "@tauri-apps/plugin-fs";
@@ -12,6 +21,12 @@ import { sha256 } from "../utils/hash";
 import { renderLinkingRust } from "../utils/linkingInvoke";
 import type { RenderLinkingResult } from "../types/linking";
 import type { DisplayMode } from "../types/linking";
+import { loadIpaIndex, type IpaIndex } from "../utils/ipaResources";
+import { tokenizeIpa } from "../utils/ipaTokenize";
+import {
+  playBundledAudio,
+  unlockAudioFromUserGesture,
+} from "../utils/ipaPlayer";
 
 type RecorderScreenProps = {
   source: SpeechSource;
@@ -172,6 +187,8 @@ async function ankiRequest(payload: any) {
 }
 
 const RecorderScreen = ({ source, onBack }: RecorderScreenProps) => {
+  const { token: antdToken } = theme.useToken();
+
   const sentence: Sentence = (() => {
     switch (source.kind) {
       case "tatoeba":
@@ -227,15 +244,205 @@ const RecorderScreen = ({ source, onBack }: RecorderScreenProps) => {
     useState<RenderLinkingResult | null>(null);
   const [linkingDisplayMode, setLinkingDisplayMode] =
     useState<DisplayMode>("phoneme");
+  const [ipaIndex, setIpaIndex] = useState<IpaIndex | null>(null);
+  const audioUnlockTriedRef = useRef(false);
+  const hoverTimerRef = useRef<number | null>(null);
+  const lastHoverRef = useRef<{ tok: string; ts: number } | null>(null);
+  const [ipaIndexError, setIpaIndexError] = useState<string | null>(null);
+  const [ipaHoverDebug, setIpaHoverDebug] = useState<{
+    ts: number;
+    tok: string;
+    event: "enter" | "click";
+    result: "started" | "ok" | "failed";
+    message?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    // IPA音声のホバー再生用（失敗してもUIは落とさない）
+    loadIpaIndex()
+      .then((idx) => {
+        setIpaIndex(idx);
+        setIpaIndexError(null);
+      })
+      .catch((e) => {
+        setIpaIndex(null);
+        const msg = String((e as any)?.message ?? e);
+        setIpaIndexError(msg);
+        message.error(`IPA index 読み込み失敗: ${msg}`);
+      });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (hoverTimerRef.current !== null) {
+        window.clearTimeout(hoverTimerRef.current);
+        hoverTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  async function playIpaTok(
+    tok: string,
+    audioPath: string,
+    event: "enter" | "click"
+  ) {
+    setIpaHoverDebug({ ts: Date.now(), tok, event, result: "started" });
+    try {
+      await playBundledAudio(audioPath);
+      setIpaHoverDebug({ ts: Date.now(), tok, event, result: "ok" });
+    } catch (e) {
+      const msg = String((e as any)?.message ?? e);
+      setIpaHoverDebug({
+        ts: Date.now(),
+        tok,
+        event,
+        result: "failed",
+        message: msg,
+      });
+      // hover(enter) はイベントが多く、エラーも出やすいので UI 通知しない
+      if (event === "click") {
+        if (/user gesture|required/i.test(msg)) {
+          message.info("最初に画面を1回クリックして音声を有効化してください");
+        } else {
+          message.error(`再生に失敗: ${tok} (${msg})`);
+        }
+      }
+      console.warn(`IPA play failed (${event}): ${tok} (${msg})`, e);
+    }
+  }
+
+  function requestPlayIpaTok(
+    tok: string,
+    audioPath: string,
+    event: "enter" | "click"
+  ) {
+    // hover はイベントが多すぎるので軽く間引く
+    if (event === "enter") {
+      const now = Date.now();
+      const last = lastHoverRef.current;
+      if (last && now - last.ts < 120) return;
+      lastHoverRef.current = { tok, ts: now };
+
+      if (hoverTimerRef.current !== null) {
+        window.clearTimeout(hoverTimerRef.current);
+        hoverTimerRef.current = null;
+      }
+
+      // ちょい待ってから再生（カーソルが一瞬かすっただけを抑制）
+      hoverTimerRef.current = window.setTimeout(() => {
+        hoverTimerRef.current = null;
+        void playIpaTok(tok, audioPath, event);
+      }, 60);
+      return;
+    }
+
+    // click は即時
+    if (hoverTimerRef.current !== null) {
+      window.clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    void playIpaTok(tok, audioPath, event);
+  }
+
+  function renderTokenizedIpa(ipa: string, keys: string[]): ReactNode {
+    const tokens = tokenizeIpa(ipa, keys);
+
+    const vowels = new Set(Array.from("iɪeɛæaɑɒɔoʊuʌəɜɞɵøyʉɯɐɶœɨʏɤɘɚɝ"));
+
+    function colorForTok(tok: string): string | undefined {
+      if (tok === "ˈ") return antdToken.colorErrorText;
+      if (tok === "ˌ") return antdToken.colorWarningText;
+      if (tok.trim() === "") return undefined;
+      if (tok.includes("̩")) return antdToken.colorSuccessText;
+      if (Array.from(tok).some((ch) => vowels.has(ch))) {
+        return antdToken.colorSuccessText;
+      }
+      if (/^[.ːˑ‿\-–—'’]+$/.test(tok)) {
+        return antdToken.colorTextSecondary;
+      }
+      return antdToken.colorInfoText;
+    }
+
+    return (
+      <>
+        {tokens.map((tok, j) => {
+          const entry = ipaIndex?.[tok];
+          const color = colorForTok(tok);
+
+          const hoverAudio = entry?.audio;
+          const clickAudio = entry?.explainAudio ?? entry?.audio;
+          const isInteractive = Boolean(hoverAudio || clickAudio);
+
+          if (!entry || !isInteractive) {
+            return (
+              <span key={`ipa-tok-${j}`} style={{ color }}>
+                {tok}
+              </span>
+            );
+          }
+
+          return (
+            <span
+              key={`ipa-tok-${j}`}
+              style={{
+                cursor: "pointer",
+                textDecoration: "underline",
+                color,
+              }}
+              onPointerEnter={() => {
+                if (!hoverAudio) return;
+                requestPlayIpaTok(tok, hoverAudio, "enter");
+              }}
+              onClick={() => {
+                if (!clickAudio) return;
+                requestPlayIpaTok(tok, clickAudio, "click");
+              }}
+            >
+              {tok}
+            </span>
+          );
+        })}
+      </>
+    );
+  }
 
   function renderLegend(): ReactNode {
+    if (linkingDisplayMode === "phoneme") {
+      return (
+        <Typography.Text type="secondary" style={{ display: "block" }}>
+          <Typography.Text style={{ color: antdToken.colorErrorText }}>
+            ˈ 強勢
+          </Typography.Text>
+          {" / "}
+          <Typography.Text style={{ color: antdToken.colorWarningText }}>
+            ˌ 副強勢
+          </Typography.Text>
+          {" / "}
+          <Typography.Text style={{ color: antdToken.colorSuccessText }}>
+            母音
+          </Typography.Text>
+          {" / "}
+          <Typography.Text style={{ color: antdToken.colorInfoText }}>
+            子音
+          </Typography.Text>
+          {" / "}
+          <Typography.Text type="secondary">記号</Typography.Text>
+        </Typography.Text>
+      );
+    }
+
+    // kana: 強勢/副強勢の説明を phoneme と同じ色運用に合わせる
     return (
       <Typography.Text type="secondary" style={{ display: "block" }}>
-        <Typography.Text type="danger">強く読む</Typography.Text>
+        <Typography.Text style={{ color: antdToken.colorErrorText }}>
+          ˈ 強勢
+        </Typography.Text>
         {" / "}
-        <Typography.Text type="warning">少しだけ強く</Typography.Text>
+        <Typography.Text style={{ color: antdToken.colorWarningText }}>
+          ˌ 副強勢
+        </Typography.Text>
         {" / "}
-        <Typography.Text type="secondary">流す</Typography.Text>
+        <Typography.Text type="secondary">弱</Typography.Text>
       </Typography.Text>
     );
   }
@@ -253,36 +460,346 @@ const RecorderScreen = ({ source, onBack }: RecorderScreenProps) => {
 
   function renderStressColored(text: string): ReactNode {
     const marks = new Set(["▲", "△", "▽"]);
-    const stops = new Set(["▲", "△", "▽", "|", ")", "("]);
 
-    const out: ReactNode[] = [];
-    let i = 0;
+    function renderMarkedInline(s: string, fontSize: number): ReactNode {
+      const stops = new Set(["▲", "△", "▽"]);
+      const out: ReactNode[] = [];
+      let i = 0;
 
-    while (i < text.length) {
-      const ch = text[i];
-      if (marks.has(ch)) {
+      while (i < s.length) {
+        const ch = s[i];
+        if (marks.has(ch)) {
+          const start = i;
+          i += 1;
+          const segStart = i;
+          while (i < s.length && !stops.has(s[i])) i += 1;
+          const seg = s.slice(segStart, i);
+
+          const sym = ch === "▲" ? "ˈ" : ch === "△" ? "ˌ" : "";
+          out.push(
+            <Typography.Text
+              key={`m-${start}`}
+              type={stressType(ch)}
+              style={{ fontSize }}
+            >
+              {sym}
+              {seg}
+            </Typography.Text>
+          );
+          continue;
+        }
+
         const start = i;
-        // 記号自体は表示しない
         i += 1;
-        const segStart = i;
-        while (i < text.length && !stops.has(text[i])) i += 1;
-        const seg = text.slice(segStart, i);
+        while (i < s.length && !marks.has(s[i])) i += 1;
+        const seg = s.slice(start, i).replace(/[▲△▽]/g, "");
         out.push(
-          <Typography.Text key={`s-${start}`} type={stressType(ch)}>
+          <span key={`u-${start}`} style={{ fontSize }}>
             {seg}
-          </Typography.Text>
+          </span>
         );
-        continue;
       }
 
-      const start = i;
-      i += 1;
-      while (i < text.length && !marks.has(text[i])) i += 1;
-      out.push(<span key={`t-${start}`}>{text.slice(start, i)}</span>);
+      return out;
     }
 
-    return out;
+    // kana は「英文=通常」「上段=かな（ストレス色分け）」で 2 行表示
+    if (linkingDisplayMode === "kana") {
+      const parts = text.split(/(\|)/g);
+
+      return (
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 12,
+            alignItems: "flex-end",
+          }}
+        >
+          {parts
+            .map((p) => p)
+            .filter((p) => p !== "")
+            .map((part, idx) => {
+              if (part === "|") {
+                return (
+                  <div
+                    key={`sep-k-${idx}`}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                    }}
+                  >
+                    <div style={{ minHeight: 18 }} />
+                    <Typography.Text style={{ fontSize: 18, lineHeight: 1.2 }}>
+                      |
+                    </Typography.Text>
+                  </div>
+                );
+              }
+
+              const raw = part;
+              if (!raw.trim()) return null;
+
+              const bracketMatches = raw.match(/\([^)]*\)|（[^）]*）/g) ?? [];
+              const firstBracket = bracketMatches[0];
+              const kanaText = firstBracket ? firstBracket.slice(1, -1) : "";
+
+              const mainText = raw
+                .replace(/\([^)]*\)/g, "")
+                .replace(/（[^）]*）/g, "")
+                .replace(/[▲△▽]/g, "")
+                .trim();
+
+              const displayKana = kanaText
+                ? renderMarkedInline(kanaText, 14)
+                : null;
+
+              return (
+                <div
+                  key={`k-${idx}`}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "block",
+                      lineHeight: 1.2,
+                      minHeight: 18,
+                      whiteSpace: "pre",
+                    }}
+                  >
+                    {displayKana}
+                  </div>
+                  <Typography.Text style={{ fontSize: 18, lineHeight: 1.2 }}>
+                    {mainText}
+                  </Typography.Text>
+                </div>
+              );
+            })}
+        </div>
+      );
+    }
+
+    // ipaIndex が無い場合は色付け/ホバー無しでそのまま返す（UIを壊さない）
+    if (linkingDisplayMode !== "phoneme" || !ipaIndex) {
+      return <span style={{ fontSize: 18 }}>{text.replace(/[▲△▽]/g, "")}</span>;
+    }
+
+    const keys = Object.keys(ipaIndex);
+    const parts = text.split(/(\|)/g);
+
+    return (
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 12,
+          alignItems: "flex-end",
+        }}
+      >
+        {parts
+          .map((p) => p)
+          .filter((p) => p !== "")
+          .map((part, idx) => {
+            if (part === "|") {
+              return (
+                <div
+                  key={`sep-${idx}`}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                  }}
+                >
+                  <div style={{ minHeight: 18 }} />
+                  <Typography.Text style={{ fontSize: 18, lineHeight: 1.2 }}>
+                    |
+                  </Typography.Text>
+                </div>
+              );
+            }
+
+            // 1 単語（パイプ区切りの塊）
+            const rawWithMarks = part;
+            if (!rawWithMarks.trim()) return null;
+
+            // ( ... ) / （ ... ） を全部除去して main を作る
+            const bracketMatches =
+              rawWithMarks.match(/\([^)]*\)|（[^）]*）/g) ?? [];
+            const firstBracket = bracketMatches[0];
+            const ipaTextRaw = firstBracket ? firstBracket.slice(1, -1) : "";
+
+            // joined の括弧内には syllable stress を ▲/△/▽ で含むことがある。
+            // これを IPA 記号の ˈ/ˌ に置換して、(特に副強勢) を見える化する。
+            const ipaWithStress = ipaTextRaw
+              .replace(/▲/g, "ˈ")
+              .replace(/△/g, "ˌ")
+              .replace(/▽/g, "")
+              .trim();
+
+            const mainText = rawWithMarks
+              .replace(/\([^)]*\)/g, "")
+              .replace(/（[^）]*）/g, "")
+              .replace(/[▲△▽]/g, "")
+              .trim();
+
+            const displayIpa = ipaWithStress
+              ? renderTokenizedIpa(ipaWithStress, keys)
+              : null;
+
+            return (
+              <div
+                key={`w-${idx}`}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                }}
+              >
+                <div
+                  style={{
+                    display: "block",
+                    fontSize: 18,
+                    lineHeight: 1.2,
+                    minHeight: 18,
+                    whiteSpace: "pre",
+                  }}
+                >
+                  {displayIpa}
+                </div>
+                <Typography.Text style={{ fontSize: 18, lineHeight: 1.2 }}>
+                  {mainText}
+                </Typography.Text>
+              </div>
+            );
+          })}
+      </div>
+    );
   }
+
+  function extractStressWords(res: RenderLinkingResult): {
+    primary: string[];
+    secondary: string[];
+  } {
+    const stopwords = new Set([
+      "a",
+      "an",
+      "the",
+      "to",
+      "of",
+      "and",
+      "or",
+      "but",
+      "for",
+      "nor",
+      "so",
+      "yet",
+      "in",
+      "on",
+      "at",
+      "by",
+      "from",
+      "with",
+      "as",
+      "about",
+      "into",
+      "over",
+      "after",
+      "before",
+      "under",
+      "between",
+      "through",
+      "during",
+      "without",
+      "within",
+      "do",
+      "did",
+      "does",
+      "done",
+      "is",
+      "am",
+      "are",
+      "was",
+      "were",
+      "be",
+      "been",
+      "being",
+      "have",
+      "has",
+      "had",
+      "will",
+      "would",
+      "can",
+      "could",
+      "shall",
+      "should",
+      "may",
+      "might",
+      "must",
+      "i",
+      "you",
+      "we",
+      "they",
+      "he",
+      "she",
+      "it",
+      "me",
+      "him",
+      "her",
+      "us",
+      "them",
+      "my",
+      "your",
+      "his",
+      "their",
+      "our",
+      "this",
+      "that",
+      "these",
+      "those",
+    ]);
+
+    const normalize = (w: string) =>
+      w.toLowerCase().replace(/^[^a-z']+|[^a-z']+$/gi, "");
+
+    const pickRepresentativeWord = (words: string[]): string => {
+      const cleaned = words.map((w) => w.trim()).filter(Boolean);
+      if (cleaned.length === 0) return "";
+      // 末尾から「内容語っぽい」ものを採る（did you understand -> understand）
+      for (let i = cleaned.length - 1; i >= 0; i--) {
+        const norm = normalize(cleaned[i]);
+        if (!norm) continue;
+        if (!stopwords.has(norm)) return cleaned[i];
+      }
+      return cleaned[cleaned.length - 1];
+    };
+
+    const primary = new Set<string>();
+    const secondary = new Set<string>();
+
+    for (const c of res.chunks) {
+      const rendered = c.rendered ?? "";
+      const hasPrimary = rendered.includes("▲") || rendered.includes("ˈ");
+      const hasSecondary = rendered.includes("△") || rendered.includes("ˌ");
+      if (!hasPrimary && !hasSecondary) continue;
+
+      const rep = pickRepresentativeWord(c.words ?? []);
+      if (!rep) continue;
+
+      if (hasPrimary) primary.add(rep);
+      if (hasSecondary) secondary.add(rep);
+    }
+
+    return {
+      primary: Array.from(primary),
+      secondary: Array.from(secondary),
+    };
+  }
+
   const autoStartedRef = useRef(false);
   const [headerAudioUrl, setHeaderAudioUrl] = useState<string | null>(
     source.kind === "uploaded" && source.file
@@ -291,7 +808,6 @@ const RecorderScreen = ({ source, onBack }: RecorderScreenProps) => {
         ? sentence.audioUrl
         : null
   );
-
   // sentence.text が変わったらタイトル用テキストも更新（手動入力の反映）
   useEffect(() => {
     setDisplayText(sentence.text);
@@ -828,225 +1344,271 @@ const RecorderScreen = ({ source, onBack }: RecorderScreenProps) => {
   }
 
   return (
-    <Space orientation="vertical" style={{ width: "100%" }}>
-      <Button onClick={onBack}>← 戻る</Button>
-
-      {isTranscribing && (
-        <Space>
-          <Spin size="small" />
-          <Typography.Text type="secondary">文字起こし中…</Typography.Text>
-        </Space>
-      )}
-
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-        }}
-      >
-        <Button
-          type="text"
-          icon={<PlayCircleOutlined />}
-          onClick={() => new Audio(headerAudioUrl ?? sentence.audioUrl).play()}
-          style={{ opacity: 0.7 }}
-          onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
-          onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.7")}
-        />
-        <Typography.Title level={4} style={{ margin: 0, flex: 1 }}>
-          {displayText || sentence.text}
-        </Typography.Title>
-        <Button
-          onClick={async () => {
-            console.log("model recognize clicked");
-
-            if (waitingModel) return;
-
-            if (source.kind === "uploaded") {
-              if (!uploadedAudioPath) return;
-              const cached = await loadUploadedTranscript(uploadedAudioPath);
-              if (cached) {
-                const overwrite = await confirmOverwriteTranscript();
-                if (!overwrite) {
-                  setModelText(cached.segments.map((s) => s.text).join(" "));
-                  return;
-                }
-              }
-            } else {
-              const cached = await loadModelTranscript(sentenceHash);
-              if (cached) {
-                const overwrite = await confirmOverwriteTranscript();
-                if (!overwrite) {
-                  setModelText(cached.segments.map((s) => s.text).join(" "));
-                  return;
-                }
-              }
-            }
-
-            setWaitingModel(true);
-            setIsTranscribing(true);
-
-            if (source.kind === "uploaded" && uploadedAudioPath) {
-              // アップロード音声の場合は保存済みパスを使用
-              invoke("run_whisper_uploaded", {
-                uploadedPath: uploadedAudioPath,
-                sentenceHash: sentenceHash,
-                lang: sentence.lang,
-              });
-            } else {
-              // Tatoeba等のURL音声の場合
-              invoke("run_whisper_model", {
-                url: sentence.audioUrl,
-                sentenceHash: sentenceHash,
-                lang: sentence.lang,
-              });
-            }
-          }}
-          loading={waitingModel}
-          disabled={
-            (source.kind === "uploaded" && !uploadedAudioPath) || waitingModel
-          }
-        >
-          {source.kind === "uploaded"
-            ? "アップロード音声を音声認識する"
-            : "模範音声を音声認識する"}
-        </Button>
-      </div>
-
-      {linkingResult?.joined && (
-        <>
-          <Space size={8} style={{ display: "flex" }}>
-            <Typography.Text type="secondary">表示:</Typography.Text>
-            <Radio.Group
-              size="small"
-              value={linkingDisplayMode}
-              onChange={(e) => setLinkingDisplayMode(e.target.value)}
-              options={[
-                { label: "phoneme", value: "phoneme" },
-                { label: "kana", value: "kana" },
-              ]}
-              optionType="button"
-              buttonStyle="solid"
-            />
-          </Space>
-          {renderLegend()}
-          <Typography.Text style={{ display: "block" }}>
-            {renderStressColored(linkingResult.joined)}
-          </Typography.Text>
-        </>
-      )}
-      {modelText && (
-        <Typography.Paragraph>
-          <strong>Model transcript:</strong>
-          <br />
-          {modelText}
-        </Typography.Paragraph>
-      )}
-      <Typography.Text type="secondary">Model status: {status}</Typography.Text>
-
-      {status === "downloading" && (
-        <Typography.Text type="secondary">
-          Downloading model… {progress ?? 0}%
-        </Typography.Text>
-      )}
-      <Space>
-        <Button
-          type="primary"
-          disabled={isRecording || status !== "ready"}
-          onClick={async () => {
-            try {
-              await startRecording();
-              setIsRecording(true);
-            } catch (e) {
-              message.error(String(e));
-            }
-          }}
-        >
-          Start Recording
-        </Button>
-
-        <Button
-          danger
-          disabled={!isRecording}
-          onClick={async () => {
-            setIsRecording(false);
-            let movedPath: string;
-
-            try {
-              const recordedPath = await stopRecording();
-              movedPath = await invoke<string>("move_recorded_audio", {
-                srcPath: recordedPath,
-                sentenceHash: sentenceHash,
-              });
-            } catch (e) {
-              message.error("録音の保存に失敗しました");
-              await refreshFiles();
-              return;
-            }
-
-            // この録音はこれから文字起こしするので、ボタンが出ないように先に状態を立てる
-            setRecognizing((prev) => ({
-              ...prev,
-              [movedPath]: true,
-            }));
-            setTranscripts((prev) => ({
-              ...prev,
-              [movedPath]: null,
-            }));
-            setIsTranscribing(true);
-
-            try {
-              await invoke("run_whisper", {
-                path: movedPath,
-                sentenceHash: sentenceHash,
-                lang: sentence.lang,
-              });
-            } catch {
-              setRecognizing((prev) => {
-                if (!prev[movedPath]) return prev;
-                const next = { ...prev };
-                delete next[movedPath];
-                return next;
-              });
-              setIsTranscribing(false);
-              message.info(
-                "録音は保存されました（文字起こしは後で実行できます）"
-              );
-            }
-
-            await refreshFiles();
-          }}
-        >
-          Stop Recording
-        </Button>
-      </Space>
-
-      {isRecording && <Typography.Text>Recording...</Typography.Text>}
-
-      <Typography.Title level={5}>Recordings</Typography.Title>
-
+    <div
+      onPointerDown={() => {
+        // WebView で hover 再生がブロックされる場合があるため、最初のユーザー操作で音声を解錠
+        if (audioUnlockTriedRef.current) return;
+        audioUnlockTriedRef.current = true;
+        void unlockAudioFromUserGesture().catch(() => {
+          // 解錠失敗は致命ではない（クリック再生は動くこともある）
+        });
+      }}
+    >
       <Space orientation="vertical" style={{ width: "100%" }}>
-        {recordings.length === 0 && (
-          <Typography.Text type="secondary">No recordings yet</Typography.Text>
+        <Button onClick={onBack}>← 戻る</Button>
+
+        {isTranscribing && (
+          <Space>
+            <Spin size="small" />
+            <Typography.Text type="secondary">文字起こし中…</Typography.Text>
+          </Space>
         )}
 
-        {recordings.map((rec, i) => (
-          <RecordingItem
-            key={rec.path}
-            rec={rec}
-            index={i}
-            total={recordings.length}
-            transcript={transcripts[rec.path]}
-            recognizing={!!recognizing[rec.path]}
-            recognize={recognizeRecording}
-            audioUrl={audioUrls[rec.path]}
-            loadAudio={loadAudio}
-            addToAnki={addToAnki}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+          }}
+        >
+          <Button
+            type="text"
+            icon={<PlayCircleOutlined />}
+            onClick={() =>
+              void new Audio(headerAudioUrl ?? sentence.audioUrl)
+                .play()
+                .catch(() => {})
+            }
+            style={{ opacity: 0.7 }}
+            onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
+            onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.7")}
           />
-        ))}
+          <Typography.Title level={4} style={{ margin: 0, flex: 1 }}>
+            {displayText || sentence.text}
+          </Typography.Title>
+          <Button
+            onClick={async () => {
+              console.log("model recognize clicked");
+
+              if (waitingModel) return;
+
+              if (source.kind === "uploaded") {
+                if (!uploadedAudioPath) return;
+                const cached = await loadUploadedTranscript(uploadedAudioPath);
+                if (cached) {
+                  const overwrite = await confirmOverwriteTranscript();
+                  if (!overwrite) {
+                    setModelText(cached.segments.map((s) => s.text).join(" "));
+                    return;
+                  }
+                }
+              } else {
+                const cached = await loadModelTranscript(sentenceHash);
+                if (cached) {
+                  const overwrite = await confirmOverwriteTranscript();
+                  if (!overwrite) {
+                    setModelText(cached.segments.map((s) => s.text).join(" "));
+                    return;
+                  }
+                }
+              }
+
+              setWaitingModel(true);
+              setIsTranscribing(true);
+
+              if (source.kind === "uploaded" && uploadedAudioPath) {
+                // アップロード音声の場合は保存済みパスを使用
+                invoke("run_whisper_uploaded", {
+                  uploadedPath: uploadedAudioPath,
+                  sentenceHash: sentenceHash,
+                  lang: sentence.lang,
+                });
+              } else {
+                // Tatoeba等のURL音声の場合
+                invoke("run_whisper_model", {
+                  url: sentence.audioUrl,
+                  sentenceHash: sentenceHash,
+                  lang: sentence.lang,
+                });
+              }
+            }}
+            loading={waitingModel}
+            disabled={
+              (source.kind === "uploaded" && !uploadedAudioPath) || waitingModel
+            }
+          >
+            {source.kind === "uploaded"
+              ? "アップロード音声を音声認識する"
+              : "模範音声を音声認識する"}
+          </Button>
+        </div>
+
+        {linkingResult?.joined && (
+          <>
+            <Space size={8} style={{ display: "flex" }}>
+              <Typography.Text type="secondary">表示:</Typography.Text>
+              <Radio.Group
+                size="small"
+                value={linkingDisplayMode}
+                onChange={(e) => setLinkingDisplayMode(e.target.value)}
+                options={[
+                  { label: "phoneme", value: "phoneme" },
+                  { label: "kana", value: "kana" },
+                ]}
+                optionType="button"
+                buttonStyle="solid"
+              />
+
+              <Typography.Text type="secondary" style={{ display: "block" }}>
+                IPA audio:{" "}
+                {ipaIndex
+                  ? `${Object.keys(ipaIndex).length} keys`
+                  : "not loaded"}
+                {ipaIndexError ? ` (error: ${ipaIndexError})` : ""}
+                {linkingResult?.joined
+                  ? ` | mode: ${linkingDisplayMode} | parens: ${linkingResult.joined.includes("(") || linkingResult.joined.includes("（") ? "yes" : "no"}`
+                  : ""}
+                {ipaHoverDebug
+                  ? ` | last: ${ipaHoverDebug.tok} ${ipaHoverDebug.event} ${ipaHoverDebug.result}` +
+                    (ipaHoverDebug.message ? ` (${ipaHoverDebug.message})` : "")
+                  : ""}
+              </Typography.Text>
+            </Space>
+            {renderLegend()}
+            {(linkingDisplayMode === "phoneme" ||
+              linkingDisplayMode === "kana") && (
+              <Typography.Text type="secondary" style={{ display: "block" }}>
+                {(() => {
+                  const { primary, secondary } =
+                    extractStressWords(linkingResult);
+                  const p = primary.length ? primary.join(" / ") : "なし";
+                  const s = secondary.length ? secondary.join(" / ") : "なし";
+                  return `強勢: ${p} / 副強勢: ${s}`;
+                })()}
+              </Typography.Text>
+            )}
+            <div style={{ display: "block", fontSize: 18, lineHeight: 1.6 }}>
+              {renderStressColored(linkingResult.joined)}
+            </div>
+          </>
+        )}
+        {modelText && (
+          <Typography.Paragraph>
+            <strong>Model transcript:</strong>
+            <br />
+            {modelText}
+          </Typography.Paragraph>
+        )}
+        <Typography.Text type="secondary">
+          Model status: {status}
+        </Typography.Text>
+
+        {status === "downloading" && (
+          <Typography.Text type="secondary">
+            Downloading model… {progress ?? 0}%
+          </Typography.Text>
+        )}
+        <Space>
+          <Button
+            type="primary"
+            disabled={isRecording || status !== "ready"}
+            onClick={async () => {
+              try {
+                await startRecording();
+                setIsRecording(true);
+              } catch (e) {
+                message.error(String(e));
+              }
+            }}
+          >
+            Start Recording
+          </Button>
+
+          <Button
+            danger
+            disabled={!isRecording}
+            onClick={async () => {
+              setIsRecording(false);
+              let movedPath: string;
+
+              try {
+                const recordedPath = await stopRecording();
+                movedPath = await invoke<string>("move_recorded_audio", {
+                  srcPath: recordedPath,
+                  sentenceHash: sentenceHash,
+                });
+              } catch (e) {
+                message.error("録音の保存に失敗しました");
+                await refreshFiles();
+                return;
+              }
+
+              // この録音はこれから文字起こしするので、ボタンが出ないように先に状態を立てる
+              setRecognizing((prev) => ({
+                ...prev,
+                [movedPath]: true,
+              }));
+              setTranscripts((prev) => ({
+                ...prev,
+                [movedPath]: null,
+              }));
+              setIsTranscribing(true);
+
+              try {
+                await invoke("run_whisper", {
+                  path: movedPath,
+                  sentenceHash: sentenceHash,
+                  lang: sentence.lang,
+                });
+              } catch {
+                setRecognizing((prev) => {
+                  if (!prev[movedPath]) return prev;
+                  const next = { ...prev };
+                  delete next[movedPath];
+                  return next;
+                });
+                setIsTranscribing(false);
+                message.info(
+                  "録音は保存されました（文字起こしは後で実行できます）"
+                );
+              }
+
+              await refreshFiles();
+            }}
+          >
+            Stop Recording
+          </Button>
+        </Space>
+
+        {isRecording && <Typography.Text>Recording...</Typography.Text>}
+
+        <Typography.Title level={5}>Recordings</Typography.Title>
+
+        <Space orientation="vertical" style={{ width: "100%" }}>
+          {recordings.length === 0 && (
+            <Typography.Text type="secondary">
+              No recordings yet
+            </Typography.Text>
+          )}
+
+          {recordings.map((rec, i) => (
+            <RecordingItem
+              key={rec.path}
+              rec={rec}
+              index={i}
+              total={recordings.length}
+              transcript={transcripts[rec.path]}
+              recognizing={!!recognizing[rec.path]}
+              recognize={recognizeRecording}
+              audioUrl={audioUrls[rec.path]}
+              loadAudio={loadAudio}
+              addToAnki={addToAnki}
+            />
+          ))}
+        </Space>
       </Space>
-    </Space>
+    </div>
   );
 };
 
