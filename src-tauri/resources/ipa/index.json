@@ -1,0 +1,242 @@
+{
+  "consonants": {
+    "b": {
+      "ipa": "b",
+      "audio": "ipa/audio/consonants/b.wav",
+      "examples": ["buy", "cab"]
+    },
+    "d": {
+      "ipa": "d",
+      "audio": "ipa/audio/consonants/d.wav",
+      "examples": ["dye", "ladder"]
+    },
+    "ð": {
+      "ipa": "ð",
+      "audio": "ipa/audio/consonants/eth.wav",
+      "examples": ["this", "mother"]
+    },
+    "f": {
+      "ipa": "f",
+      "audio": "ipa/audio/consonants/f.wav",
+      "examples": ["find", "leaf"]
+    },
+    "g": {
+      "ipa": "g",
+      "audio": "ipa/audio/consonants/g.wav",
+      "examples": ["guy", "bag"]
+    },
+    "h": {
+      "ipa": "h",
+      "audio": "ipa/audio/consonants/h.wav",
+      "examples": ["high", "ahead"]
+    },
+    "j": {
+      "ipa": "j",
+      "audio": "ipa/audio/consonants/j.wav",
+      "examples": ["yes", "hallelujah"]
+    },
+    "k": {
+      "ipa": "k",
+      "audio": "ipa/audio/consonants/k.wav",
+      "examples": ["kind", "sky"]
+    },
+    "l": {
+      "ipa": "l",
+      "audio": "ipa/audio/consonants/l.wav",
+      "examples": ["lip", "light"]
+    },
+    "ɫ": {
+      "ipa": "ɫ",
+      "audio": "ipa/audio/consonants/l_dark.wav",
+      "examples": ["feel", "ball"]
+    },
+    "m": {
+      "ipa": "m",
+      "audio": "ipa/audio/consonants/m.wav",
+      "examples": ["my", "smile"]
+    },
+    "n": {
+      "ipa": "n",
+      "audio": "ipa/audio/consonants/n.wav",
+      "examples": ["nigh", "can"]
+    },
+    "ŋ": {
+      "ipa": "ŋ",
+      "audio": "ipa/audio/consonants/eng.wav",
+      "examples": ["sing", "singer"]
+    },
+    "p": {
+      "ipa": "p",
+      "audio": "ipa/audio/consonants/p.wav",
+      "examples": ["pie", "cap"]
+    },
+    "r": {
+      "ipa": "ɹ",
+      "audio": "ipa/audio/consonants/r.wav",
+      "examples": ["red", "very"]
+    },
+    "s": {
+      "ipa": "s",
+      "audio": "ipa/audio/consonants/s.wav",
+      "examples": ["sigh", "mass"]
+    },
+    "ʃ": {
+      "ipa": "ʃ",
+      "audio": "ipa/audio/consonants/sh.wav",
+      "examples": ["shy", "emotion"]
+    },
+    "t": {
+      "ipa": "t",
+      "audio": "ipa/audio/consonants/t.wav",
+      "examples": ["tie", "cat"]
+    },
+    "tʃ": {
+      "ipa": "tʃ",
+      "audio": "ipa/audio/consonants/tsh.wav",
+      "examples": ["China", "catch"]
+    },
+    "θ": {
+      "ipa": "θ",
+      "audio": "ipa/audio/consonants/theta.wav",
+      "examples": ["think", "path"]
+    },
+    "v": {
+      "ipa": "v",
+      "audio": "ipa/audio/consonants/v.wav",
+      "examples": ["vie", "leave"]
+    },
+    "w": {
+      "ipa": "w",
+      "audio": "ipa/audio/consonants/w.wav",
+      "examples": ["wine", "quick"]
+    },
+    "z": {
+      "ipa": "z",
+      "audio": "ipa/audio/consonants/z.wav",
+      "examples": ["zoo", "has"]
+    },
+    "ʒ": {
+      "ipa": "ʒ",
+      "audio": "ipa/audio/consonants/zh.wav",
+      "examples": ["vision", "measure"]
+    }
+  },
+
+  "vowels": {
+    "iː": {
+      "ipa": "iː",
+      "audio": "ipa/audio/vowels/ee.wav",
+      "examples": ["fleece", "see"]
+    },
+    "ɪ": {
+      "ipa": "ɪ",
+      "audio": "ipa/audio/vowels/i_short.wav",
+      "examples": ["kit", "sit"]
+    },
+    "eɪ": {
+      "ipa": "eɪ",
+      "audio": "ipa/audio/vowels/ei.wav",
+      "examples": ["face", "day"]
+    },
+    "ɛ": {
+      "ipa": "ɛ",
+      "audio": "ipa/audio/vowels/epsilon.wav",
+      "examples": ["dress", "bed"]
+    },
+    "æ": {
+      "ipa": "æ",
+      "audio": "ipa/audio/vowels/ash.wav",
+      "examples": ["trap", "cat"]
+    },
+    "ɑː": {
+      "ipa": "ɑː",
+      "audio": "ipa/audio/vowels/ah.wav",
+      "examples": ["palm", "father"]
+    },
+    "ʌ": {
+      "ipa": "ʌ",
+      "audio": "ipa/audio/vowels/strut.wav",
+      "examples": ["strut", "luck"]
+    },
+    "ə": {
+      "ipa": "ə",
+      "audio": "ipa/audio/vowels/schwa.wav",
+      "explainAudio": "ipa/audio/vowels/schwa_explain.wav",
+      "examples": ["about", "sofa"]
+    },
+    "ɔː": {
+      "ipa": "ɔː",
+      "audio": "ipa/audio/vowels/or.wav",
+      "examples": ["thought", "law"]
+    },
+    "oʊ": {
+      "ipa": "oʊ",
+      "audio": "ipa/audio/vowels/ow.wav",
+      "examples": ["go", "home"]
+    },
+    "ʊ": {
+      "ipa": "ʊ",
+      "audio": "ipa/audio/vowels/foot.wav",
+      "examples": ["foot", "good"]
+    },
+    "uː": {
+      "ipa": "uː",
+      "audio": "ipa/audio/vowels/oo.wav",
+      "examples": ["goose", "too"]
+    },
+    "aɪ": {
+      "ipa": "aɪ",
+      "audio": "ipa/audio/vowels/ai.wav",
+      "examples": ["price", "my"]
+    },
+    "aʊ": {
+      "ipa": "aʊ",
+      "audio": "ipa/audio/vowels/au.wav",
+      "examples": ["mouth", "how"]
+    },
+    "ɔɪ": {
+      "ipa": "ɔɪ",
+      "audio": "ipa/audio/vowels/oi.wav",
+      "examples": ["choice", "boy"]
+    }
+  },
+
+  "others": {
+    "stress": {
+      "ˈ": {
+        "ipa": "ˈ",
+        "description": "primary stress",
+        "examples": ["ˈrecord", "ˈexport"]
+      },
+      "ˌ": {
+        "ipa": "ˌ",
+        "description": "secondary stress",
+        "examples": ["ˌintoˈnation"]
+      }
+    },
+    "syllabic": {
+      "l̩": {
+        "ipa": "l̩",
+        "audio": "ipa/audio/syllabic/l.wav",
+        "examples": ["bottle"]
+      },
+      "n̩": {
+        "ipa": "n̩",
+        "audio": "ipa/audio/syllabic/n.wav",
+        "examples": ["button"]
+      }
+    },
+    "marginal": {
+      "ʔ": {
+        "ipa": "ʔ",
+        "audio": "ipa/audio/others/glottal_stop.wav",
+        "examples": ["uh-oh"]
+      },
+      "x": {
+        "ipa": "x",
+        "audio": "ipa/audio/others/x.wav",
+        "examples": ["loch"]
+      }
+    }
+  }
+}
