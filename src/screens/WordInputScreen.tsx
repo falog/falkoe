@@ -14,6 +14,7 @@ import AudioUpload from "../components/AudioUpload";
 import { invoke } from "@tauri-apps/api/core";
 import type { SpeechSource } from "../types/speech";
 import { sha256Bytes } from "../utils/hash";
+import TopNav from "../components/TopNav";
 
 const LANG_OPTIONS = [
   { value: "eng", label: "English" },
@@ -44,6 +45,9 @@ type WordInputScreenProps = {
   onWordcount: (wc: string) => void;
   onSelect: (s: Sentence) => void;
   onUseSpeech: (source: SpeechSource) => void;
+  onOpenIpaList: () => void;
+  onOpenDevelopersMistake: () => void;
+  onOpenCommonMistakes: () => void;
 };
 
 type UploadedAudioInfo = {
@@ -177,6 +181,9 @@ const WordInputScreen = ({
   onSearchResult,
   onSelect,
   onUseSpeech,
+  onOpenIpaList,
+  onOpenDevelopersMistake,
+  onOpenCommonMistakes,
 }: WordInputScreenProps) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -262,6 +269,12 @@ const WordInputScreen = ({
 
   return (
     <Space orientation="vertical" style={{ width: "100%" }}>
+      <TopNav
+        current="word"
+        onOpenIpaList={onOpenIpaList}
+        onOpenDevelopersMistake={onOpenDevelopersMistake}
+        onOpenCommonMistakes={onOpenCommonMistakes}
+      />
       <Typography.Title level={4}>例文検索</Typography.Title>
       <Checkbox
         checked={useSpeech}

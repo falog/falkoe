@@ -105,24 +105,37 @@ export async function playBundledAudio(resourcePath: string): Promise<void> {
     )
   );
 
+  let bytes: Uint8Array | null = null;
   let absPath: string | null = null;
   let lastError: unknown = null;
 
   for (const p of candidates) {
     try {
       absPath = await resolveResource(p);
-      break;
     } catch (e) {
       lastError = e;
+      absPath = null;
+      continue;
+    }
+
+    try {
+      bytes = await readFile(absPath);
+      break;
+    } catch (e) {
+      // In dev, resolveResource can return a path that doesn't exist
+      // depending on how resources are synced. Try the next candidate.
+      lastError = e;
+      bytes = null;
+      absPath = null;
+      continue;
     }
   }
 
-  if (!absPath) {
+  if (!bytes) {
     throw new Error(
-      `Failed to resolve bundled resource: ${resourcePath} (${String(lastError)})`
+      `Failed to load bundled resource: ${resourcePath} (${String(lastError)})`
     );
   }
-  const bytes = await readFile(absPath);
 
   // If a newer play request came in while we were loading, drop this one.
   if (requestId !== playRequestId) return;
@@ -160,6 +173,40 @@ export async function playBundledAudio(resourcePath: string): Promise<void> {
     }
     throw e;
   }
+}
+
+export async function bundledResourceExists(
+  resourcePath: string
+): Promise<boolean> {
+  const candidates = Array.from(
+    new Set(
+      [
+        resourcePath,
+        resourcePath.replace(/^resources\//, ""),
+        resourcePath.startsWith("resources/")
+          ? resourcePath
+          : `resources/${resourcePath}`,
+      ].filter(Boolean)
+    )
+  );
+
+  for (const p of candidates) {
+    let absPath: string;
+    try {
+      absPath = await resolveResource(p);
+    } catch {
+      continue;
+    }
+
+    try {
+      await readFile(absPath);
+      return true;
+    } catch {
+      continue;
+    }
+  }
+
+  return false;
 }
 
 /**

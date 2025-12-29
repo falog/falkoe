@@ -27,10 +27,14 @@ import {
   playBundledAudio,
   unlockAudioFromUserGesture,
 } from "../utils/ipaPlayer";
+import TopNav from "../components/TopNav";
 
 type RecorderScreenProps = {
   source: SpeechSource;
   onBack: () => void;
+  onOpenIpaList: () => void;
+  onOpenDevelopersMistake: () => void;
+  onOpenCommonMistakes: () => void;
 };
 
 type Recording = {
@@ -186,7 +190,13 @@ async function ankiRequest(payload: any) {
   );
 }
 
-const RecorderScreen = ({ source, onBack }: RecorderScreenProps) => {
+const RecorderScreen = ({
+  source,
+  onBack,
+  onOpenIpaList,
+  onOpenDevelopersMistake,
+  onOpenCommonMistakes,
+}: RecorderScreenProps) => {
   const { token: antdToken } = theme.useToken();
 
   const sentence: Sentence = (() => {
@@ -1355,7 +1365,13 @@ const RecorderScreen = ({ source, onBack }: RecorderScreenProps) => {
       }}
     >
       <Space orientation="vertical" style={{ width: "100%" }}>
-        <Button onClick={onBack}>← 戻る</Button>
+        <TopNav
+          current="record"
+          onBack={onBack}
+          onOpenIpaList={onOpenIpaList}
+          onOpenDevelopersMistake={onOpenDevelopersMistake}
+          onOpenCommonMistakes={onOpenCommonMistakes}
+        />
 
         {isTranscribing && (
           <Space>
