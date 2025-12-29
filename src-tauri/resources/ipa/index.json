@@ -97,6 +97,11 @@
       "audio": "ipa/audio/consonants/tsh.wav",
       "examples": ["China", "catch"]
     },
+    "dʒ": {
+      "ipa": "dʒ",
+      "audio": "ipa/audio/consonants/dzh.wav",
+      "examples": ["jump", "judge"]
+    },
     "θ": {
       "ipa": "θ",
       "audio": "ipa/audio/consonants/theta.wav",
