@@ -831,11 +831,7 @@ const RecorderScreen = ({
 
   const autoStartedRef = useRef(false);
   const [headerAudioUrl, setHeaderAudioUrl] = useState<string | null>(
-    source.kind === "uploaded" && source.file
-      ? sentence.audioUrl
-      : source.kind === "recorded"
-        ? sentence.audioUrl
-        : null
+    source.kind === "uploaded" && source.file ? sentence.audioUrl : null
   );
   // sentence.text が変わったらタイトル用テキストも更新（手動入力の反映）
   useEffect(() => {
@@ -952,6 +948,33 @@ const RecorderScreen = ({
 
     saveUploadedFile();
   }, [source, sentenceHash, uploadedAudioPath]);
+
+  /** recorded ソースは生パスを <audio> に渡さず、Blob URL にする（WebView差異対策） */
+  useEffect(() => {
+    if (source.kind !== "recorded") return;
+
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        const bytes = await readFile(sentence.audioUrl);
+        if (cancelled) return;
+        const blob = new Blob([bytes], {
+          type: guessAudioMimeFromPath(sentence.audioUrl),
+        });
+        const url = URL.createObjectURL(blob);
+        setHeaderAudioUrl(url);
+      } catch {
+        // ignore
+      }
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [source.kind, sentence.audioUrl]);
 
   useEffect(() => {
     return () => {
@@ -1330,7 +1353,10 @@ const RecorderScreen = ({
   useEffect(() => {
     const run = async () => {
       for (const rec of recordings) {
-        // await loadAudio(rec.path);
+        // Audio は先にURL化しておく（WebView2 で controls のクリックがJSイベントに届かないケース対策）
+        if (!audioUrls[rec.path]) {
+          void loadAudio(rec.path);
+        }
 
         if (transcripts[rec.path] === undefined) {
           const transcript = await loadTranscript(rec.path);
@@ -1342,7 +1368,7 @@ const RecorderScreen = ({
       }
     };
     run();
-  }, [recordings]);
+  }, [recordings, audioUrls, transcripts]);
 
   useEffect(() => {
     return () => {
@@ -1416,11 +1442,22 @@ const RecorderScreen = ({
           <Button
             type="text"
             icon={<PlayCircleOutlined />}
-            onClick={() =>
-              void new Audio(headerAudioUrl ?? sentence.audioUrl)
-                .play()
-                .catch(() => {})
-            }
+            onClick={() => {
+              const url =
+                headerAudioUrl ??
+                (source.kind === "uploaded"
+                  ? sentence.audioUrl
+                  : isHttpUrl(sentence.audioUrl)
+                    ? sentence.audioUrl
+                    : null);
+
+              if (!url) {
+                message.info("音声を読み込み中…");
+                return;
+              }
+
+              void new Audio(url).play().catch(() => {});
+            }}
             style={{ opacity: 0.7 }}
             onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
             onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.7")}

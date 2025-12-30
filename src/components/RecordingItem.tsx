@@ -1,5 +1,5 @@
 import { Button, Flex } from "antd";
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import type { Recording, Transcript } from "../types/recording";
 
 type Props = {
@@ -26,21 +26,6 @@ export default function RecordingItem({
   addToAnki,
 }: Props) {
   const audioRef = useRef<HTMLAudioElement>(null);
-  const pendingPlayRef = useRef(false);
-
-  const ensureLoadedForUserPlayback = () => {
-    if (audioUrl) return;
-    pendingPlayRef.current = true;
-    void loadAudio(rec.path);
-  };
-
-  // audioUrl がセットされた瞬間に再生
-  useEffect(() => {
-    if (!audioUrl) return;
-    if (!pendingPlayRef.current) return;
-    pendingPlayRef.current = false;
-    audioRef.current?.play().catch(() => {});
-  }, [audioUrl]);
 
   return (
     <div>
@@ -71,17 +56,6 @@ export default function RecordingItem({
         preload="none"
         src={audioUrl}
         style={{ width: "100%" }}
-        onPointerDownCapture={() => {
-          // WebView2 では <audio controls> の内部UIクリックが onClick に届かないことがある。
-          // capture で先に拾って src をロードし、ロード後に play() する。
-          ensureLoadedForUserPlayback();
-        }}
-        onKeyDownCapture={(e) => {
-          // キーボード操作での再生（Space/Enter）でも同様にロードしておく
-          if (e.key === " " || e.key === "Enter") {
-            ensureLoadedForUserPlayback();
-          }
-        }}
         onError={() => {
           console.error("[RecordingItem] audio error", {
             path: rec.path,
@@ -91,7 +65,7 @@ export default function RecordingItem({
         }}
         onClick={() => {
           if (!audioUrl) {
-            loadAudio(rec.path);
+            void loadAudio(rec.path);
           }
         }}
       />
