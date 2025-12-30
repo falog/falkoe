@@ -1,7 +1,9 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-const host = process.env.TAURI_DEV_HOST;
+// NOTE: `localhost` may not be accepted in some embedded contexts.
+// We intentionally bind to 127.0.0.1 so the dev URL is stable.
+const host = "127.0.0.1";
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
@@ -15,14 +17,12 @@ export default defineConfig(async () => ({
   server: {
     port: 1420,
     strictPort: true,
-    host: host || false,
-    hmr: host
-      ? {
-          protocol: "ws",
-          host,
-          port: 1421,
-        }
-      : undefined,
+    host,
+    hmr: {
+      protocol: "ws",
+      host,
+      port: 1421,
+    },
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],
