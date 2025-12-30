@@ -26,12 +26,20 @@ export default function RecordingItem({
   addToAnki,
 }: Props) {
   const audioRef = useRef<HTMLAudioElement>(null);
+  const pendingPlayRef = useRef(false);
+
+  const ensureLoadedForUserPlayback = () => {
+    if (audioUrl) return;
+    pendingPlayRef.current = true;
+    void loadAudio(rec.path);
+  };
 
   // audioUrl がセットされた瞬間に再生
   useEffect(() => {
-    if (audioUrl) {
-      audioRef.current?.play().catch(() => {});
-    }
+    if (!audioUrl) return;
+    if (!pendingPlayRef.current) return;
+    pendingPlayRef.current = false;
+    audioRef.current?.play().catch(() => {});
   }, [audioUrl]);
 
   return (
@@ -41,17 +49,6 @@ export default function RecordingItem({
           <strong>Take {total - index}</strong> / {rec.dateLabel}
         </div>
         <Flex gap={8}>
-          <Button
-            onClick={() => {
-              if (audioUrl) {
-                audioRef.current?.play().catch(() => {});
-                return;
-              }
-              void loadAudio(rec.path);
-            }}
-          >
-            再生
-          </Button>
           {transcript === null && recognize && !recognizing && (
             <Button loading={!!recognizing} onClick={() => recognize(rec)}>
               音声認識
@@ -74,6 +71,17 @@ export default function RecordingItem({
         preload="none"
         src={audioUrl}
         style={{ width: "100%" }}
+        onPointerDownCapture={() => {
+          // WebView2 では <audio controls> の内部UIクリックが onClick に届かないことがある。
+          // capture で先に拾って src をロードし、ロード後に play() する。
+          ensureLoadedForUserPlayback();
+        }}
+        onKeyDownCapture={(e) => {
+          // キーボード操作での再生（Space/Enter）でも同様にロードしておく
+          if (e.key === " " || e.key === "Enter") {
+            ensureLoadedForUserPlayback();
+          }
+        }}
         onError={() => {
           console.error("[RecordingItem] audio error", {
             path: rec.path,
