@@ -11,7 +11,7 @@ import {
 import { useEffect, useState, useRef, type ReactNode } from "react";
 import { startRecording, stopRecording } from "tauri-plugin-mic-recorder-api";
 import { readFile, readTextFile, BaseDirectory } from "@tauri-apps/plugin-fs";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { PlayCircleOutlined } from "@ant-design/icons";
 import type { Sentence } from "../components/ExampleList";
@@ -218,6 +218,20 @@ const RecorderScreen = ({
 }: RecorderScreenProps) => {
   const { token: antdToken } = theme.useToken();
 
+  // Linux(WebKitGTK) では asset:// が内部エラーを起こすことがあるため、基本は Blob。
+  // Windows は asset を優先し、失敗時のみ Blob にフォールバック。
+  // (このプロジェクトでは @tauri-apps/api/os が入っていないため navigator で判定)
+  const isLinux = (() => {
+    const ua =
+      typeof navigator !== "undefined" ? (navigator.userAgent ?? "") : "";
+    const plat =
+      typeof navigator !== "undefined"
+        ? ((navigator as any).platform ?? "")
+        : "";
+    return /Linux/i.test(ua) || /Linux/i.test(String(plat));
+  })();
+  const preferAssetProtocol = !isLinux;
+
   const sentence: Sentence = (() => {
     switch (source.kind) {
       case "tatoeba":
@@ -254,7 +268,6 @@ const RecorderScreen = ({
 
   const [isRecording, setIsRecording] = useState(false);
   const [recordings, setRecordings] = useState<Recording[]>([]);
-  const [audioUrls, setAudioUrls] = useState<Record<string, string>>({});
   const [transcripts, setTranscripts] = useState<
     Record<string, Transcript | null>
   >({});
@@ -833,6 +846,69 @@ const RecorderScreen = ({
   const [headerAudioUrl, setHeaderAudioUrl] = useState<string | null>(
     source.kind === "uploaded" && source.file ? sentence.audioUrl : null
   );
+  const [headerAudioPath, setHeaderAudioPath] = useState<string | null>(null);
+
+  // recordings / saved audio are played via Blob URLs (avoid WebKitGTK asset:// issues)
+  const [audioUrls, setAudioUrls] = useState<Record<string, string>>({});
+  const audioUrlsRef = useRef<Record<string, string>>({});
+  const audioLoadInFlightRef = useRef<Map<string, Promise<string | null>>>(
+    new Map()
+  );
+
+  useEffect(() => {
+    audioUrlsRef.current = audioUrls;
+  }, [audioUrls]);
+
+  useEffect(() => {
+    return () => {
+      for (const url of Object.values(audioUrlsRef.current)) {
+        if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+      }
+    };
+  }, []);
+
+  const ensureBlobAudioUrl = async (
+    pathOrUrl: string
+  ): Promise<string | null> => {
+    if (!pathOrUrl) return null;
+    if (pathOrUrl.startsWith("blob:")) return pathOrUrl;
+    if (isHttpUrl(pathOrUrl)) return pathOrUrl;
+
+    const cached = audioUrls[pathOrUrl];
+    if (cached) return cached;
+
+    const existing = audioLoadInFlightRef.current.get(pathOrUrl);
+    if (existing) return existing;
+
+    const p = (async () => {
+      try {
+        const fileBytes = await readFile(pathOrUrl);
+        const mime = guessAudioMimeFromPath(pathOrUrl);
+        const blob = new Blob([fileBytes], { type: mime });
+        const url = URL.createObjectURL(blob);
+        setAudioUrls((prev) => ({ ...prev, [pathOrUrl]: url }));
+        return url;
+      } catch (e) {
+        console.error("[RecorderScreen] ensureBlobAudioUrl failed", {
+          pathOrUrl,
+          error: e,
+        });
+        return null;
+      } finally {
+        audioLoadInFlightRef.current.delete(pathOrUrl);
+      }
+    })();
+
+    audioLoadInFlightRef.current.set(pathOrUrl, p);
+    return p;
+  };
+
+  const toAssetUrl = (pathOrUrl: string): string => {
+    if (!pathOrUrl) return "";
+    if (pathOrUrl.startsWith("blob:")) return pathOrUrl;
+    if (isHttpUrl(pathOrUrl)) return pathOrUrl;
+    return convertFileSrc(pathOrUrl);
+  };
   // sentence.text が変わったらタイトル用テキストも更新（手動入力の反映）
   useEffect(() => {
     setDisplayText(sentence.text);
@@ -875,15 +951,8 @@ const RecorderScreen = ({
 
     const applySavedPath = async (p: string) => {
       setUploadedAudioPath(p);
-      // 再生用URLを作成
-      try {
-        const bytes = await readFile(p);
-        const blob = new Blob([bytes], { type: guessAudioMimeFromPath(p) });
-        const url = URL.createObjectURL(blob);
-        setHeaderAudioUrl(url);
-      } catch {
-        // ignore
-      }
+      // ここでは重いI/Oを避け、ヘッダー再生時にBlob化する
+      setHeaderAudioPath(p);
     };
 
     // 既に savedPath が渡っている場合は保存をスキップ
@@ -952,28 +1021,8 @@ const RecorderScreen = ({
   /** recorded ソースは生パスを <audio> に渡さず、Blob URL にする（WebView差異対策） */
   useEffect(() => {
     if (source.kind !== "recorded") return;
-
-    let cancelled = false;
-
-    const run = async () => {
-      try {
-        const bytes = await readFile(sentence.audioUrl);
-        if (cancelled) return;
-        const blob = new Blob([bytes], {
-          type: guessAudioMimeFromPath(sentence.audioUrl),
-        });
-        const url = URL.createObjectURL(blob);
-        setHeaderAudioUrl(url);
-      } catch {
-        // ignore
-      }
-    };
-
-    run();
-
-    return () => {
-      cancelled = true;
-    };
+    setHeaderAudioUrl(null);
+    setHeaderAudioPath(sentence.audioUrl);
   }, [source.kind, sentence.audioUrl]);
 
   useEffect(() => {
@@ -987,8 +1036,15 @@ const RecorderScreen = ({
   /** sentence 切り替え時にリセット */
   useEffect(() => {
     setRecordings([]);
-    setAudioUrls({});
     setTranscripts({});
+    // sentence が変わったら音声URLキャッシュを捨てる（リーク防止）
+    setAudioUrls((prev) => {
+      for (const url of Object.values(prev)) {
+        if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+      }
+      return {};
+    });
+    setHeaderAudioPath(null);
     autoStartedRef.current = false;
     refreshFiles();
   }, [sentenceHash]);
@@ -996,7 +1052,9 @@ const RecorderScreen = ({
   // cleanup header audio url when changed/unmounted
   useEffect(() => {
     return () => {
-      if (headerAudioUrl) URL.revokeObjectURL(headerAudioUrl);
+      if (headerAudioUrl?.startsWith("blob:")) {
+        URL.revokeObjectURL(headerAudioUrl);
+      }
     };
   }, [headerAudioUrl]);
 
@@ -1215,23 +1273,6 @@ const RecorderScreen = ({
     }
   };
 
-  const loadAudio = async (path: string) => {
-    if (audioUrls[path]) return;
-
-    try {
-      const bytes = await readFile(path);
-      const blob = new Blob([bytes], { type: guessAudioMimeFromPath(path) });
-      const url = URL.createObjectURL(blob);
-
-      setAudioUrls((prev) => ({
-        ...prev,
-        [path]: url,
-      }));
-    } catch (e) {
-      message.error(String(e));
-    }
-  };
-
   /** transcript started */
   useEffect(() => {
     const unlisten = listen<string>("transcript-started", (e) => {
@@ -1353,11 +1394,6 @@ const RecorderScreen = ({
   useEffect(() => {
     const run = async () => {
       for (const rec of recordings) {
-        // Audio は先にURL化しておく（WebView2 で controls のクリックがJSイベントに届かないケース対策）
-        if (!audioUrls[rec.path]) {
-          void loadAudio(rec.path);
-        }
-
         if (transcripts[rec.path] === undefined) {
           const transcript = await loadTranscript(rec.path);
           setTranscripts((prev) => ({
@@ -1368,13 +1404,7 @@ const RecorderScreen = ({
       }
     };
     run();
-  }, [recordings, audioUrls, transcripts]);
-
-  useEffect(() => {
-    return () => {
-      Object.values(audioUrls).forEach(URL.revokeObjectURL);
-    };
-  }, []);
+  }, [recordings]);
 
   async function loadModelTranscript(
     sentenceHash: string
@@ -1442,14 +1472,16 @@ const RecorderScreen = ({
           <Button
             type="text"
             icon={<PlayCircleOutlined />}
-            onClick={() => {
+            onClick={async () => {
+              const fallbackUrl =
+                source.kind === "uploaded" ? sentence.audioUrl : "";
               const url =
                 headerAudioUrl ??
-                (source.kind === "uploaded"
-                  ? sentence.audioUrl
-                  : isHttpUrl(sentence.audioUrl)
-                    ? sentence.audioUrl
-                    : null);
+                (headerAudioPath
+                  ? preferAssetProtocol
+                    ? toAssetUrl(headerAudioPath)
+                    : await ensureBlobAudioUrl(headerAudioPath)
+                  : fallbackUrl);
 
               if (!url) {
                 message.info("音声を読み込み中…");
@@ -1679,8 +1711,15 @@ const RecorderScreen = ({
               transcript={transcripts[rec.path]}
               recognizing={!!recognizing[rec.path]}
               recognize={recognizeRecording}
-              audioUrl={audioUrls[rec.path]}
-              loadAudio={loadAudio}
+              audioUrl={
+                audioUrls[rec.path] ??
+                (preferAssetProtocol ? toAssetUrl(rec.path) : undefined)
+              }
+              ensureAudioUrl={(r, opts) => {
+                if (!preferAssetProtocol || opts?.forceBlob) {
+                  void ensureBlobAudioUrl(r.path);
+                }
+              }}
               addToAnki={addToAnki}
             />
           ))}

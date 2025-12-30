@@ -10,7 +10,7 @@ type Props = {
   recognizing?: boolean;
   recognize?: (rec: Recording) => void;
   audioUrl?: string;
-  loadAudio: (path: string) => Promise<void>;
+  ensureAudioUrl?: (rec: Recording, opts?: { forceBlob?: boolean }) => void;
   addToAnki: (rec: Recording) => void;
 };
 
@@ -22,7 +22,7 @@ export default function RecordingItem({
   recognizing,
   recognize,
   audioUrl,
-  loadAudio,
+  ensureAudioUrl,
   addToAnki,
 }: Props) {
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -53,20 +53,22 @@ export default function RecordingItem({
       <audio
         ref={audioRef}
         controls
-        preload="none"
+        preload="metadata"
         src={audioUrl}
         style={{ width: "100%" }}
+        onPointerDownCapture={() => {
+          if (audioUrl) return;
+          ensureAudioUrl?.(rec);
+        }}
         onError={() => {
           console.error("[RecordingItem] audio error", {
             path: rec.path,
             audioUrl,
             mediaError: audioRef.current?.error,
           });
-        }}
-        onClick={() => {
-          if (!audioUrl) {
-            void loadAudio(rec.path);
-          }
+
+          // asset protocol 等が失敗した場合は Blob にフォールバックする
+          ensureAudioUrl?.(rec, { forceBlob: true });
         }}
       />
 
