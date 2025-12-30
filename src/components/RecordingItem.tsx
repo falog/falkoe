@@ -41,6 +41,17 @@ export default function RecordingItem({
           <strong>Take {total - index}</strong> / {rec.dateLabel}
         </div>
         <Flex gap={8}>
+          <Button
+            onClick={() => {
+              if (audioUrl) {
+                audioRef.current?.play().catch(() => {});
+                return;
+              }
+              void loadAudio(rec.path);
+            }}
+          >
+            再生
+          </Button>
           {transcript === null && recognize && !recognizing && (
             <Button loading={!!recognizing} onClick={() => recognize(rec)}>
               音声認識
@@ -63,6 +74,13 @@ export default function RecordingItem({
         preload="none"
         src={audioUrl}
         style={{ width: "100%" }}
+        onError={() => {
+          console.error("[RecordingItem] audio error", {
+            path: rec.path,
+            audioUrl,
+            mediaError: audioRef.current?.error,
+          });
+        }}
         onClick={() => {
           if (!audioUrl) {
             loadAudio(rec.path);

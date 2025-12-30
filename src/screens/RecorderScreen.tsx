@@ -124,6 +124,25 @@ function guessExtFromPath(p: string): string {
   return (m?.[1] ?? "wav").toLowerCase();
 }
 
+function guessAudioMimeFromPath(p: string): string {
+  const ext = guessExtFromPath(p);
+  switch (ext) {
+    case "wav":
+      return "audio/wav";
+    case "mp3":
+      return "audio/mpeg";
+    case "m4a":
+    case "mp4":
+      return "audio/mp4";
+    case "ogg":
+      return "audio/ogg";
+    case "webm":
+      return "audio/webm";
+    default:
+      return "application/octet-stream";
+  }
+}
+
 const parseRecording = (path: string): Recording => {
   const name = path.split(/[/\\]/).pop() ?? "";
 
@@ -863,7 +882,7 @@ const RecorderScreen = ({
       // 再生用URLを作成
       try {
         const bytes = await readFile(p);
-        const blob = new Blob([bytes]);
+        const blob = new Blob([bytes], { type: guessAudioMimeFromPath(p) });
         const url = URL.createObjectURL(blob);
         setHeaderAudioUrl(url);
       } catch {
@@ -1097,7 +1116,9 @@ const RecorderScreen = ({
           throw new Error("uploaded audio path is not ready");
         }
         const bytes = await readFile(uploadedAudioPath);
-        const blob = new Blob([bytes]);
+        const blob = new Blob([bytes], {
+          type: guessAudioMimeFromPath(uploadedAudioPath),
+        });
         modelAudioBase64 = await blobToBase64(blob);
         const ext = guessExtFromPath(uploadedAudioPath);
         modelAudioFilename = `model_${sentenceHash}.${ext}`;
@@ -1110,7 +1131,9 @@ const RecorderScreen = ({
       } else {
         // recorded などローカルパス
         const bytes = await readFile(sentence.audioUrl);
-        const blob = new Blob([bytes]);
+        const blob = new Blob([bytes], {
+          type: guessAudioMimeFromPath(sentence.audioUrl),
+        });
         modelAudioBase64 = await blobToBase64(blob);
         const ext = guessExtFromPath(sentence.audioUrl);
         modelAudioFilename = `model_${sentenceHash}.${ext}`;
@@ -1126,7 +1149,9 @@ const RecorderScreen = ({
       });
 
       const bytes = await readFile(rec.path);
-      const blob = new Blob([bytes], { type: "audio/wav" });
+      const blob = new Blob([bytes], {
+        type: guessAudioMimeFromPath(rec.path),
+      });
       const audioBase64 = await blobToBase64(blob);
       const filename = `sentence_${sentenceHash}_${rec.timestamp}.wav`;
 
@@ -1172,7 +1197,7 @@ const RecorderScreen = ({
 
     try {
       const bytes = await readFile(path);
-      const blob = new Blob([bytes], { type: "audio/wav" });
+      const blob = new Blob([bytes], { type: guessAudioMimeFromPath(path) });
       const url = URL.createObjectURL(blob);
 
       setAudioUrls((prev) => ({
