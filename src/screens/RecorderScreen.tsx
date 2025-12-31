@@ -176,7 +176,6 @@ const parseRecording = (path: string): Recording => {
 async function loadTranscript(wavPath: string): Promise<Transcript | null> {
   try {
     const jsonPath = wavPath.replace(/\.wav$/i, ".json");
-    // jsonPath は絶対パスなので baseDir は指定しない
     const text = await readTextFile(jsonPath);
     return JSON.parse(text) as Transcript;
   } catch {
@@ -218,9 +217,6 @@ const RecorderScreen = ({
 }: RecorderScreenProps) => {
   const { token: antdToken } = theme.useToken();
 
-  // Linux(WebKitGTK) では asset:// が内部エラーを起こすことがあるため、基本は Blob。
-  // Windows は asset を優先し、失敗時のみ Blob にフォールバック。
-  // (このプロジェクトでは @tauri-apps/api/os が入っていないため navigator で判定)
   const isLinux = (() => {
     const ua =
       typeof navigator !== "undefined" ? (navigator.userAgent ?? "") : "";
@@ -255,7 +251,6 @@ const RecorderScreen = ({
     }
   })();
 
-  // sentenceの text + lang からハッシュを生成
   const [sentenceHash, setSentenceHash] = useState<string>("");
 
   useEffect(() => {
@@ -300,7 +295,6 @@ const RecorderScreen = ({
   } | null>(null);
 
   useEffect(() => {
-    // IPA音声のホバー再生用（失敗してもUIは落とさない）
     loadIpaIndex()
       .then((idx) => {
         setIpaIndex(idx);
@@ -341,7 +335,6 @@ const RecorderScreen = ({
         result: "failed",
         message: msg,
       });
-      // hover(enter) はイベントが多く、エラーも出やすいので UI 通知しない
       if (event === "click") {
         if (/user gesture|required/i.test(msg)) {
           message.info("最初に画面を1回クリックして音声を有効化してください");
@@ -358,7 +351,6 @@ const RecorderScreen = ({
     audioPath: string,
     event: "enter" | "click"
   ) {
-    // hover はイベントが多すぎるので軽く間引く
     if (event === "enter") {
       const now = Date.now();
       const last = lastHoverRef.current;
@@ -370,7 +362,6 @@ const RecorderScreen = ({
         hoverTimerRef.current = null;
       }
 
-      // ちょい待ってから再生（カーソルが一瞬かすっただけを抑制）
       hoverTimerRef.current = window.setTimeout(() => {
         hoverTimerRef.current = null;
         void playIpaTok(tok, audioPath, event);
@@ -378,7 +369,6 @@ const RecorderScreen = ({
       return;
     }
 
-    // click は即時
     if (hoverTimerRef.current !== null) {
       window.clearTimeout(hoverTimerRef.current);
       hoverTimerRef.current = null;
@@ -399,7 +389,7 @@ const RecorderScreen = ({
       if (Array.from(tok).some((ch) => vowels.has(ch))) {
         return antdToken.colorSuccessText;
       }
-      if (/^[.ːˑ‿\-–—'’]+$/.test(tok)) {
+      if (/^[.ːˑ‿\-–—'']+$/.test(tok)) {
         return antdToken.colorTextSecondary;
       }
       return antdToken.colorInfoText;
@@ -473,7 +463,6 @@ const RecorderScreen = ({
       );
     }
 
-    // kana: 強勢/副強勢の説明を phoneme と同じ色運用に合わせる
     return (
       <Typography.Text type="secondary" style={{ display: "block" }}>
         <Typography.Text style={{ color: antdToken.colorErrorText }}>
@@ -545,7 +534,6 @@ const RecorderScreen = ({
       return out;
     }
 
-    // kana は「英文=通常」「上段=かな（ストレス色分け）」で 2 行表示
     if (linkingDisplayMode === "kana") {
       const parts = text.split(/(\|)/g);
 
@@ -626,7 +614,6 @@ const RecorderScreen = ({
       );
     }
 
-    // ipaIndex が無い場合は色付け/ホバー無しでそのまま返す（UIを壊さない）
     if (linkingDisplayMode !== "phoneme" || !ipaIndex) {
       return <span style={{ fontSize: 18 }}>{text.replace(/[▲△▽]/g, "")}</span>;
     }
@@ -665,18 +652,14 @@ const RecorderScreen = ({
               );
             }
 
-            // 1 単語（パイプ区切りの塊）
             const rawWithMarks = part;
             if (!rawWithMarks.trim()) return null;
 
-            // ( ... ) / （ ... ） を全部除去して main を作る
             const bracketMatches =
               rawWithMarks.match(/\([^)]*\)|（[^）]*）/g) ?? [];
             const firstBracket = bracketMatches[0];
             const ipaTextRaw = firstBracket ? firstBracket.slice(1, -1) : "";
 
-            // joined の括弧内には syllable stress を ▲/△/▽ で含むことがある。
-            // これを IPA 記号の ˈ/ˌ に置換して、(特に副強勢) を見える化する。
             const ipaWithStress = ipaTextRaw
               .replace(/▲/g, "ˈ")
               .replace(/△/g, "ˌ")
@@ -811,7 +794,6 @@ const RecorderScreen = ({
     const pickRepresentativeWord = (words: string[]): string => {
       const cleaned = words.map((w) => w.trim()).filter(Boolean);
       if (cleaned.length === 0) return "";
-      // 末尾から「内容語っぽい」ものを採る（did you understand -> understand）
       for (let i = cleaned.length - 1; i >= 0; i--) {
         const norm = normalize(cleaned[i]);
         if (!norm) continue;
@@ -843,12 +825,10 @@ const RecorderScreen = ({
   }
 
   const autoStartedRef = useRef(false);
-  const [headerAudioUrl, setHeaderAudioUrl] = useState<string | null>(
-    source.kind === "uploaded" && source.file ? sentence.audioUrl : null
-  );
-  const [headerAudioPath, setHeaderAudioPath] = useState<string | null>(null);
+  const [headerAudioUrl, setHeaderAudioUrl] = useState<string | null>(null);
+  const [isHeaderAudioLoading, setIsHeaderAudioLoading] = useState(false);
+  //const [audioDebugInfo, setAudioDebugInfo] = useState<string>("");
 
-  // recordings / saved audio are played via Blob URLs (avoid WebKitGTK asset:// issues)
   const [audioUrls, setAudioUrls] = useState<Record<string, string>>({});
   const audioUrlsRef = useRef<Record<string, string>>({});
   const audioLoadInFlightRef = useRef<Map<string, Promise<string | null>>>(
@@ -909,12 +889,11 @@ const RecorderScreen = ({
     if (isHttpUrl(pathOrUrl)) return pathOrUrl;
     return convertFileSrc(pathOrUrl);
   };
-  // sentence.text が変わったらタイトル用テキストも更新（手動入力の反映）
+
   useEffect(() => {
     setDisplayText(sentence.text);
   }, [sentence.text]);
 
-  // Linking表示（英語のみ）
   useEffect(() => {
     const text = (displayText || sentence.text || "").trim();
     if (!text || sentence.lang !== "eng") {
@@ -944,24 +923,19 @@ const RecorderScreen = ({
     };
   }, [displayText, sentence.text, sentence.lang, linkingDisplayMode]);
 
-  /** アップロード音声を保存 or 既存保存パスの適用 */
   useEffect(() => {
     if (source.kind !== "uploaded" || !sentenceHash || uploadedAudioPath)
       return;
 
     const applySavedPath = async (p: string) => {
       setUploadedAudioPath(p);
-      // ここでは重いI/Oを避け、ヘッダー再生時にBlob化する
-      setHeaderAudioPath(p);
     };
 
-    // 既に savedPath が渡っている場合は保存をスキップ
     if (source.savedPath) {
       applySavedPath(source.savedPath);
       return;
     }
 
-    // File から保存
     const saveUploadedFile = async () => {
       try {
         if (!source.file) return;
@@ -992,7 +966,6 @@ const RecorderScreen = ({
           overwrite: true,
         });
 
-        // 永続化（戻った際の復元用）
         try {
           sessionStorage.setItem("falkoe.uploadedSavedPath", savedPath);
           sessionStorage.setItem(
@@ -1018,12 +991,171 @@ const RecorderScreen = ({
     saveUploadedFile();
   }, [source, sentenceHash, uploadedAudioPath]);
 
-  /** recorded ソースは生パスを <audio> に渡さず、Blob URL にする（WebView差異対策） */
+  // Initialize header audio URL
   useEffect(() => {
-    if (source.kind !== "recorded") return;
-    setHeaderAudioUrl(null);
-    setHeaderAudioPath(sentence.audioUrl);
-  }, [source.kind, sentence.audioUrl]);
+    let cancelled = false;
+    const debugLog: string[] = [];
+
+    const initHeaderAudio = async () => {
+      setIsHeaderAudioLoading(true);
+      try {
+        debugLog.push(
+          `[START] kind=${source.kind}, audioUrl=${sentence.audioUrl?.substring(0, 100)}, uploaded=${uploadedAudioPath?.substring(0, 50)}`
+        );
+        console.log("[initHeaderAudio] Starting", {
+          kind: source.kind,
+          audioUrl: sentence.audioUrl,
+          uploadedAudioPath,
+        });
+
+        if (source.kind === "uploaded") {
+          if (source.file) {
+            debugLog.push("[UPLOADED-FILE] Using blob from file");
+            console.log("[initHeaderAudio] uploaded file case");
+            if (!cancelled) {
+              setHeaderAudioUrl(sentence.audioUrl);
+              debugLog.push(
+                `[SUCCESS] URL set: ${sentence.audioUrl.substring(0, 50)}...`
+              );
+            }
+          } else if (uploadedAudioPath) {
+            debugLog.push(
+              `[UPLOADED-SAVED] Using saved path: ${uploadedAudioPath.substring(0, 50)}`
+            );
+            console.log("[initHeaderAudio] uploaded saved path case");
+            if (preferAssetProtocol) {
+              const url = toAssetUrl(uploadedAudioPath);
+              debugLog.push(`[ASSET] ${url.substring(0, 80)}...`);
+              console.log("[initHeaderAudio] using asset URL:", url);
+              if (!cancelled) {
+                setHeaderAudioUrl(url);
+                debugLog.push("[SUCCESS] Asset URL set");
+              }
+            } else {
+              debugLog.push("[BLOB] Creating blob from saved file...");
+              const blobUrl = await ensureBlobAudioUrl(uploadedAudioPath);
+              debugLog.push(
+                `[BLOB] Result: ${blobUrl?.substring(0, 50) || "null"}...`
+              );
+              console.log("[initHeaderAudio] using blob URL:", blobUrl);
+              if (!cancelled && blobUrl) {
+                setHeaderAudioUrl(blobUrl);
+                debugLog.push("[SUCCESS] Blob URL set");
+              } else {
+                debugLog.push("[ERROR] Blob creation failed");
+              }
+            }
+          } else {
+            debugLog.push("[WAITING] uploadedAudioPath not ready yet");
+          }
+        } else if (source.kind === "recorded") {
+          debugLog.push("[RECORDED] Converting to blob");
+          console.log("[initHeaderAudio] recorded case");
+          const blobUrl = await ensureBlobAudioUrl(sentence.audioUrl);
+          debugLog.push(`[BLOB] ${blobUrl?.substring(0, 50) || "null"}...`);
+          console.log("[initHeaderAudio] recorded blob URL:", blobUrl);
+          if (!cancelled && blobUrl) {
+            setHeaderAudioUrl(blobUrl);
+            debugLog.push("[SUCCESS] Recorded blob URL set");
+          }
+        } else if (source.kind === "tatoeba") {
+          debugLog.push(`[TATOEBA] Checking URL: ${sentence.audioUrl}`);
+          console.log(
+            "[initHeaderAudio] tatoeba case, checking URL:",
+            sentence.audioUrl
+          );
+          const isHttp = isHttpUrl(sentence.audioUrl);
+          debugLog.push(`[HTTP-CHECK] isHttp=${isHttp}`);
+          console.log("[initHeaderAudio] is HTTP URL:", isHttp);
+
+          if (isHttp) {
+            debugLog.push("[HTTP] Fetching via Tauri backend");
+            console.log(
+              "[initHeaderAudio] fetching via Tauri backend:",
+              sentence.audioUrl
+            );
+            try {
+              // Tauri経由で音声を取得してBlob URLに変換
+              const base64Data = await invoke<string>("fetch_audio_base64", {
+                url: sentence.audioUrl,
+              });
+
+              debugLog.push(
+                `[FETCH-OK] Got base64 data (${base64Data.length} chars)`
+              );
+
+              // Base64をBlobに変換
+              const binaryString = atob(base64Data);
+              const bytes = new Uint8Array(binaryString.length);
+              for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+              }
+              const blob = new Blob([bytes], {
+                type: guessAudioMimeFromPath(sentence.audioUrl),
+              });
+              const blobUrl = URL.createObjectURL(blob);
+
+              debugLog.push(`[BLOB-FROM-FETCH] ${blobUrl.substring(0, 50)}...`);
+              console.log(
+                "[initHeaderAudio] created blob from fetched data:",
+                blobUrl
+              );
+
+              if (!cancelled) {
+                setHeaderAudioUrl(blobUrl);
+                debugLog.push("[SUCCESS] Blob URL from fetch set");
+              }
+            } catch (fetchError) {
+              debugLog.push(
+                `[FETCH-ERROR] ${String(fetchError)}, trying direct URL`
+              );
+              console.warn(
+                "[initHeaderAudio] fetch failed, trying direct URL:",
+                fetchError
+              );
+              // フォールバック: 直接URLを使用
+              if (!cancelled) {
+                setHeaderAudioUrl(sentence.audioUrl);
+                debugLog.push(
+                  `[FALLBACK] Using direct URL: ${sentence.audioUrl}`
+                );
+              }
+            }
+          } else {
+            debugLog.push("[LOCAL] Converting to blob");
+            console.log("[initHeaderAudio] converting local path to blob");
+            const blobUrl = await ensureBlobAudioUrl(sentence.audioUrl);
+            debugLog.push(`[BLOB] ${blobUrl?.substring(0, 50) || "null"}...`);
+            console.log("[initHeaderAudio] tatoeba blob URL:", blobUrl);
+            if (!cancelled && blobUrl) {
+              setHeaderAudioUrl(blobUrl);
+              debugLog.push("[SUCCESS] Local blob URL set");
+            }
+          }
+        }
+
+        debugLog.push("[COMPLETED] Audio init successful");
+        console.log("[initHeaderAudio] Completed successfully");
+      } catch (e) {
+        debugLog.push(`[ERROR] ${String(e)}`);
+        console.error("[initHeaderAudio] Failed:", e);
+        if (!cancelled) {
+          message.error("音声の読み込みに失敗しました: " + String(e));
+        }
+      } finally {
+        if (!cancelled) {
+          setIsHeaderAudioLoading(false);
+          setAudioDebugInfo(debugLog.join("\n"));
+        }
+      }
+    };
+
+    initHeaderAudio();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [source.kind, uploadedAudioPath, sentence.audioUrl, preferAssetProtocol]);
 
   useEffect(() => {
     return () => {
@@ -1033,25 +1165,22 @@ const RecorderScreen = ({
     };
   }, []);
 
-  /** sentence 切り替え時にリセット */
   useEffect(() => {
     setRecordings([]);
     setTranscripts({});
     setModelText(null);
     setWaitingModel(false);
-    // sentence が変わったら音声URLキャッシュを捨てる（リーク防止）
     setAudioUrls((prev) => {
       for (const url of Object.values(prev)) {
         if (url.startsWith("blob:")) URL.revokeObjectURL(url);
       }
       return {};
     });
-    setHeaderAudioPath(null);
+    setHeaderAudioUrl(null);
     autoStartedRef.current = false;
     refreshFiles();
   }, [sentenceHash]);
 
-  // cleanup header audio url when changed/unmounted
   useEffect(() => {
     return () => {
       if (headerAudioUrl?.startsWith("blob:")) {
@@ -1060,7 +1189,6 @@ const RecorderScreen = ({
     };
   }, [headerAudioUrl]);
 
-  // アップロード音声で text が空（= 自動認識モード）の場合、初回に自動で音声認識を実行
   useEffect(() => {
     if (
       source.kind !== "uploaded" ||
@@ -1077,7 +1205,6 @@ const RecorderScreen = ({
     let cancelled = false;
 
     const run = async () => {
-      // 既に transcript があれば再認識しない
       const cached = await loadUploadedTranscript(uploadedAudioPath);
       if (cancelled) return;
       if (cached) {
@@ -1112,14 +1239,11 @@ const RecorderScreen = ({
     sentence.lang,
   ]);
 
-  /** model status (pull once + push) */
   useEffect(() => {
-    // 起動時に pull
     invoke<string>("get_model_status")
       .then(setStatus)
       .catch(() => setStatus("idle"));
 
-    // 以降は push
     const unlistenPromise = listen<string>("model-status", (e) => {
       setStatus(e.payload);
     });
@@ -1128,7 +1252,7 @@ const RecorderScreen = ({
       unlistenPromise.then((unlisten) => unlisten());
     };
   }, []);
-  /** model download progress */
+
   useEffect(() => {
     const unlistenPromise = listen<number>("model-progress", (e) => {
       setProgress(e.payload);
@@ -1138,7 +1262,7 @@ const RecorderScreen = ({
       unlistenPromise.then((unlisten) => unlisten());
     };
   }, []);
-  /** downloading に入った瞬間に理由を表示 */
+
   useEffect(() => {
     if (status === "downloading" && !modelMissingShown.current) {
       modelMissingShown.current = true;
@@ -1181,7 +1305,6 @@ const RecorderScreen = ({
 
       const deckName = getDeckName(sentence.lang);
 
-      // デッキを保証
       await ankiRequest({
         action: "createDeck",
         version: 6,
@@ -1190,7 +1313,6 @@ const RecorderScreen = ({
 
       const cardText = (displayText || sentence.text || "").trim();
 
-      // model audio (模範音声)
       let modelAudioBase64: string;
       let modelAudioFilename: string;
 
@@ -1209,10 +1331,8 @@ const RecorderScreen = ({
         modelAudioBase64 = await invoke<string>("fetch_audio_base64", {
           url: sentence.audioUrl,
         });
-        // Tatoebaはmp3が多いので拡張子はmp3に寄せる
         modelAudioFilename = `model_${sentenceHash}.mp3`;
       } else {
-        // recorded などローカルパス
         const bytes = await readFile(sentence.audioUrl);
         const blob = new Blob([bytes], {
           type: guessAudioMimeFromPath(sentence.audioUrl),
@@ -1275,7 +1395,6 @@ const RecorderScreen = ({
     }
   };
 
-  /** transcript started */
   useEffect(() => {
     const unlisten = listen<string>("transcript-started", (e) => {
       const wavPath = e.payload;
@@ -1284,7 +1403,6 @@ const RecorderScreen = ({
         [wavPath]: null,
       }));
 
-      // 自動文字起こし中は「音声認識」ボタンを出さないため recognizing 扱いにする
       setRecognizing((prev) => ({
         ...prev,
         [wavPath]: true,
@@ -1295,7 +1413,6 @@ const RecorderScreen = ({
     };
   }, []);
 
-  /** transcript ready */
   useEffect(() => {
     const unlisten = listen<string>("transcript-ready", async (e) => {
       const wavPath = e.payload;
@@ -1342,7 +1459,6 @@ const RecorderScreen = ({
           return;
         }
 
-        // アップロード音声の自動認識結果はタイトルにも表示（初回のみ）
         const joined = result.segments
           .map((s) => s.text)
           .join(" ")
@@ -1392,7 +1508,6 @@ const RecorderScreen = ({
     }
   };
 
-  /** recordings が変わったら audio / transcript をロード */
   useEffect(() => {
     const run = async () => {
       for (const rec of recordings) {
@@ -1414,9 +1529,6 @@ const RecorderScreen = ({
     try {
       const basePath = `falkoe/sentences/${sentenceHash}/model`;
 
-      // 実際の保存名が環境/バージョンで揺れているので両対応する
-      // - model.json: run_whisper_model の既定
-      // - transcript.json: 旧実装/将来互換
       const candidates = [
         `${basePath}/model.json`,
         `${basePath}/transcript.json`,
@@ -1427,9 +1539,7 @@ const RecorderScreen = ({
             baseDir: BaseDirectory.Document,
           });
           return JSON.parse(text) as Transcript;
-        } catch {
-          // try next
-        }
+        } catch {}
       }
 
       return null;
@@ -1450,7 +1560,6 @@ const RecorderScreen = ({
     }
   }
 
-  // 既に「模範音声の音声認識結果」がある場合は、最初から表示する
   useEffect(() => {
     if (!sentenceHash) return;
     if (waitingModel) return;
@@ -1489,12 +1598,9 @@ const RecorderScreen = ({
   return (
     <div
       onPointerDown={() => {
-        // WebView で hover 再生がブロックされる場合があるため、最初のユーザー操作で音声を解錠
         if (audioUnlockTriedRef.current) return;
         audioUnlockTriedRef.current = true;
-        void unlockAudioFromUserGesture().catch(() => {
-          // 解錠失敗は致命ではない（クリック再生は動くこともある）
-        });
+        void unlockAudioFromUserGesture().catch(() => {});
       }}
     >
       <Space orientation="vertical" style={{ width: "100%" }}>
@@ -1505,6 +1611,29 @@ const RecorderScreen = ({
           onOpenDevelopersMistakes={onOpenDevelopersMistakes}
           onOpenCommonMistakes={onOpenCommonMistakes}
         />
+
+        {/* Audio Debug Info - コメントアウトして非表示
+        {audioDebugInfo && (
+          <Typography.Paragraph
+            style={{
+              fontSize: 11,
+              fontFamily: "monospace",
+              whiteSpace: "pre-wrap",
+              backgroundColor: "#f5f5f5",
+              padding: 8,
+              borderRadius: 4,
+              maxHeight: 200,
+              overflow: "auto",
+            }}
+          >
+            <strong>Audio Debug:</strong>
+            <br />
+            {audioDebugInfo}
+            <br />
+            <strong>Current headerAudioUrl:</strong> {headerAudioUrl?.substring(0, 100) || "null"}
+          </Typography.Paragraph>
+        )}
+        */}
 
         {isTranscribing && (
           <Space>
@@ -1524,23 +1653,21 @@ const RecorderScreen = ({
           <Button
             type="text"
             icon={<PlayCircleOutlined />}
+            disabled={!headerAudioUrl || isHeaderAudioLoading}
+            loading={isHeaderAudioLoading}
             onClick={async () => {
-              const fallbackUrl =
-                source.kind === "uploaded" ? sentence.audioUrl : "";
-              const url =
-                headerAudioUrl ??
-                (headerAudioPath
-                  ? preferAssetProtocol
-                    ? toAssetUrl(headerAudioPath)
-                    : await ensureBlobAudioUrl(headerAudioPath)
-                  : fallbackUrl);
-
-              if (!url) {
+              if (!headerAudioUrl) {
                 message.info("音声を読み込み中…");
                 return;
               }
 
-              void new Audio(url).play().catch(() => {});
+              try {
+                const audio = new Audio(headerAudioUrl);
+                await audio.play();
+              } catch (e) {
+                console.error("Audio playback failed:", e);
+                message.error("音声の再生に失敗しました");
+              }
             }}
             style={{ opacity: 0.7 }}
             onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
@@ -1580,14 +1707,12 @@ const RecorderScreen = ({
               setIsTranscribing(true);
 
               if (source.kind === "uploaded" && uploadedAudioPath) {
-                // アップロード音声の場合は保存済みパスを使用
                 invoke("run_whisper_uploaded", {
                   uploadedPath: uploadedAudioPath,
                   sentenceHash: sentenceHash,
                   lang: sentence.lang,
                 });
               } else {
-                // Tatoeba等のURL音声の場合
                 invoke("run_whisper_model", {
                   url: sentence.audioUrl,
                   sentenceHash: sentenceHash,
@@ -1711,7 +1836,6 @@ const RecorderScreen = ({
                 return;
               }
 
-              // この録音はこれから文字起こしするので、ボタンが出ないように先に状態を立てる
               setRecognizing((prev) => ({
                 ...prev,
                 [movedPath]: true,
