@@ -8,7 +8,6 @@ function hashText(text: string): string {
   return Math.abs(hash).toString(36);
 }
 import { Button, message, Space, Spin, Typography, theme } from "antd";
-import { startRecording, stopRecording } from "tauri-plugin-mic-recorder-api";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { invoke } from "@tauri-apps/api/core";
 import type { Sentence } from "../components/ExampleList";
@@ -40,6 +39,8 @@ import RecordingsList from "../components/RecordingsList";
 import type { Recording, Transcript } from "../types/recording";
 import LinkingStressArea from "./recorder/LinkingStressArea";
 import { useWhisperEvents } from "./recorder/useWhisperEvents";
+import { useRecordingControls } from "./recorder/useRecordingControls";
+import { useModelRecognition } from "./recorder/useModelRecognition";
 
 type RecorderScreenProps = {
   source: any;
@@ -141,7 +142,6 @@ const RecorderScreen = ({
     sha256(sentence.text, sentence.lang).then(setSentenceHash);
   }, [source, sentence.text, sentence.lang]);
 
-  const [isRecording, setIsRecording] = useState(false);
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [transcripts, setTranscripts] = useState<
     Record<string, Transcript | null>
@@ -363,6 +363,29 @@ const RecorderScreen = ({
 
     setRecordings(parsed);
   };
+
+  const { isRecording, startRecording, stopRecording } = useRecordingControls({
+    sentenceHash,
+    lang: sentence.lang,
+    refreshFiles,
+    setRecognizing,
+    setTranscripts,
+    setIsTranscribing,
+  });
+
+  const { recognizeModel, disabled: modelRecognizeDisabled } =
+    useModelRecognition({
+      sourceKind: source.kind,
+      uploadedAudioPath,
+      sentenceHash,
+      lang: sentence.lang,
+      sentenceAudioUrl: sentence.audioUrl,
+      waitingModel,
+      modelText,
+      setModelText,
+      setWaitingModel,
+      setIsTranscribing,
+    });
 
   const langToDeckSegment: Record<string, string> = {
     eng: "English",
@@ -625,55 +648,9 @@ const RecorderScreen = ({
             {displayText || sentence.text}
           </Typography.Title>
           <Button
-            onClick={async () => {
-              console.log("model recognize clicked");
-
-              if (waitingModel) return;
-
-              if (source.kind === "uploaded") {
-                if (!uploadedAudioPath) return;
-                const cached = await loadUploadedTranscript(uploadedAudioPath);
-                if (cached) {
-                  const overwrite = await confirmOverwriteExisting();
-                  if (!overwrite) {
-                    setModelText(cached.segments.map((s) => s.text).join(" "));
-                    return;
-                  }
-                }
-              } else {
-                const cached = await loadModelTranscript(sentenceHash);
-                if (cached) {
-                  const overwrite = await confirmOverwriteExisting();
-                  if (!overwrite) {
-                    setModelText(cached.segments.map((s) => s.text).join(" "));
-                    return;
-                  }
-                }
-              }
-
-              setWaitingModel(true);
-              setIsTranscribing(true);
-
-              if (source.kind === "uploaded" && uploadedAudioPath) {
-                invoke("run_whisper_uploaded", {
-                  uploadedPath: uploadedAudioPath,
-                  sentenceHash: sentenceHash,
-                  lang: sentence.lang,
-                });
-              } else {
-                invoke("run_whisper_model", {
-                  url: sentence.audioUrl,
-                  sentenceHash: sentenceHash,
-                  lang: sentence.lang,
-                });
-              }
-            }}
+            onClick={recognizeModel}
             loading={waitingModel}
-            disabled={
-              (source.kind === "uploaded" && !uploadedAudioPath) ||
-              waitingModel ||
-              Boolean(modelText?.trim())
-            }
+            disabled={modelRecognizeDisabled}
           >
             {source.kind === "uploaded"
               ? "アップロード音声を音声認識する"
@@ -712,69 +689,12 @@ const RecorderScreen = ({
           <Button
             type="primary"
             disabled={isRecording || status !== "ready"}
-            onClick={async () => {
-              try {
-                await startRecording();
-                setIsRecording(true);
-              } catch (e) {
-                message.error(String(e));
-              }
-            }}
+            onClick={startRecording}
           >
             Start Recording
           </Button>
 
-          <Button
-            danger
-            disabled={!isRecording}
-            onClick={async () => {
-              setIsRecording(false);
-              let movedPath: string;
-
-              try {
-                const recordedPath = await stopRecording();
-                movedPath = await invoke<string>("move_recorded_audio", {
-                  srcPath: recordedPath,
-                  sentenceHash: sentenceHash,
-                });
-              } catch (e) {
-                message.error("録音の保存に失敗しました");
-                await refreshFiles();
-                return;
-              }
-
-              setRecognizing((prev) => ({
-                ...prev,
-                [movedPath]: true,
-              }));
-              setTranscripts((prev) => ({
-                ...prev,
-                [movedPath]: null,
-              }));
-              setIsTranscribing(true);
-
-              try {
-                await invoke("run_whisper", {
-                  path: movedPath,
-                  sentenceHash: sentenceHash,
-                  lang: sentence.lang,
-                });
-              } catch {
-                setRecognizing((prev) => {
-                  if (!prev[movedPath]) return prev;
-                  const next = { ...prev };
-                  delete next[movedPath];
-                  return next;
-                });
-                setIsTranscribing(false);
-                message.info(
-                  "録音は保存されました（文字起こしは後で実行できます）"
-                );
-              }
-
-              await refreshFiles();
-            }}
-          >
+          <Button danger disabled={!isRecording} onClick={stopRecording}>
             Stop Recording
           </Button>
         </Space>
