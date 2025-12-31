@@ -46,7 +46,7 @@ type WordInputScreenProps = {
   onSelect: (s: Sentence) => void;
   onUseSpeech: (source: SpeechSource) => void;
   onOpenIpaList: () => void;
-  onOpenDevelopersMistake: () => void;
+  onOpenDevelopersMistakes: () => void;
   onOpenCommonMistakes: () => void;
 };
 
@@ -182,7 +182,7 @@ const WordInputScreen = ({
   onSelect,
   onUseSpeech,
   onOpenIpaList,
-  onOpenDevelopersMistake,
+  onOpenDevelopersMistakes,
   onOpenCommonMistakes,
 }: WordInputScreenProps) => {
   const [loading, setLoading] = useState(false);
@@ -272,7 +272,7 @@ const WordInputScreen = ({
       <TopNav
         current="word"
         onOpenIpaList={onOpenIpaList}
-        onOpenDevelopersMistake={onOpenDevelopersMistake}
+        onOpenDevelopersMistakes={onOpenDevelopersMistakes}
         onOpenCommonMistakes={onOpenCommonMistakes}
       />
       <Typography.Title level={4}>例文検索</Typography.Title>

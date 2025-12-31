@@ -23,7 +23,7 @@ type Props = {
   initialFocus?: "j" | "r" | "oo";
 };
 
-export default function DevelopersMistakeScreen({
+export default function DevelopersMistakesScreen({
   onBack,
   onOpenIpaList,
   onOpenCommonMistakes,
@@ -233,17 +233,17 @@ export default function DevelopersMistakeScreen({
     >
       <Space orientation="vertical" style={{ width: "100%" }}>
         <TopNav
-          current="mistake"
+          current="mistakes"
           onBack={onBack}
           onOpenIpaList={onOpenIpaList}
-          onOpenDevelopersMistake={() => {
+          onOpenDevelopersMistakes={() => {
             // already here
           }}
           onOpenCommonMistakes={onOpenCommonMistakes}
         />
 
         <Typography.Title level={4} style={{ margin: 0 }}>
-          Developer’s mistake (recorded by fal)
+          Developer’s mistakes (recorded by fal)
         </Typography.Title>
 
         <Typography.Paragraph style={{ margin: 0 }}>

@@ -10,7 +10,7 @@ import TopNav from "../components/TopNav";
 
 type Props = {
   onBack: () => void;
-  onOpenDevelopersMistake: (focus?: "j" | "r" | "oo") => void;
+  onOpenDevelopersMistakes: (focus?: "j" | "r" | "oo") => void;
   onOpenCommonMistakes: () => void;
 };
 
@@ -41,7 +41,7 @@ function titleForCategory(cat: "consonants" | "vowels" | "others"): string {
 
 export default function IpaListScreen({
   onBack,
-  onOpenDevelopersMistake,
+  onOpenDevelopersMistakes,
   onOpenCommonMistakes,
 }: Props) {
   const [loading, setLoading] = useState(true);
@@ -210,7 +210,7 @@ export default function IpaListScreen({
           onOpenIpaList={() => {
             // already here
           }}
-          onOpenDevelopersMistake={() => onOpenDevelopersMistake()}
+          onOpenDevelopersMistakes={() => onOpenDevelopersMistakes()}
           onOpenCommonMistakes={onOpenCommonMistakes}
         />
         <Typography.Title level={4} style={{ margin: 0 }}>

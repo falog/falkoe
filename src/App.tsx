@@ -2,7 +2,7 @@ import { useState } from "react";
 import WordInputScreen from "./screens/WordInputScreen";
 import RecorderScreen from "./screens/RecorderScreen";
 import IpaListScreen from "./screens/IpaListScreen.tsx";
-import DevelopersMistakeScreen from "./screens/DevelopersMistakeScreen.tsx";
+import DevelopersMistakesScreen from "./screens/DevelopersMistakesScreen.tsx";
 import CommonMistakesScreen from "./screens/CommonMistakesScreen.tsx";
 import { Sentence } from "./components/ExampleList";
 import type { SpeechSource } from "./types/speech";
@@ -10,7 +10,7 @@ import type { MistakeFocus } from "./data/commonMistakes";
 
 const App = () => {
   const [screen, setScreen] = useState<
-    "word" | "record" | "ipa" | "mistake" | "common"
+    "word" | "record" | "ipa" | "mistakes" | "common"
   >("word");
   const [mistakeFocus, setMistakeFocus] = useState<MistakeFocus | null>(null);
   const [lang, setLang] = useState("eng");
@@ -32,9 +32,9 @@ const App = () => {
           onSearchResult={setSentences}
           onWordcount={setWordcount}
           onOpenIpaList={() => setScreen("ipa")}
-          onOpenDevelopersMistake={() => {
+          onOpenDevelopersMistakes={() => {
             setMistakeFocus(null);
-            setScreen("mistake");
+            setScreen("mistakes");
           }}
           onOpenCommonMistakes={() => setScreen("common")}
           onSelect={(s) => {
@@ -56,9 +56,9 @@ const App = () => {
           source={source}
           onBack={() => setScreen("word")}
           onOpenIpaList={() => setScreen("ipa")}
-          onOpenDevelopersMistake={() => {
+          onOpenDevelopersMistakes={() => {
             setMistakeFocus(null);
-            setScreen("mistake");
+            setScreen("mistakes");
           }}
           onOpenCommonMistakes={() => setScreen("common")}
         />
@@ -67,16 +67,16 @@ const App = () => {
       {screen === "ipa" && (
         <IpaListScreen
           onBack={() => setScreen("word")}
-          onOpenDevelopersMistake={(focus) => {
+          onOpenDevelopersMistakes={(focus) => {
             setMistakeFocus(focus ?? null);
-            setScreen("mistake");
+            setScreen("mistakes");
           }}
           onOpenCommonMistakes={() => setScreen("common")}
         />
       )}
 
-      {screen === "mistake" && (
-        <DevelopersMistakeScreen
+      {screen === "mistakes" && (
+        <DevelopersMistakesScreen
           onBack={() => {
             setMistakeFocus(null);
             setScreen("word");
@@ -97,9 +97,9 @@ const App = () => {
         <CommonMistakesScreen
           onBack={() => setScreen("word")}
           onOpenIpaList={() => setScreen("ipa")}
-          onOpenDevelopersMistake={() => {
+          onOpenDevelopersMistakes={() => {
             setMistakeFocus(null);
-            setScreen("mistake");
+            setScreen("mistakes");
           }}
           onOpenCommonMistakes={() => {
             // already here

@@ -1,12 +1,12 @@
 import { Button, Space } from "antd";
 
-export type TopNavCurrent = "word" | "record" | "ipa" | "mistake" | "common";
+export type TopNavCurrent = "word" | "record" | "ipa" | "mistakes" | "common";
 
 type Props = {
   current: TopNavCurrent;
   onBack?: () => void;
   onOpenIpaList: () => void;
-  onOpenDevelopersMistake: () => void;
+  onOpenDevelopersMistakes: () => void;
   onOpenCommonMistakes: () => void;
 };
 
@@ -14,7 +14,7 @@ export default function TopNav({
   current,
   onBack,
   onOpenIpaList,
-  onOpenDevelopersMistake,
+  onOpenDevelopersMistakes,
   onOpenCommonMistakes,
 }: Props) {
   return (
@@ -25,10 +25,10 @@ export default function TopNav({
         IPA 発音一覧
       </Button>
       <Button
-        disabled={current === "mistake"}
-        onClick={onOpenDevelopersMistake}
+        disabled={current === "mistakes"}
+        onClick={onOpenDevelopersMistakes}
       >
-        Developer’s mistake
+        Developer’s mistakes
       </Button>
       <Button disabled={current === "common"} onClick={onOpenCommonMistakes}>
         よくある間違い

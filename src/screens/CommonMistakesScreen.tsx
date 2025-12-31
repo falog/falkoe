@@ -16,14 +16,14 @@ import TopNav from "../components/TopNav";
 type Props = {
   onBack: () => void;
   onOpenIpaList: () => void;
-  onOpenDevelopersMistake: () => void;
+  onOpenDevelopersMistakes: () => void;
   onOpenCommonMistakes: () => void;
 };
 
 export default function CommonMistakesScreen({
   onBack,
   onOpenIpaList,
-  onOpenDevelopersMistake,
+  onOpenDevelopersMistakes,
   onOpenCommonMistakes,
 }: Props) {
   const [ipaIndex, setIpaIndex] = useState<IpaIndex | null>(null);
@@ -110,7 +110,7 @@ export default function CommonMistakesScreen({
         current="common"
         onBack={onBack}
         onOpenIpaList={onOpenIpaList}
-        onOpenDevelopersMistake={onOpenDevelopersMistake}
+        onOpenDevelopersMistakes={onOpenDevelopersMistakes}
         onOpenCommonMistakes={onOpenCommonMistakes}
       />
 

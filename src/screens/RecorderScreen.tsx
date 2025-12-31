@@ -33,7 +33,7 @@ type RecorderScreenProps = {
   source: SpeechSource;
   onBack: () => void;
   onOpenIpaList: () => void;
-  onOpenDevelopersMistake: () => void;
+  onOpenDevelopersMistakes: () => void;
   onOpenCommonMistakes: () => void;
 };
 
@@ -213,7 +213,7 @@ const RecorderScreen = ({
   source,
   onBack,
   onOpenIpaList,
-  onOpenDevelopersMistake,
+  onOpenDevelopersMistakes,
   onOpenCommonMistakes,
 }: RecorderScreenProps) => {
   const { token: antdToken } = theme.useToken();
@@ -1502,7 +1502,7 @@ const RecorderScreen = ({
           current="record"
           onBack={onBack}
           onOpenIpaList={onOpenIpaList}
-          onOpenDevelopersMistake={onOpenDevelopersMistake}
+          onOpenDevelopersMistakes={onOpenDevelopersMistakes}
           onOpenCommonMistakes={onOpenCommonMistakes}
         />
 
