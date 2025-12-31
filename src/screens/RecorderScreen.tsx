@@ -15,7 +15,6 @@ import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { PlayCircleOutlined } from "@ant-design/icons";
 import type { Sentence } from "../components/ExampleList";
-import RecordingItem from "../components/RecordingItem";
 import type { SpeechSource } from "../types/speech";
 import { sha256 } from "../utils/hash";
 import { renderLinkingRust } from "../utils/linkingInvoke";
@@ -28,6 +27,7 @@ import {
   unlockAudioFromUserGesture,
 } from "../utils/ipaPlayer";
 import TopNav from "../components/TopNav";
+import RecordingsList from "../components/RecordingsList";
 
 type RecorderScreenProps = {
   source: SpeechSource;
@@ -1875,36 +1875,17 @@ const RecorderScreen = ({
         {isRecording && <Typography.Text>Recording...</Typography.Text>}
 
         <Typography.Title level={5}>Recordings</Typography.Title>
-
-        <Space orientation="vertical" style={{ width: "100%" }}>
-          {recordings.length === 0 && (
-            <Typography.Text type="secondary">
-              No recordings yet
-            </Typography.Text>
-          )}
-
-          {recordings.map((rec, i) => (
-            <RecordingItem
-              key={rec.path}
-              rec={rec}
-              index={i}
-              total={recordings.length}
-              transcript={transcripts[rec.path]}
-              recognizing={!!recognizing[rec.path]}
-              recognize={recognizeRecording}
-              audioUrl={
-                audioUrls[rec.path] ??
-                (preferAssetProtocol ? toAssetUrl(rec.path) : undefined)
-              }
-              ensureAudioUrl={(r, opts) => {
-                if (!preferAssetProtocol || opts?.forceBlob) {
-                  void ensureBlobAudioUrl(r.path);
-                }
-              }}
-              addToAnki={addToAnki}
-            />
-          ))}
-        </Space>
+        <RecordingsList
+          recordings={recordings}
+          transcripts={transcripts}
+          recognizing={recognizing}
+          recognizeRecording={recognizeRecording}
+          audioUrls={audioUrls}
+          preferAssetProtocol={preferAssetProtocol}
+          toAssetUrl={toAssetUrl}
+          ensureBlobAudioUrl={ensureBlobAudioUrl}
+          addToAnki={addToAnki}
+        />
       </Space>
     </div>
   );
