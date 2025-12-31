@@ -55,7 +55,8 @@ export default function RecordingItem({
     <div>
       <Flex align="center" justify="space-between">
         <div>
-          <strong>Take {total - index}</strong> / {rec.dateLabel}
+          <strong>Take {total - index}</strong>
+          {rec.dateLabel ? <> / {rec.dateLabel}</> : null}
           {recognizing && (
             <Typography.Text type="secondary" style={{ marginLeft: 8 }}>
               文字起こし中…

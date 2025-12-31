@@ -11,7 +11,6 @@ import { Button, message, Space, Spin, Typography, theme } from "antd";
 import { startRecording, stopRecording } from "tauri-plugin-mic-recorder-api";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import type { Sentence } from "../components/ExampleList";
 import { sha256 } from "../utils/hash";
 import {
@@ -22,6 +21,7 @@ import {
 } from "./recorder/audioUtils";
 import { useAudioUrlCache } from "./recorder/useAudioUrlCache";
 import { useHeaderAudioUrl } from "./recorder/useHeaderAudioUrl";
+import { useModelStatus } from "./recorder/useModelStatus";
 import {
   loadModelTranscript,
   loadTranscript,
@@ -146,9 +146,7 @@ const RecorderScreen = ({
   const [transcripts, setTranscripts] = useState<
     Record<string, Transcript | null>
   >({});
-  const [status, setStatus] = useState<string>("idle");
-  const modelMissingShown = useRef(false);
-  const [progress, setProgress] = useState<number | null>(null);
+  const { status, progress } = useModelStatus();
   const [modelText, setModelText] = useState<string | null>(null);
   const [waitingModel, setWaitingModel] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -163,18 +161,15 @@ const RecorderScreen = ({
     useState<DisplayMode>("phoneme");
   const [ipaIndex, setIpaIndex] = useState<IpaIndex | null>(null);
   const audioUnlockTriedRef = useRef(false);
-  const [ipaIndexError, setIpaIndexError] = useState<string | null>(null);
 
   useEffect(() => {
     loadIpaIndex()
       .then((idx) => {
         setIpaIndex(idx);
-        setIpaIndexError(null);
       })
       .catch((e) => {
         setIpaIndex(null);
         const msg = String((e as any)?.message ?? e);
-        setIpaIndexError(msg);
         message.error(`IPA index 読み込み失敗: ${msg}`);
       });
   }, []);
@@ -353,37 +348,6 @@ const RecorderScreen = ({
     sentenceHash,
     sentence.lang,
   ]);
-
-  useEffect(() => {
-    invoke<string>("get_model_status")
-      .then(setStatus)
-      .catch(() => setStatus("idle"));
-
-    const unlistenPromise = listen<string>("model-status", (e) => {
-      setStatus(e.payload);
-    });
-
-    return () => {
-      unlistenPromise.then((unlisten) => unlisten());
-    };
-  }, []);
-
-  useEffect(() => {
-    const unlistenPromise = listen<number>("model-progress", (e) => {
-      setProgress(e.payload);
-    });
-
-    return () => {
-      unlistenPromise.then((unlisten) => unlisten());
-    };
-  }, []);
-
-  useEffect(() => {
-    if (status === "downloading" && !modelMissingShown.current) {
-      modelMissingShown.current = true;
-      message.info("音声認識モデルがありません。ダウンロードを開始します。");
-    }
-  }, [status]);
 
   const refreshFiles = async () => {
     const list = await invoke<string[]>("list_recordings", {
@@ -733,7 +697,6 @@ const RecorderScreen = ({
             linkingDisplayMode={linkingDisplayMode}
             setLinkingDisplayMode={setLinkingDisplayMode}
             ipaIndex={ipaIndex}
-            ipaIndexError={ipaIndexError}
           />
         )}
         <Typography.Text type="secondary">

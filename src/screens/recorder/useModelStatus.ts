@@ -1,0 +1,52 @@
+import { useEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { message } from "antd";
+
+export function useModelStatus() {
+  const [status, setStatus] = useState<string>("idle");
+  const [progress, setProgress] = useState<number | null>(null);
+  const modelMissingShown = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    invoke<string>("get_model_status")
+      .then((s) => {
+        if (cancelled) return;
+        setStatus(s);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setStatus("idle");
+      });
+
+    const unlistenPromise = listen<string>("model-status", (e) => {
+      setStatus(e.payload);
+    });
+
+    return () => {
+      cancelled = true;
+      unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, []);
+
+  useEffect(() => {
+    const unlistenPromise = listen<number>("model-progress", (e) => {
+      setProgress(e.payload);
+    });
+
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, []);
+
+  useEffect(() => {
+    if (status === "downloading" && !modelMissingShown.current) {
+      modelMissingShown.current = true;
+      message.info("音声認識モデルがありません。ダウンロードを開始します。");
+    }
+  }, [status]);
+
+  return { status, progress };
+}

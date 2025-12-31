@@ -2,8 +2,34 @@ import { BaseDirectory, readTextFile } from "@tauri-apps/plugin-fs";
 import type { Recording, Transcript } from "../../types/recording";
 
 export function parseRecording(str: string): Recording {
-  const [path, fileName, timestamp, dateLabel] = str.split("|");
-  return { path, fileName, timestamp, dateLabel } as Recording;
+  // Backward-compatible: older builds returned "path|fileName|timestamp|dateLabel".
+  // Current build returns just the wav path.
+  if (str.includes("|")) {
+    const [path, fileName, timestamp, dateLabel] = str.split("|");
+    return {
+      path: path ?? "",
+      fileName: fileName ?? "",
+      timestamp: timestamp ?? "",
+      dateLabel: dateLabel ?? "",
+    };
+  }
+
+  const path = str;
+  const fileName =
+    path.replace(/\\/g, "/").split("/").filter(Boolean).pop() ?? "";
+
+  const base = fileName.replace(/\.[^.]+$/, "");
+  const tsMatch = base.match(/^(\d{8})_(\d{6})$/);
+  const timestamp = tsMatch ? `${tsMatch[1]}_${tsMatch[2]}` : base;
+
+  const dateLabel = (() => {
+    if (!tsMatch) return "";
+    const d = tsMatch[1];
+    const t = tsMatch[2];
+    return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)} ${t.slice(0, 2)}:${t.slice(2, 4)}:${t.slice(4, 6)}`;
+  })();
+
+  return { path, fileName, timestamp, dateLabel };
 }
 
 export async function loadTranscript(

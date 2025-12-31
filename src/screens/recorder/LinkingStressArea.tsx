@@ -1,5 +1,5 @@
 import { Radio, Space, Typography, message, theme } from "antd";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { tokenizeIpa } from "../../utils/ipaTokenize";
 import { playBundledAudio } from "../../utils/ipaPlayer";
 import type { RenderLinkingResult, DisplayMode } from "../../types/linking";
@@ -10,15 +10,6 @@ type Props = {
   linkingDisplayMode: DisplayMode;
   setLinkingDisplayMode: (mode: DisplayMode) => void;
   ipaIndex: IpaIndex | null;
-  ipaIndexError: string | null;
-};
-
-type HoverDebug = {
-  ts: number;
-  tok: string;
-  event: "enter" | "click";
-  result: "started" | "ok" | "failed";
-  message?: string;
 };
 
 export default function LinkingStressArea({
@@ -26,13 +17,11 @@ export default function LinkingStressArea({
   linkingDisplayMode,
   setLinkingDisplayMode,
   ipaIndex,
-  ipaIndexError,
 }: Props) {
   const { token: antdToken } = theme.useToken();
 
   const hoverTimerRef = useRef<number | null>(null);
   const lastHoverRef = useRef<{ tok: string; ts: number } | null>(null);
-  const [ipaHoverDebug, setIpaHoverDebug] = useState<HoverDebug | null>(null);
 
   useEffect(() => {
     return () => {
@@ -48,19 +37,10 @@ export default function LinkingStressArea({
     audioPath: string,
     event: "enter" | "click"
   ) {
-    setIpaHoverDebug({ ts: Date.now(), tok, event, result: "started" });
     try {
       await playBundledAudio(audioPath);
-      setIpaHoverDebug({ ts: Date.now(), tok, event, result: "ok" });
     } catch (e) {
       const msg = String((e as any)?.message ?? e);
-      setIpaHoverDebug({
-        ts: Date.now(),
-        tok,
-        event,
-        result: "failed",
-        message: msg,
-      });
       if (event === "click") {
         if (/user gesture|required/i.test(msg)) {
           message.info("最初に画面を1回クリックして音声を有効化してください");
@@ -569,19 +549,6 @@ export default function LinkingStressArea({
           optionType="button"
           buttonStyle="solid"
         />
-
-        <Typography.Text type="secondary" style={{ display: "block" }}>
-          IPA audio:{" "}
-          {ipaIndex ? `${Object.keys(ipaIndex).length} keys` : "not loaded"}
-          {ipaIndexError ? ` (error: ${ipaIndexError})` : ""}
-          {linkingResult?.joined
-            ? ` | mode: ${linkingDisplayMode} | parens: ${linkingResult.joined.includes("(") || linkingResult.joined.includes("（") ? "yes" : "no"}`
-            : ""}
-          {ipaHoverDebug
-            ? ` | last: ${ipaHoverDebug.tok} ${ipaHoverDebug.event} ${ipaHoverDebug.result}` +
-              (ipaHoverDebug.message ? ` (${ipaHoverDebug.message})` : "")
-            : ""}
-        </Typography.Text>
       </Space>
 
       {renderLegend()}
