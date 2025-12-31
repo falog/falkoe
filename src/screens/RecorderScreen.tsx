@@ -1,23 +1,8 @@
 import { useEffect, useState, useRef } from "react";
-function hashText(text: string): string {
-  let hash = 0;
-  for (let i = 0; i < text.length; i++) {
-    hash = (hash << 5) - hash + text.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash).toString(36);
-}
 import { Button, message, Space, Spin, Typography, theme } from "antd";
-import { readFile } from "@tauri-apps/plugin-fs";
 import { invoke } from "@tauri-apps/api/core";
 import type { Sentence } from "../components/ExampleList";
 import { sha256 } from "../utils/hash";
-import {
-  blobToBase64,
-  guessAudioMimeFromPath,
-  guessExtFromPath,
-  isHttpUrl,
-} from "./recorder/audioUtils";
 import { useAudioUrlCache } from "./recorder/useAudioUrlCache";
 import { useHeaderAudioUrl } from "./recorder/useHeaderAudioUrl";
 import { useModelStatus } from "./recorder/useModelStatus";
@@ -27,7 +12,6 @@ import {
   loadUploadedTranscript,
   parseRecording,
 } from "./recorder/transcriptUtils";
-import { ankiRequest } from "./recorder/ankiConnect";
 import { confirmOverwriteExisting } from "./recorder/uiUtils";
 import HeaderAudioPlayButton from "./recorder/HeaderAudioPlayButton";
 import { renderLinkingRust } from "../utils/linkingInvoke";
@@ -41,6 +25,7 @@ import LinkingStressArea from "./recorder/LinkingStressArea";
 import { useWhisperEvents } from "./recorder/useWhisperEvents";
 import { useRecordingControls } from "./recorder/useRecordingControls";
 import { useModelRecognition } from "./recorder/useModelRecognition";
+import { useAddToAnki } from "./recorder/useAddToAnki";
 
 type RecorderScreenProps = {
   source: any;
@@ -54,6 +39,15 @@ type UploadedAudioInfo = {
   exists: boolean;
   path: string;
 };
+
+function hashText(text: string): string {
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) {
+    hash = (hash << 5) - hash + text.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(36);
+}
 
 const RecorderScreen = ({
   source,
@@ -387,115 +381,13 @@ const RecorderScreen = ({
       setIsTranscribing,
     });
 
-  const langToDeckSegment: Record<string, string> = {
-    eng: "English",
-    jpn: "Japanese",
-  };
-
-  function getDeckName(lang: string) {
-    const langName = langToDeckSegment[lang] ?? lang;
-    return `Falkoe::${langName}::Pronunciation`;
-  }
-
-  const addToAnki = async (rec: Recording) => {
-    try {
-      console.log("[RecorderScreen] addToAnki start", {
-        rec,
-        sentence,
-        sentenceHash,
-      });
-
-      const deckName = getDeckName(sentence.lang);
-
-      await ankiRequest({
-        action: "createDeck",
-        version: 6,
-        params: { deck: deckName },
-      });
-
-      const cardText = (displayText || sentence.text || "").trim();
-
-      let modelAudioBase64: string;
-      let modelAudioFilename: string;
-
-      if (source.kind === "uploaded") {
-        if (!uploadedAudioPath) {
-          throw new Error("uploaded audio path is not ready");
-        }
-        const bytes = await readFile(uploadedAudioPath);
-        const blob = new Blob([bytes], {
-          type: guessAudioMimeFromPath(uploadedAudioPath),
-        });
-        modelAudioBase64 = await blobToBase64(blob);
-        const ext = guessExtFromPath(uploadedAudioPath);
-        modelAudioFilename = `model_${sentenceHash}.${ext}`;
-      } else if (isHttpUrl(sentence.audioUrl)) {
-        modelAudioBase64 = await invoke<string>("fetch_audio_base64", {
-          url: sentence.audioUrl,
-        });
-        modelAudioFilename = `model_${sentenceHash}.mp3`;
-      } else {
-        const bytes = await readFile(sentence.audioUrl);
-        const blob = new Blob([bytes], {
-          type: guessAudioMimeFromPath(sentence.audioUrl),
-        });
-        modelAudioBase64 = await blobToBase64(blob);
-        const ext = guessExtFromPath(sentence.audioUrl);
-        modelAudioFilename = `model_${sentenceHash}.${ext}`;
-      }
-
-      await ankiRequest({
-        action: "storeMediaFile",
-        version: 6,
-        params: {
-          filename: modelAudioFilename,
-          data: modelAudioBase64,
-        },
-      });
-
-      const bytes = await readFile(rec.path);
-      const blob = new Blob([bytes], {
-        type: guessAudioMimeFromPath(rec.path),
-      });
-      const audioBase64 = await blobToBase64(blob);
-      const filename = `sentence_${sentenceHash}_${rec.timestamp}.wav`;
-
-      await ankiRequest({
-        action: "storeMediaFile",
-        version: 6,
-        params: { filename, data: audioBase64 },
-      });
-
-      const res = await ankiRequest({
-        action: "addNote",
-        version: 6,
-        params: {
-          note: {
-            deckName,
-            modelName: "Basic",
-            fields: {
-              Front: `Model pronunciation<br>[sound:${modelAudioFilename}]<br><br>${cardText}`,
-              Back: `Your pronunciation<br>[sound:${filename}]`,
-            },
-            tags: ["falkoe", "pronunciation", sentence.lang],
-          },
-        },
-      });
-
-      console.log("added note id:", res);
-      message.success("Ankiに追加しました");
-    } catch (e) {
-      console.error("[RecorderScreen] addToAnki failed" + e, e);
-      const details = e instanceof Error ? e.message : String(e);
-      message.error({
-        content: (
-          <span style={{ whiteSpace: "pre-line" }}>
-            {`Ankiへの追加に失敗しました：\n${details}`}
-          </span>
-        ),
-      });
-    }
-  };
+  const { addToAnki } = useAddToAnki({
+    sourceKind: source.kind,
+    sentence,
+    sentenceHash,
+    uploadedAudioPath,
+    displayText,
+  });
 
   useWhisperEvents({
     sentenceId: sentence.id,
