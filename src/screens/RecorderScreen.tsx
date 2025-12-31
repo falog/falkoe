@@ -29,26 +29,8 @@ import {
   loadUploadedTranscript,
   parseRecording,
 } from "./recorder/transcriptUtils";
-async function ankiRequest(payload: any) {
-  const urls = ["http://127.0.0.1:8765", "http://localhost:8765"];
-  let lastError: unknown;
-  for (const url of urls) {
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const json = await res.json();
-      return json;
-    } catch (e) {
-      lastError = e;
-    }
-  }
-  throw new Error(
-    `AnkiConnectに接続できませんでした（既定: 127.0.0.1:8765）。Ankiを起動し、AnkiConnectアドオンが有効か確認してください。詳細: ${String(lastError)}`
-  );
-}
+import { ankiRequest } from "./recorder/ankiConnect";
+import { confirmOverwriteExisting } from "./recorder/uiUtils";
 import { renderLinkingRust } from "../utils/linkingInvoke";
 import type { RenderLinkingResult, DisplayMode } from "../types/linking";
 import { loadIpaIndex, type IpaIndex } from "../utils/ipaResources";
@@ -73,18 +55,6 @@ type UploadedAudioInfo = {
   exists: boolean;
   path: string;
 };
-
-function confirmOverwriteExisting(): Promise<boolean> {
-  return new Promise((resolve) => {
-    message.info({
-      content: "既に保存済みの音声があります。上書きしますか？（自動でOK）",
-      duration: 1,
-      onClick: () => resolve(true),
-      onClose: () => resolve(false),
-    });
-    setTimeout(() => resolve(true), 1000);
-  });
-}
 
 type FinalResultPayload = {
   wav_path: string;
