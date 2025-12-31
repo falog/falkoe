@@ -1,4 +1,4 @@
-import { Button, Flex } from "antd";
+import { Button, Flex, Typography } from "antd";
 import { useRef } from "react";
 import type { Recording, Transcript } from "../types/recording";
 
@@ -32,6 +32,11 @@ export default function RecordingItem({
       <Flex align="center" justify="space-between">
         <div>
           <strong>Take {total - index}</strong> / {rec.dateLabel}
+          {recognizing && (
+            <Typography.Text type="secondary" style={{ marginLeft: 8 }}>
+              文字起こし中…
+            </Typography.Text>
+          )}
         </div>
         <Flex gap={8}>
           {transcript === null && recognize && !recognizing && (

@@ -1037,6 +1037,8 @@ const RecorderScreen = ({
   useEffect(() => {
     setRecordings([]);
     setTranscripts({});
+    setModelText(null);
+    setWaitingModel(false);
     // sentence が変わったら音声URLキャッシュを捨てる（リーク防止）
     setAudioUrls((prev) => {
       for (const url of Object.values(prev)) {
@@ -1412,11 +1414,25 @@ const RecorderScreen = ({
     try {
       const basePath = `falkoe/sentences/${sentenceHash}/model`;
 
-      // 新しいフォルダ構造では model フォルダ内に transcript.json がある
-      const text = await readTextFile(`${basePath}/transcript.json`, {
-        baseDir: BaseDirectory.Document,
-      });
-      return JSON.parse(text) as Transcript;
+      // 実際の保存名が環境/バージョンで揺れているので両対応する
+      // - model.json: run_whisper_model の既定
+      // - transcript.json: 旧実装/将来互換
+      const candidates = [
+        `${basePath}/model.json`,
+        `${basePath}/transcript.json`,
+      ];
+      for (const path of candidates) {
+        try {
+          const text = await readTextFile(path, {
+            baseDir: BaseDirectory.Document,
+          });
+          return JSON.parse(text) as Transcript;
+        } catch {
+          // try next
+        }
+      }
+
+      return null;
     } catch {
       return null;
     }
@@ -1433,6 +1449,42 @@ const RecorderScreen = ({
       return null;
     }
   }
+
+  // 既に「模範音声の音声認識結果」がある場合は、最初から表示する
+  useEffect(() => {
+    if (!sentenceHash) return;
+    if (waitingModel) return;
+
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        const transcript =
+          source.kind === "uploaded"
+            ? uploadedAudioPath
+              ? await loadUploadedTranscript(uploadedAudioPath)
+              : null
+            : await loadModelTranscript(sentenceHash);
+
+        if (cancelled) return;
+
+        if (transcript && transcript.segments.length > 0) {
+          setModelText(transcript.segments.map((s) => s.text).join(" "));
+        } else {
+          setModelText(null);
+        }
+      } catch {
+        if (cancelled) return;
+        setModelText(null);
+      }
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sentenceHash, source.kind, uploadedAudioPath, waitingModel]);
 
   return (
     <div
@@ -1545,7 +1597,9 @@ const RecorderScreen = ({
             }}
             loading={waitingModel}
             disabled={
-              (source.kind === "uploaded" && !uploadedAudioPath) || waitingModel
+              (source.kind === "uploaded" && !uploadedAudioPath) ||
+              waitingModel ||
+              Boolean(modelText?.trim())
             }
           >
             {source.kind === "uploaded"
@@ -1553,7 +1607,17 @@ const RecorderScreen = ({
               : "模範音声を音声認識する"}
           </Button>
         </div>
-
+        <Typography.Paragraph>
+          <strong>Model transcript:</strong>
+          <br />
+          {modelText ? (
+            modelText
+          ) : (
+            <Typography.Text type="secondary">
+              音声認識されていません
+            </Typography.Text>
+          )}
+        </Typography.Paragraph>
         {linkingResult?.joined && (
           <>
             <Space size={8} style={{ display: "flex" }}>
@@ -1602,13 +1666,6 @@ const RecorderScreen = ({
               {renderStressColored(linkingResult.joined)}
             </div>
           </>
-        )}
-        {modelText && (
-          <Typography.Paragraph>
-            <strong>Model transcript:</strong>
-            <br />
-            {modelText}
-          </Typography.Paragraph>
         )}
         <Typography.Text type="secondary">
           Model status: {status}
