@@ -11,3 +11,18 @@ export function confirmOverwriteExisting(): Promise<boolean> {
     setTimeout(() => resolve(true), 1000);
   });
 }
+
+export async function playAudioUrl(url: string | null) {
+  if (!url) {
+    message.info("音声を読み込み中…");
+    return;
+  }
+
+  try {
+    const audio = new Audio(url);
+    await audio.play();
+  } catch (e) {
+    console.error("Audio playback failed:", e);
+    message.error("音声の再生に失敗しました");
+  }
+}

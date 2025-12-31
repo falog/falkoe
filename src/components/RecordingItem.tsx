@@ -27,6 +27,30 @@ export default function RecordingItem({
 }: Props) {
   const audioRef = useRef<HTMLAudioElement>(null);
 
+  const handleRecognizeClick = () => {
+    recognize?.(rec);
+  };
+
+  const handleAnkiClick = () => {
+    addToAnki(rec);
+  };
+
+  const handleAudioPointerDownCapture = () => {
+    if (audioUrl) return;
+    ensureAudioUrl?.(rec);
+  };
+
+  const handleAudioError = () => {
+    console.error("[RecordingItem] audio error", {
+      path: rec.path,
+      audioUrl,
+      mediaError: audioRef.current?.error,
+    });
+
+    // asset protocol 等が失敗した場合は Blob にフォールバックする
+    ensureAudioUrl?.(rec, { forceBlob: true });
+  };
+
   return (
     <div>
       <Flex align="center" justify="space-between">
@@ -40,18 +64,11 @@ export default function RecordingItem({
         </div>
         <Flex gap={8}>
           {transcript === null && recognize && !recognizing && (
-            <Button loading={!!recognizing} onClick={() => recognize(rec)}>
+            <Button loading={!!recognizing} onClick={handleRecognizeClick}>
               音声認識
             </Button>
           )}
-          <Button
-            onClick={() => {
-              console.log("[RecordingItem] Anki clicked", rec);
-              addToAnki(rec);
-            }}
-          >
-            Ankiに追加
-          </Button>
+          <Button onClick={handleAnkiClick}>Ankiに追加</Button>
         </Flex>
       </Flex>
 
@@ -61,20 +78,8 @@ export default function RecordingItem({
         preload="metadata"
         src={audioUrl}
         style={{ width: "100%" }}
-        onPointerDownCapture={() => {
-          if (audioUrl) return;
-          ensureAudioUrl?.(rec);
-        }}
-        onError={() => {
-          console.error("[RecordingItem] audio error", {
-            path: rec.path,
-            audioUrl,
-            mediaError: audioRef.current?.error,
-          });
-
-          // asset protocol 等が失敗した場合は Blob にフォールバックする
-          ensureAudioUrl?.(rec, { forceBlob: true });
-        }}
+        onPointerDownCapture={handleAudioPointerDownCapture}
+        onError={handleAudioError}
       />
 
       {transcript && transcript.segments.length > 0 && (

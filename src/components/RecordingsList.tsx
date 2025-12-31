@@ -1,16 +1,6 @@
 import { Typography, Space } from "antd";
 import RecordingItem from "./RecordingItem";
-
-export type Recording = {
-  path: string;
-  fileName: string;
-  timestamp: string;
-  dateLabel: string;
-};
-
-export type Transcript = {
-  segments: { start: number; end: number; text: string }[];
-};
+import type { Recording, Transcript } from "../types/recording";
 
 type Props = {
   recordings: Recording[];

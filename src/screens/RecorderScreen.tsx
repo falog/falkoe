@@ -12,7 +12,6 @@ import { startRecording, stopRecording } from "tauri-plugin-mic-recorder-api";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { PlayCircleOutlined } from "@ant-design/icons";
 import type { Sentence } from "../components/ExampleList";
 import { sha256 } from "../utils/hash";
 import {
@@ -31,6 +30,7 @@ import {
 } from "./recorder/transcriptUtils";
 import { ankiRequest } from "./recorder/ankiConnect";
 import { confirmOverwriteExisting } from "./recorder/uiUtils";
+import HeaderAudioPlayButton from "./recorder/HeaderAudioPlayButton";
 import { renderLinkingRust } from "../utils/linkingInvoke";
 import type { RenderLinkingResult, DisplayMode } from "../types/linking";
 import { loadIpaIndex, type IpaIndex } from "../utils/ipaResources";
@@ -1266,28 +1266,10 @@ const RecorderScreen = ({
             gap: 12,
           }}
         >
-          <Button
-            type="text"
-            icon={<PlayCircleOutlined />}
-            disabled={!headerAudioUrl || isHeaderAudioLoading}
+          <HeaderAudioPlayButton
+            url={headerAudioUrl}
             loading={isHeaderAudioLoading}
-            onClick={async () => {
-              if (!headerAudioUrl) {
-                message.info("音声を読み込み中…");
-                return;
-              }
-
-              try {
-                const audio = new Audio(headerAudioUrl);
-                await audio.play();
-              } catch (e) {
-                console.error("Audio playback failed:", e);
-                message.error("音声の再生に失敗しました");
-              }
-            }}
-            style={{ opacity: 0.7 }}
-            onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
-            onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.7")}
+            disabled={!headerAudioUrl || isHeaderAudioLoading}
           />
           <Typography.Title level={4} style={{ margin: 0, flex: 1 }}>
             {displayText || sentence.text}
