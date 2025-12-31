@@ -1145,7 +1145,7 @@ const RecorderScreen = ({
       } finally {
         if (!cancelled) {
           setIsHeaderAudioLoading(false);
-          setAudioDebugInfo(debugLog.join("\n"));
+          //setAudioDebugInfo(debugLog.join("\n"));
         }
       }
     };
