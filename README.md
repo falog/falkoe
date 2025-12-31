@@ -329,9 +329,26 @@ Alternatively, you can allow it from
 
 ## 🔧 Development / 開発
 
+### 🏗️ Build Environment Setup / ビルド環境セットアップ
+
+- **Node.js** (Recommended: LTS v24 or later / 推奨: LTS v24以上)
+- **pnpm** (Recommended: `npm install -g pnpm` / 推奨: `npm install -g pnpm`)
+- **Rust** (Latest stable: https://www.rust-lang.org/tools/install / 最新安定版)
+- **Tauri CLI** (`cargo install tauri-cli`)
+
+> **Note / 注意:**
+>
+> - On Linux, you may need dependencies like `libwebkit2gtk` and others.  
+>   Linuxでは`libwebkit2gtk`などの依存パッケージが必要な場合があります。
+> - For Windows/macOS, see the official Tauri [setup guide](https://tauri.app/v1/guides/getting-started/prerequisites/).  
+>   Windows/macOSは公式Tauriドキュメントのセットアップガイドも参照してください。
+
+---
+
 ### Prerequisites / 前提条件
 
 - Node.js (LTS v24+)
+- pnpm (recommended: `npm install -g pnpm`)
 - Rust (latest stable)
 - Tauri CLI
 
@@ -407,6 +424,8 @@ See [LICENSE](LICENSE) file for details.
 - [Tauri](https://tauri.app/) — Desktop app framework
 - [Whisper](https://github.com/openai/whisper) — Speech recognition
 - [Anki](https://apps.ankiweb.net/) — Spaced repetition learning
+- [Tatoeba](https://tatoeba.org/) — 多言語例文データベース（一部例文データに利用・感謝します）  
+  (Tatoeba — Multilingual sentence database. Some example sentences are used in this app. Thank you for the great resource!)
 
 ---
 
