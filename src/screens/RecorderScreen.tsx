@@ -1,25 +1,42 @@
-import {
-  Button,
-  message,
-  Modal,
-  Space,
-  Spin,
-  Typography,
-  Radio,
-  theme,
-} from "antd";
 import { useEffect, useState, useRef, type ReactNode } from "react";
+function hashText(text: string): string {
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) {
+    hash = (hash << 5) - hash + text.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(36);
+}
+import { Button, message, Space, Spin, Typography, Radio, theme } from "antd";
 import { startRecording, stopRecording } from "tauri-plugin-mic-recorder-api";
 import { readFile, readTextFile, BaseDirectory } from "@tauri-apps/plugin-fs";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { PlayCircleOutlined } from "@ant-design/icons";
 import type { Sentence } from "../components/ExampleList";
-import type { SpeechSource } from "../types/speech";
 import { sha256 } from "../utils/hash";
+async function ankiRequest(payload: any) {
+  const urls = ["http://127.0.0.1:8765", "http://localhost:8765"];
+  let lastError: unknown;
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      return json;
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  throw new Error(
+    `AnkiConnectに接続できませんでした（既定: 127.0.0.1:8765）。Ankiを起動し、AnkiConnectアドオンが有効か確認してください。詳細: ${String(lastError)}`
+  );
+}
 import { renderLinkingRust } from "../utils/linkingInvoke";
-import type { RenderLinkingResult } from "../types/linking";
-import type { DisplayMode } from "../types/linking";
+import type { RenderLinkingResult, DisplayMode } from "../types/linking";
 import { loadIpaIndex, type IpaIndex } from "../utils/ipaResources";
 import { tokenizeIpa } from "../utils/ipaTokenize";
 import {
@@ -28,37 +45,14 @@ import {
 } from "../utils/ipaPlayer";
 import TopNav from "../components/TopNav";
 import RecordingsList from "../components/RecordingsList";
+import type { Recording, Transcript } from "../types/recording";
 
 type RecorderScreenProps = {
-  source: SpeechSource;
+  source: any;
   onBack: () => void;
   onOpenIpaList: () => void;
   onOpenDevelopersMistakes: () => void;
   onOpenCommonMistakes: () => void;
-};
-
-type Recording = {
-  path: string;
-  fileName: string;
-  timestamp: string;
-  dateLabel: string;
-};
-
-type Segment = {
-  start: number;
-  end: number;
-  text: string;
-};
-
-type Transcript = {
-  segments: Segment[];
-};
-
-type FinalResultPayload = {
-  status: "final";
-  wav_path: string;
-  segments: Segment[];
-  score: number;
 };
 
 type UploadedAudioInfo = {
@@ -66,112 +60,39 @@ type UploadedAudioInfo = {
   path: string;
 };
 
-function confirmOverwriteExisting(): Promise<boolean> {
-  return new Promise((resolve) => {
-    Modal.confirm({
-      title: "既に保存済みの音声があります",
-      content: "同じIDのアップロード音声が既に存在します。上書きしますか？",
-      okText: "上書きする",
-      cancelText: "上書きしない",
-      onOk: () => resolve(true),
-      onCancel: () => resolve(false),
-    });
-  });
+function isHttpUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url);
 }
 
-function confirmOverwriteTranscript(): Promise<boolean> {
-  return new Promise((resolve) => {
-    Modal.confirm({
-      title: "既に文字起こし結果があります",
-      content:
-        "保存済みのテキスト(JSON)を上書きするために、もう一度音声認識しますか？",
-      okText: "上書きする",
-      cancelText: "上書きしない",
-      onOk: () => resolve(true),
-      onCancel: () => resolve(false),
-    });
-  });
+function guessAudioMimeFromPath(path: string): string {
+  if (/\.mp3$/i.test(path)) return "audio/mpeg";
+  if (/\.wav$/i.test(path)) return "audio/wav";
+  if (/\.ogg$/i.test(path)) return "audio/ogg";
+  if (/\.m4a$/i.test(path)) return "audio/mp4";
+  return "audio/wav";
 }
 
-function hashText(text: string) {
-  return Math.abs(
-    Array.from(text).reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0)
-  );
-}
-
-function blobToBase64(blob: Blob): Promise<string> {
+async function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => {
-      const result = reader.result;
-      if (typeof result === "string") {
-        resolve(result.split(",")[1]);
-      } else {
-        reject(new Error("Failed to convert blob to base64"));
-      }
+      const dataUrl = reader.result as string;
+      resolve(dataUrl.split(",")[1]);
     };
     reader.onerror = reject;
     reader.readAsDataURL(blob);
   });
 }
 
-function isHttpUrl(url: string): boolean {
-  return /^https?:\/\//i.test(url);
+function guessExtFromPath(path: string): string {
+  const m = path.match(/\.([a-z0-9]+)$/i);
+  return m ? m[1] : "wav";
 }
 
-function guessExtFromPath(p: string): string {
-  const m = p.match(/\.([a-z0-9]+)$/i);
-  return (m?.[1] ?? "wav").toLowerCase();
+function parseRecording(str: string): Recording {
+  const [path, fileName, timestamp, dateLabel] = str.split("|");
+  return { path, fileName, timestamp, dateLabel } as Recording;
 }
-
-function guessAudioMimeFromPath(p: string): string {
-  const ext = guessExtFromPath(p);
-  switch (ext) {
-    case "wav":
-      return "audio/wav";
-    case "mp3":
-      return "audio/mpeg";
-    case "m4a":
-    case "mp4":
-      return "audio/mp4";
-    case "ogg":
-      return "audio/ogg";
-    case "webm":
-      return "audio/webm";
-    default:
-      return "application/octet-stream";
-  }
-}
-
-const parseRecording = (path: string): Recording => {
-  const name = path.split(/[/\\]/).pop() ?? "";
-
-  const m = name.match(/^(\d{8})_(\d{1,6})/);
-
-  let dateLabel = "";
-  let timestamp = "";
-
-  if (m) {
-    const y = m[1].slice(0, 4);
-    const mo = m[1].slice(4, 6);
-    const d = m[1].slice(6, 8);
-
-    const t = m[2].padStart(6, "0");
-    const hh = t.slice(0, 2);
-    const mm = t.slice(2, 4);
-    const ss = t.slice(4, 6);
-
-    dateLabel = `${y}/${mo}/${d} ${hh}:${mm}:${ss}`;
-    timestamp = `${m[1]}_${t}`;
-  }
-
-  return {
-    path,
-    fileName: name,
-    timestamp,
-    dateLabel,
-  };
-};
 
 async function loadTranscript(wavPath: string): Promise<Transcript | null> {
   try {
@@ -183,30 +104,22 @@ async function loadTranscript(wavPath: string): Promise<Transcript | null> {
   }
 }
 
-async function ankiRequest(payload: any) {
-  const urls = ["http://127.0.0.1:8765", "http://localhost:8765"];
-
-  let lastError: unknown;
-
-  for (const url of urls) {
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const json = await res.json();
-      return json;
-    } catch (e) {
-      lastError = e;
-    }
-  }
-
-  throw new Error(
-    `AnkiConnectに接続できませんでした（既定: 127.0.0.1:8765）。Ankiを起動し、AnkiConnectアドオンが有効か確認してください。詳細: ${String(lastError)}`
-  );
+function confirmOverwriteExisting(): Promise<boolean> {
+  return new Promise((resolve) => {
+    message.info({
+      content: "既に保存済みの音声があります。上書きしますか？（自動でOK）",
+      duration: 1,
+      onClick: () => resolve(true),
+      onClose: () => resolve(false),
+    });
+    setTimeout(() => resolve(true), 1000);
+  });
 }
+
+type FinalResultPayload = {
+  wav_path: string;
+  segments: { text: string }[];
+};
 
 const RecorderScreen = ({
   source,
@@ -216,7 +129,6 @@ const RecorderScreen = ({
   onOpenCommonMistakes,
 }: RecorderScreenProps) => {
   const { token: antdToken } = theme.useToken();
-
   const isLinux = (() => {
     const ua =
       typeof navigator !== "undefined" ? (navigator.userAgent ?? "") : "";
@@ -232,7 +144,6 @@ const RecorderScreen = ({
     switch (source.kind) {
       case "tatoeba":
         return source.sentence;
-
       case "uploaded":
         return {
           id: hashText(source.text ?? "uploaded"),
@@ -240,7 +151,6 @@ const RecorderScreen = ({
           audioUrl: source.file ? URL.createObjectURL(source.file) : "",
           lang: source.lang,
         };
-
       case "recorded":
         return {
           id: hashText(source.text ?? "recorded"),
@@ -1475,7 +1385,13 @@ const RecorderScreen = ({
 
         setTranscripts((prev) => ({
           ...prev,
-          [result.wav_path]: { segments: result.segments },
+          [result.wav_path]: {
+            segments: (result.segments as any[]).map((seg) => ({
+              start: 0, // 必要なら推定値を入れる
+              end: 0,
+              text: seg.text,
+            })),
+          },
         }));
       }
     );
@@ -1686,7 +1602,7 @@ const RecorderScreen = ({
                 if (!uploadedAudioPath) return;
                 const cached = await loadUploadedTranscript(uploadedAudioPath);
                 if (cached) {
-                  const overwrite = await confirmOverwriteTranscript();
+                  const overwrite = await confirmOverwriteExisting();
                   if (!overwrite) {
                     setModelText(cached.segments.map((s) => s.text).join(" "));
                     return;
@@ -1695,7 +1611,7 @@ const RecorderScreen = ({
               } else {
                 const cached = await loadModelTranscript(sentenceHash);
                 if (cached) {
-                  const overwrite = await confirmOverwriteTranscript();
+                  const overwrite = await confirmOverwriteExisting();
                   if (!overwrite) {
                     setModelText(cached.segments.map((s) => s.text).join(" "));
                     return;
@@ -1890,5 +1806,4 @@ const RecorderScreen = ({
     </div>
   );
 };
-
 export default RecorderScreen;
