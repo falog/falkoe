@@ -9,12 +9,26 @@ function hashText(text: string): string {
 }
 import { Button, message, Space, Spin, Typography, Radio, theme } from "antd";
 import { startRecording, stopRecording } from "tauri-plugin-mic-recorder-api";
-import { readFile, readTextFile, BaseDirectory } from "@tauri-apps/plugin-fs";
-import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { readFile } from "@tauri-apps/plugin-fs";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { PlayCircleOutlined } from "@ant-design/icons";
 import type { Sentence } from "../components/ExampleList";
 import { sha256 } from "../utils/hash";
+import {
+  blobToBase64,
+  guessAudioMimeFromPath,
+  guessExtFromPath,
+  isHttpUrl,
+} from "./recorder/audioUtils";
+import { useAudioUrlCache } from "./recorder/useAudioUrlCache";
+import { useHeaderAudioUrl } from "./recorder/useHeaderAudioUrl";
+import {
+  loadModelTranscript,
+  loadTranscript,
+  loadUploadedTranscript,
+  parseRecording,
+} from "./recorder/transcriptUtils";
 async function ankiRequest(payload: any) {
   const urls = ["http://127.0.0.1:8765", "http://localhost:8765"];
   let lastError: unknown;
@@ -60,50 +74,6 @@ type UploadedAudioInfo = {
   path: string;
 };
 
-function isHttpUrl(url: string): boolean {
-  return /^https?:\/\//i.test(url);
-}
-
-function guessAudioMimeFromPath(path: string): string {
-  if (/\.mp3$/i.test(path)) return "audio/mpeg";
-  if (/\.wav$/i.test(path)) return "audio/wav";
-  if (/\.ogg$/i.test(path)) return "audio/ogg";
-  if (/\.m4a$/i.test(path)) return "audio/mp4";
-  return "audio/wav";
-}
-
-async function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const dataUrl = reader.result as string;
-      resolve(dataUrl.split(",")[1]);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
-
-function guessExtFromPath(path: string): string {
-  const m = path.match(/\.([a-z0-9]+)$/i);
-  return m ? m[1] : "wav";
-}
-
-function parseRecording(str: string): Recording {
-  const [path, fileName, timestamp, dateLabel] = str.split("|");
-  return { path, fileName, timestamp, dateLabel } as Recording;
-}
-
-async function loadTranscript(wavPath: string): Promise<Transcript | null> {
-  try {
-    const jsonPath = wavPath.replace(/\.wav$/i, ".json");
-    const text = await readTextFile(jsonPath);
-    return JSON.parse(text) as Transcript;
-  } catch {
-    return null;
-  }
-}
-
 function confirmOverwriteExisting(): Promise<boolean> {
   return new Promise((resolve) => {
     message.info({
@@ -140,6 +110,43 @@ const RecorderScreen = ({
   })();
   const preferAssetProtocol = !isLinux;
 
+  const uploadedFileRef = useRef<File | null>(null);
+  const uploadedFileUrlRef = useRef<string | null>(null);
+  const [uploadedFileAudioUrl, setUploadedFileAudioUrl] = useState<string>("");
+
+  useEffect(() => {
+    if (source.kind !== "uploaded" || !source.file) {
+      if (uploadedFileUrlRef.current) {
+        URL.revokeObjectURL(uploadedFileUrlRef.current);
+      }
+      uploadedFileRef.current = null;
+      uploadedFileUrlRef.current = null;
+      setUploadedFileAudioUrl("");
+      return;
+    }
+
+    if (uploadedFileRef.current === source.file && uploadedFileUrlRef.current) {
+      return;
+    }
+
+    if (uploadedFileUrlRef.current) {
+      URL.revokeObjectURL(uploadedFileUrlRef.current);
+    }
+
+    const url = URL.createObjectURL(source.file);
+    uploadedFileRef.current = source.file;
+    uploadedFileUrlRef.current = url;
+    setUploadedFileAudioUrl(url);
+  }, [source.kind, source.file]);
+
+  useEffect(() => {
+    return () => {
+      if (uploadedFileUrlRef.current) {
+        URL.revokeObjectURL(uploadedFileUrlRef.current);
+      }
+    };
+  }, []);
+
   const sentence: Sentence = (() => {
     switch (source.kind) {
       case "tatoeba":
@@ -148,7 +155,7 @@ const RecorderScreen = ({
         return {
           id: hashText(source.text ?? "uploaded"),
           text: source.text ?? "",
-          audioUrl: source.file ? URL.createObjectURL(source.file) : "",
+          audioUrl: source.file ? uploadedFileAudioUrl : "",
           lang: source.lang,
         };
       case "recorded":
@@ -735,70 +742,18 @@ const RecorderScreen = ({
   }
 
   const autoStartedRef = useRef(false);
-  const [headerAudioUrl, setHeaderAudioUrl] = useState<string | null>(null);
-  const [isHeaderAudioLoading, setIsHeaderAudioLoading] = useState(false);
-  //const [audioDebugInfo, setAudioDebugInfo] = useState<string>("");
+  const { audioUrls, ensureBlobAudioUrl, toAssetUrl, resetAudioUrls } =
+    useAudioUrlCache();
 
-  const [audioUrls, setAudioUrls] = useState<Record<string, string>>({});
-  const audioUrlsRef = useRef<Record<string, string>>({});
-  const audioLoadInFlightRef = useRef<Map<string, Promise<string | null>>>(
-    new Map()
-  );
-
-  useEffect(() => {
-    audioUrlsRef.current = audioUrls;
-  }, [audioUrls]);
-
-  useEffect(() => {
-    return () => {
-      for (const url of Object.values(audioUrlsRef.current)) {
-        if (url.startsWith("blob:")) URL.revokeObjectURL(url);
-      }
-    };
-  }, []);
-
-  const ensureBlobAudioUrl = async (
-    pathOrUrl: string
-  ): Promise<string | null> => {
-    if (!pathOrUrl) return null;
-    if (pathOrUrl.startsWith("blob:")) return pathOrUrl;
-    if (isHttpUrl(pathOrUrl)) return pathOrUrl;
-
-    const cached = audioUrls[pathOrUrl];
-    if (cached) return cached;
-
-    const existing = audioLoadInFlightRef.current.get(pathOrUrl);
-    if (existing) return existing;
-
-    const p = (async () => {
-      try {
-        const fileBytes = await readFile(pathOrUrl);
-        const mime = guessAudioMimeFromPath(pathOrUrl);
-        const blob = new Blob([fileBytes], { type: mime });
-        const url = URL.createObjectURL(blob);
-        setAudioUrls((prev) => ({ ...prev, [pathOrUrl]: url }));
-        return url;
-      } catch (e) {
-        console.error("[RecorderScreen] ensureBlobAudioUrl failed", {
-          pathOrUrl,
-          error: e,
-        });
-        return null;
-      } finally {
-        audioLoadInFlightRef.current.delete(pathOrUrl);
-      }
-    })();
-
-    audioLoadInFlightRef.current.set(pathOrUrl, p);
-    return p;
-  };
-
-  const toAssetUrl = (pathOrUrl: string): string => {
-    if (!pathOrUrl) return "";
-    if (pathOrUrl.startsWith("blob:")) return pathOrUrl;
-    if (isHttpUrl(pathOrUrl)) return pathOrUrl;
-    return convertFileSrc(pathOrUrl);
-  };
+  const { headerAudioUrl, isHeaderAudioLoading } = useHeaderAudioUrl({
+    sourceKind: source.kind,
+    sentenceAudioUrl: sentence.audioUrl,
+    uploadedAudioPath,
+    preferAssetProtocol,
+    ensureBlobAudioUrl,
+    toAssetUrl,
+    hasUploadedFile: source.kind === "uploaded" && Boolean(source.file),
+  });
 
   useEffect(() => {
     setDisplayText(sentence.text);
@@ -901,203 +856,15 @@ const RecorderScreen = ({
     saveUploadedFile();
   }, [source, sentenceHash, uploadedAudioPath]);
 
-  // Initialize header audio URL
-  useEffect(() => {
-    let cancelled = false;
-    const debugLog: string[] = [];
-
-    const initHeaderAudio = async () => {
-      setIsHeaderAudioLoading(true);
-      try {
-        debugLog.push(
-          `[START] kind=${source.kind}, audioUrl=${sentence.audioUrl?.substring(0, 100)}, uploaded=${uploadedAudioPath?.substring(0, 50)}`
-        );
-        console.log("[initHeaderAudio] Starting", {
-          kind: source.kind,
-          audioUrl: sentence.audioUrl,
-          uploadedAudioPath,
-        });
-
-        if (source.kind === "uploaded") {
-          if (source.file) {
-            debugLog.push("[UPLOADED-FILE] Using blob from file");
-            console.log("[initHeaderAudio] uploaded file case");
-            if (!cancelled) {
-              setHeaderAudioUrl(sentence.audioUrl);
-              debugLog.push(
-                `[SUCCESS] URL set: ${sentence.audioUrl.substring(0, 50)}...`
-              );
-            }
-          } else if (uploadedAudioPath) {
-            debugLog.push(
-              `[UPLOADED-SAVED] Using saved path: ${uploadedAudioPath.substring(0, 50)}`
-            );
-            console.log("[initHeaderAudio] uploaded saved path case");
-            if (preferAssetProtocol) {
-              const url = toAssetUrl(uploadedAudioPath);
-              debugLog.push(`[ASSET] ${url.substring(0, 80)}...`);
-              console.log("[initHeaderAudio] using asset URL:", url);
-              if (!cancelled) {
-                setHeaderAudioUrl(url);
-                debugLog.push("[SUCCESS] Asset URL set");
-              }
-            } else {
-              debugLog.push("[BLOB] Creating blob from saved file...");
-              const blobUrl = await ensureBlobAudioUrl(uploadedAudioPath);
-              debugLog.push(
-                `[BLOB] Result: ${blobUrl?.substring(0, 50) || "null"}...`
-              );
-              console.log("[initHeaderAudio] using blob URL:", blobUrl);
-              if (!cancelled && blobUrl) {
-                setHeaderAudioUrl(blobUrl);
-                debugLog.push("[SUCCESS] Blob URL set");
-              } else {
-                debugLog.push("[ERROR] Blob creation failed");
-              }
-            }
-          } else {
-            debugLog.push("[WAITING] uploadedAudioPath not ready yet");
-          }
-        } else if (source.kind === "recorded") {
-          debugLog.push("[RECORDED] Converting to blob");
-          console.log("[initHeaderAudio] recorded case");
-          const blobUrl = await ensureBlobAudioUrl(sentence.audioUrl);
-          debugLog.push(`[BLOB] ${blobUrl?.substring(0, 50) || "null"}...`);
-          console.log("[initHeaderAudio] recorded blob URL:", blobUrl);
-          if (!cancelled && blobUrl) {
-            setHeaderAudioUrl(blobUrl);
-            debugLog.push("[SUCCESS] Recorded blob URL set");
-          }
-        } else if (source.kind === "tatoeba") {
-          debugLog.push(`[TATOEBA] Checking URL: ${sentence.audioUrl}`);
-          console.log(
-            "[initHeaderAudio] tatoeba case, checking URL:",
-            sentence.audioUrl
-          );
-          const isHttp = isHttpUrl(sentence.audioUrl);
-          debugLog.push(`[HTTP-CHECK] isHttp=${isHttp}`);
-          console.log("[initHeaderAudio] is HTTP URL:", isHttp);
-
-          if (isHttp) {
-            debugLog.push("[HTTP] Fetching via Tauri backend");
-            console.log(
-              "[initHeaderAudio] fetching via Tauri backend:",
-              sentence.audioUrl
-            );
-            try {
-              // Tauri経由で音声を取得してBlob URLに変換
-              const base64Data = await invoke<string>("fetch_audio_base64", {
-                url: sentence.audioUrl,
-              });
-
-              debugLog.push(
-                `[FETCH-OK] Got base64 data (${base64Data.length} chars)`
-              );
-
-              // Base64をBlobに変換
-              const binaryString = atob(base64Data);
-              const bytes = new Uint8Array(binaryString.length);
-              for (let i = 0; i < binaryString.length; i++) {
-                bytes[i] = binaryString.charCodeAt(i);
-              }
-              const blob = new Blob([bytes], {
-                type: guessAudioMimeFromPath(sentence.audioUrl),
-              });
-              const blobUrl = URL.createObjectURL(blob);
-
-              debugLog.push(`[BLOB-FROM-FETCH] ${blobUrl.substring(0, 50)}...`);
-              console.log(
-                "[initHeaderAudio] created blob from fetched data:",
-                blobUrl
-              );
-
-              if (!cancelled) {
-                setHeaderAudioUrl(blobUrl);
-                debugLog.push("[SUCCESS] Blob URL from fetch set");
-              }
-            } catch (fetchError) {
-              debugLog.push(
-                `[FETCH-ERROR] ${String(fetchError)}, trying direct URL`
-              );
-              console.warn(
-                "[initHeaderAudio] fetch failed, trying direct URL:",
-                fetchError
-              );
-              // フォールバック: 直接URLを使用
-              if (!cancelled) {
-                setHeaderAudioUrl(sentence.audioUrl);
-                debugLog.push(
-                  `[FALLBACK] Using direct URL: ${sentence.audioUrl}`
-                );
-              }
-            }
-          } else {
-            debugLog.push("[LOCAL] Converting to blob");
-            console.log("[initHeaderAudio] converting local path to blob");
-            const blobUrl = await ensureBlobAudioUrl(sentence.audioUrl);
-            debugLog.push(`[BLOB] ${blobUrl?.substring(0, 50) || "null"}...`);
-            console.log("[initHeaderAudio] tatoeba blob URL:", blobUrl);
-            if (!cancelled && blobUrl) {
-              setHeaderAudioUrl(blobUrl);
-              debugLog.push("[SUCCESS] Local blob URL set");
-            }
-          }
-        }
-
-        debugLog.push("[COMPLETED] Audio init successful");
-        console.log("[initHeaderAudio] Completed successfully");
-      } catch (e) {
-        debugLog.push(`[ERROR] ${String(e)}`);
-        console.error("[initHeaderAudio] Failed:", e);
-        if (!cancelled) {
-          message.error("音声の読み込みに失敗しました: " + String(e));
-        }
-      } finally {
-        if (!cancelled) {
-          setIsHeaderAudioLoading(false);
-          //setAudioDebugInfo(debugLog.join("\n"));
-        }
-      }
-    };
-
-    initHeaderAudio();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [source.kind, uploadedAudioPath, sentence.audioUrl, preferAssetProtocol]);
-
-  useEffect(() => {
-    return () => {
-      if (source.kind === "uploaded" && source.file && sentence.audioUrl) {
-        URL.revokeObjectURL(sentence.audioUrl);
-      }
-    };
-  }, []);
-
   useEffect(() => {
     setRecordings([]);
     setTranscripts({});
     setModelText(null);
     setWaitingModel(false);
-    setAudioUrls((prev) => {
-      for (const url of Object.values(prev)) {
-        if (url.startsWith("blob:")) URL.revokeObjectURL(url);
-      }
-      return {};
-    });
-    setHeaderAudioUrl(null);
+    resetAudioUrls();
     autoStartedRef.current = false;
     refreshFiles();
   }, [sentenceHash]);
-
-  useEffect(() => {
-    return () => {
-      if (headerAudioUrl?.startsWith("blob:")) {
-        URL.revokeObjectURL(headerAudioUrl);
-      }
-    };
-  }, [headerAudioUrl]);
 
   useEffect(() => {
     if (
@@ -1438,43 +1205,6 @@ const RecorderScreen = ({
     };
     run();
   }, [recordings]);
-
-  async function loadModelTranscript(
-    sentenceHash: string
-  ): Promise<Transcript | null> {
-    try {
-      const basePath = `falkoe/sentences/${sentenceHash}/model`;
-
-      const candidates = [
-        `${basePath}/model.json`,
-        `${basePath}/transcript.json`,
-      ];
-      for (const path of candidates) {
-        try {
-          const text = await readTextFile(path, {
-            baseDir: BaseDirectory.Document,
-          });
-          return JSON.parse(text) as Transcript;
-        } catch {}
-      }
-
-      return null;
-    } catch {
-      return null;
-    }
-  }
-
-  async function loadUploadedTranscript(
-    uploadedPath: string
-  ): Promise<Transcript | null> {
-    try {
-      const dir = uploadedPath.replace(/[/\\][^/\\]+$/, "");
-      const text = await readTextFile(`${dir}/uploaded.json`);
-      return JSON.parse(text) as Transcript;
-    } catch {
-      return null;
-    }
-  }
 
   useEffect(() => {
     if (!sentenceHash) return;
