@@ -7,6 +7,7 @@ import type { SourceKind } from "../../types/speech";
 type HeaderAudioArgs = {
   sourceKind: SourceKind;
   sentenceAudioUrl: string;
+  sentenceHash: string;
   uploadedAudioPath: string | null;
   preferAssetProtocol: boolean;
   ensureBlobAudioUrl: (pathOrUrl: string) => Promise<string | null>;
@@ -18,6 +19,7 @@ export function useHeaderAudioUrl(args: HeaderAudioArgs) {
   const {
     sourceKind,
     sentenceAudioUrl,
+    sentenceHash,
     uploadedAudioPath,
     preferAssetProtocol,
     ensureBlobAudioUrl,
@@ -63,6 +65,26 @@ export function useHeaderAudioUrl(args: HeaderAudioArgs) {
         // tatoeba
         if (isHttpUrl(sentenceAudioUrl)) {
           try {
+            // Prefer caching to local file to avoid repeated network fetches.
+            if (sentenceHash) {
+              const cachedPath = await invoke<string>(
+                "ensure_sentence_audio_cached",
+                {
+                  audioId: sentenceHash,
+                  url: sentenceAudioUrl,
+                }
+              );
+
+              if (preferAssetProtocol) {
+                if (!cancelled) setHeaderAudioUrl(toAssetUrl(cachedPath));
+                return;
+              }
+
+              const blobUrl = await ensureBlobAudioUrl(cachedPath);
+              if (!cancelled) setHeaderAudioUrl(blobUrl);
+              return;
+            }
+
             const base64Data = await invoke<string>("fetch_audio_base64", {
               url: sentenceAudioUrl,
             });
@@ -110,6 +132,7 @@ export function useHeaderAudioUrl(args: HeaderAudioArgs) {
   }, [
     sourceKind,
     sentenceAudioUrl,
+    sentenceHash,
     uploadedAudioPath,
     preferAssetProtocol,
     ensureBlobAudioUrl,

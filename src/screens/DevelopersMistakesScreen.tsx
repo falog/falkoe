@@ -1,4 +1,4 @@
-import { Button, List, message, Space, Spin, Typography } from "antd";
+import { Button, message, Space, Spin, Typography } from "antd";
 import { PlayCircleOutlined } from "@ant-design/icons";
 import { useEffect, useRef, useState } from "react";
 import { loadIpaIndex, type IpaIndex } from "../utils/ipaResources";
@@ -314,178 +314,185 @@ export default function DevelopersMistakesScreen({
               What happened（今回の3つ）
             </Typography.Title>
 
-            <List
-              bordered
-              dataSource={COMMON_MISTAKES}
-              renderItem={(item) => (
-                <List.Item key={item.key} id={`mistake-${item.key}`}>
-                  <List.Item.Meta
-                    title={
+            <div
+              style={{
+                border: "1px solid var(--ant-color-border)",
+                borderRadius: 8,
+                overflow: "hidden",
+              }}
+            >
+              {COMMON_MISTAKES.map((item, idx) => (
+                <div key={item.key} id={`mistake-${item.key}`}>
+                  <div style={{ padding: "12px 16px" }}>
+                    <Space
+                      orientation="vertical"
+                      size={8}
+                      style={{ width: "100%" }}
+                    >
                       <Typography.Text strong>{item.title}</Typography.Text>
-                    }
-                    description={
-                      <>
-                        {item.paragraphs.map(renderParagraph)}
-                        {(() => {
-                          const simpleKeys = new Set(["j", "r", "oo"]);
 
-                          if (!simpleKeys.has(item.key)) {
-                            return (
-                              <Space wrap>
-                                {item.buttons.map((b) => (
+                      <div>{item.paragraphs.map(renderParagraph)}</div>
+
+                      {(() => {
+                        const simpleKeys = new Set(["j", "r", "oo"]);
+
+                        if (!simpleKeys.has(item.key)) {
+                          return (
+                            <Space wrap>
+                              {item.buttons.map((b) => (
+                                <Button
+                                  key={`${item.key}-${b.kind}-${b.tok}`}
+                                  icon={<PlayCircleOutlined />}
+                                  onClick={() => void playTok(b.tok, b.kind)}
+                                  disabled={
+                                    b.kind === "explain"
+                                      ? !ipaIndex?.[b.tok]?.explainAudio
+                                      : !ipaIndex?.[b.tok]?.audio
+                                  }
+                                >
+                                  {b.label}
+                                </Button>
+                              ))}
+                            </Space>
+                          );
+                        }
+
+                        const audioTokSet = new Set(
+                          item.buttons
+                            .filter((b) => b.kind === "audio")
+                            .map((b) => b.tok)
+                        );
+                        const explainTokSet = new Set(
+                          item.buttons
+                            .filter((b) => b.kind === "explain")
+                            .map((b) => b.tok)
+                        );
+
+                        const tokenOrderByKey: Record<string, string[]> = {
+                          j: ["j", "dʒ"],
+                          r: ["ɹ"],
+                          oo: ["uː", "ʊ"],
+                        };
+
+                        const orderedToks = (
+                          tokenOrderByKey[item.key] ?? []
+                        ).filter((tok) => audioTokSet.has(tok));
+
+                        return (
+                          <div
+                            style={{
+                              display: "flex",
+                              flexWrap: "wrap",
+                              gap: 8,
+                            }}
+                          >
+                            {orderedToks.flatMap((tok, tokIdx) => {
+                              const out = [
+                                <Button
+                                  key={`${item.key}-${tok}-pronounce-falkoe`}
+                                  icon={<PlayCircleOutlined />}
+                                  onClick={() => void playSample("falkoe", tok)}
+                                >
+                                  {tok} Pronounce
+                                </Button>,
+                                explainTokSet.has(tok) &&
+                                sampleExplainAvailable[
+                                  `falkoe:${tok}:explain`
+                                ] ? (
                                   <Button
-                                    key={`${item.key}-${b.kind}-${b.tok}`}
+                                    key={`${item.key}-${tok}-explain-falkoe`}
                                     icon={<PlayCircleOutlined />}
-                                    onClick={() => void playTok(b.tok, b.kind)}
-                                    disabled={
-                                      b.kind === "explain"
-                                        ? !ipaIndex?.[b.tok]?.explainAudio
-                                        : !ipaIndex?.[b.tok]?.audio
+                                    onClick={() =>
+                                      void playSampleExplain("falkoe", tok)
                                     }
                                   >
-                                    {b.label}
+                                    {tok} Explain
                                   </Button>
-                                ))}
-                              </Space>
-                            );
-                          }
+                                ) : null,
+                                <Button
+                                  key={`${item.key}-${tok}-native`}
+                                  icon={<PlayCircleOutlined />}
+                                  onClick={() =>
+                                    void playSample("advised-by-native", tok)
+                                  }
+                                >
+                                  {tok} Native
+                                </Button>,
+                              ].filter(Boolean);
 
-                          const audioTokSet = new Set(
+                              if (tokIdx < orderedToks.length - 1) {
+                                out.push(
+                                  <div
+                                    key={`${item.key}-${tok}-break`}
+                                    style={{ flexBasis: "100%", height: 0 }}
+                                  />
+                                );
+                              }
+
+                              return out;
+                            })}
+                          </div>
+                        );
+                      })()}
+
+                      {(() => {
+                        const simpleKeys = new Set(["j", "r", "oo"]);
+                        if (simpleKeys.has(item.key)) return null;
+
+                        const abcExcluded = new Set(["dʒ", "ʊ", "ɹ"]);
+                        const abcToks = Array.from(
+                          new Set(
                             item.buttons
                               .filter((b) => b.kind === "audio")
                               .map((b) => b.tok)
-                          );
-                          const explainTokSet = new Set(
-                            item.buttons
-                              .filter((b) => b.kind === "explain")
-                              .map((b) => b.tok)
-                          );
+                              .filter((tok) => !abcExcluded.has(tok))
+                          )
+                        );
 
-                          const tokenOrderByKey: Record<string, string[]> = {
-                            j: ["j", "dʒ"],
-                            r: ["ɹ"],
-                            oo: ["uː", "ʊ"],
-                          };
+                        if (abcToks.length === 0) return null;
 
-                          const orderedToks = (
-                            tokenOrderByKey[item.key] ?? []
-                          ).filter((tok) => audioTokSet.has(tok));
-
-                          return (
-                            <div
-                              style={{
-                                display: "flex",
-                                flexWrap: "wrap",
-                                gap: 8,
-                              }}
-                            >
-                              {orderedToks.flatMap((tok, tokIdx) => {
-                                const out = [
+                        return (
+                          <div style={{ marginTop: 8 }}>
+                            <Typography.Text type="secondary">
+                              A/B (failed / ネイティブ)
+                            </Typography.Text>
+                            <Space wrap style={{ marginTop: 6 }}>
+                              {abcToks.map((tok) => (
+                                <Space key={`${item.key}-abc-${tok}`} wrap>
+                                  <Typography.Text>{tok}</Typography.Text>
                                   <Button
-                                    key={`${item.key}-${tok}-pronounce-falkoe`}
-                                    icon={<PlayCircleOutlined />}
+                                    size="small"
                                     onClick={() =>
-                                      void playSample("falkoe", tok)
+                                      void playSample("failed", tok)
                                     }
                                   >
-                                    {tok} Pronounce
-                                  </Button>,
-                                  explainTokSet.has(tok) &&
-                                  sampleExplainAvailable[
-                                    `falkoe:${tok}:explain`
-                                  ] ? (
-                                    <Button
-                                      key={`${item.key}-${tok}-explain-falkoe`}
-                                      icon={<PlayCircleOutlined />}
-                                      onClick={() =>
-                                        void playSampleExplain("falkoe", tok)
-                                      }
-                                    >
-                                      {tok} Explain
-                                    </Button>
-                                  ) : null,
+                                    failed
+                                  </Button>
                                   <Button
-                                    key={`${item.key}-${tok}-native`}
-                                    icon={<PlayCircleOutlined />}
+                                    size="small"
                                     onClick={() =>
                                       void playSample("advised-by-native", tok)
                                     }
                                   >
-                                    {tok} Native
-                                  </Button>,
-                                ].filter(Boolean);
+                                    Native
+                                  </Button>
+                                </Space>
+                              ))}
+                            </Space>
+                          </div>
+                        );
+                      })()}
+                    </Space>
+                  </div>
 
-                                if (tokIdx < orderedToks.length - 1) {
-                                  out.push(
-                                    <div
-                                      key={`${item.key}-${tok}-break`}
-                                      style={{ flexBasis: "100%", height: 0 }}
-                                    />
-                                  );
-                                }
-
-                                return out;
-                              })}
-                            </div>
-                          );
-                        })()}
-
-                        {(() => {
-                          const simpleKeys = new Set(["j", "r", "oo"]);
-                          if (simpleKeys.has(item.key)) return null;
-
-                          const abcExcluded = new Set(["dʒ", "ʊ", "ɹ"]);
-                          const abcToks = Array.from(
-                            new Set(
-                              item.buttons
-                                .filter((b) => b.kind === "audio")
-                                .map((b) => b.tok)
-                                .filter((tok) => !abcExcluded.has(tok))
-                            )
-                          );
-
-                          if (abcToks.length === 0) return null;
-
-                          return (
-                            <div style={{ marginTop: 8 }}>
-                              <Typography.Text type="secondary">
-                                A/B (failed / ネイティブ)
-                              </Typography.Text>
-                              <Space wrap style={{ marginTop: 6 }}>
-                                {abcToks.map((tok) => (
-                                  <Space key={`${item.key}-abc-${tok}`} wrap>
-                                    <Typography.Text>{tok}</Typography.Text>
-                                    <Button
-                                      size="small"
-                                      onClick={() =>
-                                        void playSample("failed", tok)
-                                      }
-                                    >
-                                      failed
-                                    </Button>
-                                    <Button
-                                      size="small"
-                                      onClick={() =>
-                                        void playSample(
-                                          "advised-by-native",
-                                          tok
-                                        )
-                                      }
-                                    >
-                                      Native
-                                    </Button>
-                                  </Space>
-                                ))}
-                              </Space>
-                            </div>
-                          );
-                        })()}
-                      </>
-                    }
-                  />
-                </List.Item>
-              )}
-            />
+                  {idx < COMMON_MISTAKES.length - 1 && (
+                    <div
+                      style={{ borderTop: "1px solid var(--ant-color-split)" }}
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
             <Typography.Title level={5} style={{ margin: "12px 0 0" }}>
               Fix / Next steps
             </Typography.Title>

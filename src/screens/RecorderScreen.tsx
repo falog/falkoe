@@ -252,6 +252,7 @@ const RecorderScreen = ({
   const { headerAudioUrl, isHeaderAudioLoading } = useHeaderAudioUrl({
     sourceKind,
     sentenceAudioUrl: sentence.audioUrl,
+    sentenceHash,
     uploadedAudioPath,
     preferAssetProtocol,
     ensureBlobAudioUrl,

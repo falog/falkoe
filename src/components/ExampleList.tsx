@@ -1,4 +1,4 @@
-import { Button, List, Typography } from "antd";
+import { Button, Space, Typography } from "antd";
 import { PlayCircleOutlined } from "@ant-design/icons";
 
 export type Sentence = {
@@ -21,35 +21,62 @@ const ExampleList = ({ sentences, onSelect, disabled }: ExampleListProps) => {
     audio.play();
   };
 
+  if (!sentences || sentences.length === 0) {
+    return (
+      <Typography.Text type="secondary" disabled={disabled}>
+        例文が見つかりませんでした
+      </Typography.Text>
+    );
+  }
+
   return (
-    <List
-      bordered
-      dataSource={sentences}
-      locale={{ emptyText: "例文が見つかりませんでした" }}
-      renderItem={(item) => (
-        <List.Item
-          actions={[
-            <Button
-              key="play"
-              icon={<PlayCircleOutlined />}
-              disabled={disabled}
-              onClick={() => playAudio(item.audioUrl)}
-            />,
-            <Button
-              key="select"
-              type="primary"
-              size="small"
-              disabled={disabled}
-              onClick={() => onSelect(item)}
-            >
-              この例文で練習
-            </Button>,
-          ]}
-        >
-          <Typography.Text disabled={disabled}>{item.text}</Typography.Text>
-        </List.Item>
-      )}
-    />
+    <div
+      style={{
+        border: "1px solid var(--ant-color-border)",
+        borderRadius: 8,
+        overflow: "hidden",
+      }}
+    >
+      {sentences.map((item, idx) => (
+        <div key={`example-${item.id}`}>
+          <div
+            style={{
+              padding: "12px 16px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+            }}
+          >
+            <Typography.Text disabled={disabled} style={{ flex: "1 1 auto" }}>
+              {item.text}
+            </Typography.Text>
+
+            <Space size={8} style={{ flex: "0 0 auto" }}>
+              <Button
+                key="play"
+                icon={<PlayCircleOutlined />}
+                disabled={disabled}
+                onClick={() => playAudio(item.audioUrl)}
+              />
+              <Button
+                key="select"
+                type="primary"
+                size="small"
+                disabled={disabled}
+                onClick={() => onSelect(item)}
+              >
+                この例文で練習
+              </Button>
+            </Space>
+          </div>
+
+          {idx < sentences.length - 1 && (
+            <div style={{ borderTop: "1px solid var(--ant-color-split)" }} />
+          )}
+        </div>
+      ))}
+    </div>
   );
 };
 

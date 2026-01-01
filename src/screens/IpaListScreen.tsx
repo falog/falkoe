@@ -1,4 +1,4 @@
-import { Button, List, message, Space, Spin, Typography } from "antd";
+import { Button, message, Space, Spin, Typography } from "antd";
 import { PlayCircleOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { loadIpaIndex, type IpaIndexEntry } from "../utils/ipaResources";
@@ -120,75 +120,89 @@ export default function IpaListScreen({
           {title}
         </Typography.Title>
 
-        <List
-          bordered
-          dataSource={items}
-          locale={{ emptyText: "" }}
-          renderItem={({ entry, keys }) => {
-            const hoverAudio = entry.audio;
-            const explainAudio = entry.explainAudio;
-            const aliases = keys.filter((k) => k !== entry.ipa);
+        {items.length === 0 ? null : (
+          <div
+            style={{
+              border: "1px solid var(--ant-color-border)",
+              borderRadius: 8,
+              overflow: "hidden",
+            }}
+          >
+            {items.map(({ entry, keys }, idx) => {
+              const hoverAudio = entry.audio;
+              const explainAudio = entry.explainAudio;
+              const aliases = keys.filter((k) => k !== entry.ipa);
 
-            const description = entry.description
-              ? entry.description
-              : entry.examples && entry.examples.length > 0
-                ? entry.examples.join(", ")
-                : "—";
+              const description = entry.description
+                ? entry.description
+                : entry.examples && entry.examples.length > 0
+                  ? entry.examples.join(", ")
+                  : "—";
 
-            return (
-              <List.Item
-                key={`ipa-list-${entry.ipa}`}
-                actions={[
-                  <Button
-                    key="pronounce"
-                    icon={<PlayCircleOutlined />}
-                    disabled={!hoverAudio}
-                    onClick={() =>
-                      hoverAudio && void play(entry.ipa, hoverAudio)
-                    }
+              return (
+                <div key={`ipa-list-${entry.ipa}`}>
+                  <div
+                    style={{
+                      padding: "12px 16px",
+                      display: "flex",
+                      alignItems: "flex-start",
+                      justifyContent: "space-between",
+                      gap: 12,
+                    }}
                   >
-                    Pronounce
-                  </Button>,
-                  <Button
-                    key="explain"
-                    icon={<PlayCircleOutlined />}
-                    disabled={!explainAudio}
-                    onClick={() =>
-                      explainAudio && void play(entry.ipa, explainAudio)
-                    }
-                  >
-                    Explain
-                  </Button>,
-                ]}
-              >
-                <List.Item.Meta
-                  title={
-                    <span>
-                      <Typography.Text strong style={{ fontSize: 18 }}>
-                        {entry.ipa}
-                      </Typography.Text>
-                      {aliases.length > 0 && (
-                        <Typography.Text
-                          type="secondary"
-                          style={{ marginLeft: 8 }}
-                        >
-                          ({aliases.join(", ")})
+                    <div style={{ flex: "1 1 auto", minWidth: 0 }}>
+                      <div>
+                        <Typography.Text strong style={{ fontSize: 18 }}>
+                          {entry.ipa}
                         </Typography.Text>
-                      )}
-                    </span>
-                  }
-                  description={
-                    <Typography.Text
-                      type={description === "—" ? "secondary" : undefined}
-                    >
-                      {description}
-                    </Typography.Text>
-                  }
-                />
-              </List.Item>
-            );
-          }}
-        />
+                        {aliases.length > 0 && (
+                          <Typography.Text
+                            type="secondary"
+                            style={{ marginLeft: 8 }}
+                          >
+                            ({aliases.join(", ")})
+                          </Typography.Text>
+                        )}
+                      </div>
+                      <Typography.Text
+                        type={description === "—" ? "secondary" : undefined}
+                      >
+                        {description}
+                      </Typography.Text>
+                    </div>
+
+                    <Space size={8} wrap style={{ flex: "0 0 auto" }}>
+                      <Button
+                        icon={<PlayCircleOutlined />}
+                        disabled={!hoverAudio}
+                        onClick={() =>
+                          hoverAudio && void play(entry.ipa, hoverAudio)
+                        }
+                      >
+                        Pronounce
+                      </Button>
+                      <Button
+                        icon={<PlayCircleOutlined />}
+                        disabled={!explainAudio}
+                        onClick={() =>
+                          explainAudio && void play(entry.ipa, explainAudio)
+                        }
+                      >
+                        Explain
+                      </Button>
+                    </Space>
+                  </div>
+
+                  {idx < items.length - 1 && (
+                    <div
+                      style={{ borderTop: "1px solid var(--ant-color-split)" }}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </Space>
     );
   }

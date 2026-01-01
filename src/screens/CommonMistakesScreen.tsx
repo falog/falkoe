@@ -1,4 +1,4 @@
-import { Button, List, message, Space, Spin, Typography } from "antd";
+import { Button, message, Space, Spin, Typography } from "antd";
 import { PlayCircleOutlined } from "@ant-design/icons";
 import { useEffect, useRef, useState } from "react";
 import { loadIpaIndex, type IpaIndex } from "../utils/ipaResources";
@@ -139,50 +139,51 @@ export default function CommonMistakesScreen({
         </Typography.Text>
       )}
 
-      <List
-        bordered
-        dataSource={COMMON_PITFALLS}
-        renderItem={(p) => (
-          <List.Item key={p.key}>
-            <List.Item.Meta
-              title={<Typography.Text strong>{p.title}</Typography.Text>}
-              description={
-                <Space
-                  orientation="vertical"
-                  size={4}
-                  style={{ width: "100%" }}
-                >
-                  <Typography.Text type="secondary">{p.body}</Typography.Text>
-                  {p.ipa && p.ipa.length > 0 && (
-                    <Space wrap>
-                      {p.ipa.map((tok) => (
-                        <Space key={`${p.key}-${tok}`} wrap>
-                          <Typography.Text>{tok}</Typography.Text>
-                          <Button
-                            size="small"
-                            icon={<PlayCircleOutlined />}
-                            onClick={() => void playSample("failed", tok)}
-                          >
-                            failed
-                          </Button>
-                          <Button
-                            size="small"
-                            icon={<PlayCircleOutlined />}
-                            onClick={() => void playCorrect(tok)}
-                            disabled={!!error || loading}
-                          >
-                            Correct
-                          </Button>
-                        </Space>
-                      ))}
-                    </Space>
-                  )}
-                </Space>
-              }
-            />
-          </List.Item>
-        )}
-      />
+      <div
+        style={{
+          border: "1px solid var(--ant-color-border)",
+          borderRadius: 8,
+          overflow: "hidden",
+        }}
+      >
+        {COMMON_PITFALLS.map((p, idx) => (
+          <div key={p.key}>
+            <div style={{ padding: "12px 16px" }}>
+              <Space orientation="vertical" size={4} style={{ width: "100%" }}>
+                <Typography.Text strong>{p.title}</Typography.Text>
+                <Typography.Text type="secondary">{p.body}</Typography.Text>
+                {p.ipa && p.ipa.length > 0 && (
+                  <Space wrap>
+                    {p.ipa.map((tok) => (
+                      <Space key={`${p.key}-${tok}`} wrap>
+                        <Typography.Text>{tok}</Typography.Text>
+                        <Button
+                          size="small"
+                          icon={<PlayCircleOutlined />}
+                          onClick={() => void playSample("failed", tok)}
+                        >
+                          failed
+                        </Button>
+                        <Button
+                          size="small"
+                          icon={<PlayCircleOutlined />}
+                          onClick={() => void playCorrect(tok)}
+                          disabled={!!error || loading}
+                        >
+                          Correct
+                        </Button>
+                      </Space>
+                    ))}
+                  </Space>
+                )}
+              </Space>
+            </div>
+            {idx < COMMON_PITFALLS.length - 1 && (
+              <div style={{ borderTop: "1px solid var(--ant-color-split)" }} />
+            )}
+          </div>
+        ))}
+      </div>
     </Space>
   );
 }

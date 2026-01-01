@@ -1,4 +1,4 @@
-use crate::commands::audio::fetch_audio_base64;
+use crate::commands::audio::{ensure_sentence_audio_cached, fetch_audio_base64};
 use crate::commands::linking::render_linking;
 use crate::commands::recordings::{
     get_uploaded_audio_info, list_recordings, move_recorded_audio, save_uploaded_audio,
@@ -42,6 +42,7 @@ pub fn run() {
             save_uploaded_audio,
             get_uploaded_audio_info,
             fetch_audio_base64,
+            ensure_sentence_audio_cached,
             find_audio_by_sentence,
             upsert_sentence_manifest_text,
             render_linking,
