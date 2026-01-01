@@ -7,8 +7,6 @@ import {
 } from "react";
 import { message, Space, theme } from "antd";
 import { invoke } from "@tauri-apps/api/core";
-import type { Sentence } from "../components/ExampleList";
-import { sha256 } from "../utils/hash";
 import { useAudioUrlCache } from "./recorder/useAudioUrlCache";
 import { useHeaderAudioUrl } from "./recorder/useHeaderAudioUrl";
 import { useModelStatus } from "./recorder/useModelStatus";
@@ -19,24 +17,22 @@ import { loadIpaIndex, type IpaIndex } from "../utils/ipaResources";
 import { unlockAudioFromUserGesture } from "../utils/ipaPlayer";
 import TopNav from "../components/TopNav";
 import type { Recording, Transcript } from "../types/recording";
-import type { SourceKind, SpeechSource } from "../types/speech";
+import type { SpeechSource } from "../types/speech";
 import type { ModelStatus } from "../types/model";
 import { useWhisperEvents } from "./recorder/useWhisperEvents";
 import { useRecordingControls } from "./recorder/useRecordingControls";
 import { useModelRecognition } from "./recorder/useModelRecognition";
 import { useAddToAnki } from "./recorder/useAddToAnki";
-import { useUploadedAudio } from "./recorder/useUploadedAudio";
 import { useAutoTranscribeUploaded } from "./recorder/useAutoTranscribeUploaded";
 import { useLoadRecordingsTranscripts } from "./recorder/useLoadRecordingsTranscripts";
 import { useModelTranscriptLoader } from "./recorder/useModelTranscriptLoader";
-import {
-  startMicRecorderSilenceWatcher,
-  type MicRecorderSilenceWatcher,
-} from "./recorder/micRecorderSilenceWatcher";
 import { RecorderHeader } from "./recorder/components/RecorderHeader";
 import { ModelTranscriptSection } from "./recorder/components/ModelTranscriptSection";
 import { RecordingControls } from "./recorder/components/RecordingControls";
 import { RecordingsSection } from "./recorder/components/RecordingsSection";
+import { useSentenceContext } from "./recorder/useSentenceContext";
+import { useShadowingRecorder } from "./recorder/useShadowingRecorder";
+import { useTranscriptionCompletion } from "./recorder/useTranscriptionCompletion";
 
 type RecorderScreenProps = {
   source: SpeechSource;
@@ -58,15 +54,6 @@ type ModelState = {
   isTranscribing: boolean;
 };
 
-function hashText(text: string): number {
-  let hash = 0;
-  for (let i = 0; i < text.length; i++) {
-    hash = (hash << 5) - hash + text.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash);
-}
-
 const RecorderScreen = ({
   source,
   onBack,
@@ -86,69 +73,13 @@ const RecorderScreen = ({
   })();
   const preferAssetProtocol = !isLinux;
 
-  const sourceKind: SourceKind = source.kind;
-
-  const [sentenceHash, setSentenceHash] = useState<string>("");
-
-  const sentenceTextForHash: string = (() => {
-    switch (source.kind) {
-      case "tatoeba":
-        return source.sentence?.text ?? "";
-      case "uploaded":
-      case "recorded":
-        return source.text ?? "";
-      default:
-        return "";
-    }
-  })();
-
-  const sentenceLangForHash: string = (() => {
-    switch (source.kind) {
-      case "tatoeba":
-        return source.sentence?.lang ?? "";
-      case "uploaded":
-      case "recorded":
-        return source.lang ?? "";
-      default:
-        return "";
-    }
-  })();
-
-  const { uploadedFileAudioUrl, uploadedAudioPath } = useUploadedAudio({
-    source,
+  const {
+    sourceKind,
     sentenceHash,
-    sentenceText: sentenceTextForHash,
-    lang: sentenceLangForHash,
-  });
-
-  const sentence: Sentence = (() => {
-    switch (source.kind) {
-      case "tatoeba":
-        return source.sentence;
-      case "uploaded":
-        return {
-          id: hashText(source.text ?? "uploaded"),
-          text: source.text ?? "",
-          audioUrl: source.file ? uploadedFileAudioUrl : "",
-          lang: source.lang,
-        };
-      case "recorded":
-        return {
-          id: hashText(source.text ?? "recorded"),
-          text: source.text ?? "",
-          audioUrl: source.filePath,
-          lang: source.lang,
-        };
-    }
-  })();
-
-  useEffect(() => {
-    if (source.kind === "uploaded" && source.sentenceHash) {
-      setSentenceHash(source.sentenceHash);
-      return;
-    }
-    sha256(sentenceTextForHash, sentenceLangForHash).then(setSentenceHash);
-  }, [source, sentenceTextForHash, sentenceLangForHash]);
+    sentence,
+    uploadedAudioPath,
+    hasUploadedFile,
+  } = useSentenceContext(source);
 
   const [recordingState, setRecordingState] = useState<RecordingState>({
     recordings: [],
@@ -261,7 +192,7 @@ const RecorderScreen = ({
     preferAssetProtocol,
     ensureBlobAudioUrl,
     toAssetUrl,
-    hasUploadedFile: source.kind === "uploaded" && Boolean(source.file),
+    hasUploadedFile,
   });
 
   useEffect(() => {
@@ -343,151 +274,14 @@ const RecorderScreen = ({
     setIsTranscribing: setIsTranscribingState,
   });
 
-  const isRecordingRef = useRef(isRecording);
-  useEffect(() => {
-    isRecordingRef.current = isRecording;
-  }, [isRecording]);
-
-  const autoPracticeInFlightRef = useRef(false);
-  const [isMimicLoading, setIsMimicLoading] = useState(false);
-  const autoStopArmedRef = useRef(false);
-  const silenceWatcherRef = useRef<MicRecorderSilenceWatcher | null>(null);
-  const silenceUnavailableNotifiedRef = useRef(false);
-
-  const startAutoStopWatcher = useCallback(() => {
-    if (!isRecordingRef.current) {
-      return Promise.resolve(null);
-    }
-    autoStopArmedRef.current = true;
-    silenceWatcherRef.current?.stop();
-    silenceWatcherRef.current = null;
-
-    return startMicRecorderSilenceWatcher({
-      silenceMs: 1000,
-      rmsThreshold: 0.006,
-      pollIntervalMs: 50,
-      onSilence: () => {
-        if (!autoStopArmedRef.current) return false;
-        if (!isRecordingRef.current) return false;
-        void stopRecording();
-        return true;
-      },
-    })
-      .then((watcher) => {
-        silenceWatcherRef.current = watcher;
-        return watcher;
-      })
-      .catch((e) => {
-        console.warn("silence watcher unavailable", e);
-        if (!silenceUnavailableNotifiedRef.current) {
-          silenceUnavailableNotifiedRef.current = true;
-          const msg = String((e as any)?.message ?? e);
-          message.info(
-            "無音検知を開始できません（デバイス競合の可能性）: " + msg
-          );
-        }
-        return null;
-      });
-  }, [stopRecording]);
-
-  const handleStartRecording = useCallback(async () => {
-    if (isRecording) return;
-    if (status !== "ready") {
-      message.info("モデル準備中のため録音を開始できません");
-      return;
-    }
-
-    await startRecording();
-    isRecordingRef.current = true;
-    await startAutoStopWatcher();
-  }, [isRecording, startAutoStopWatcher, startRecording, status]);
-
-  useEffect(() => {
-    return () => {
-      silenceWatcherRef.current?.stop();
-      silenceWatcherRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (isRecording) return;
-    autoStopArmedRef.current = false;
-    silenceWatcherRef.current?.stop();
-    silenceWatcherRef.current = null;
-  }, [isRecording]);
-
-  const handleMimic = useCallback(async () => {
-    if (autoPracticeInFlightRef.current) return;
-    autoPracticeInFlightRef.current = true;
-    setIsMimicLoading(true);
-
-    try {
-      if (!headerAudioUrl || isHeaderAudioLoading) {
-        message.info("音声を読み込み中…");
-        return;
-      }
-      if (status !== "ready") {
-        message.info("モデル準備中のため録音を開始できません");
-        return;
-      }
-      if (isRecording) return;
-
-      // Important: start sample playback BEFORE awaiting anything.
-      // Awaiting here can break the user-gesture chain and cause audio.play() to be blocked.
-      const audio = new Audio(headerAudioUrl);
-
-      // Shadowing UX: while the sample is playing, the user might be silent (listening).
-      // If we start silence detection immediately, it can auto-stop during playback.
-      // So we start the auto-stop watcher only AFTER the sample finishes (or fails).
-      const startWatcherAfterPlayback = () => {
-        if (!isRecordingRef.current) return;
-        if (!autoStopArmedRef.current) return;
-        void startAutoStopWatcher();
-      };
-
-      audio.addEventListener("ended", startWatcherAfterPlayback, {
-        once: true,
-      });
-      audio.addEventListener("error", startWatcherAfterPlayback, {
-        once: true,
-      });
-
-      try {
-        void audio.play().catch((e) => {
-          console.warn("Mimic sample playback blocked/failed", e);
-          // If playback fails, start watcher immediately (we still want auto-stop).
-          startWatcherAfterPlayback();
-        });
-      } catch (e) {
-        console.warn("Mimic sample playback failed", e);
-        startWatcherAfterPlayback();
-      }
-
-      // Start recording immediately so the user can shadow it.
-      try {
-        await startRecording();
-        isRecordingRef.current = true;
-        autoStopArmedRef.current = true;
-      } catch (e) {
-        autoStopArmedRef.current = false;
-        const watcher =
-          silenceWatcherRef.current as unknown as MicRecorderSilenceWatcher | null;
-        watcher?.stop();
-        silenceWatcherRef.current = null;
-        throw e;
-      }
-    } finally {
-      setIsMimicLoading(false);
-      autoPracticeInFlightRef.current = false;
-    }
-  }, [
-    headerAudioUrl,
-    isHeaderAudioLoading,
+  const shadowingRecorder = useShadowingRecorder({
     isRecording,
     startRecording,
-    status,
     stopRecording,
-  ]);
+    status,
+    headerAudioUrl,
+    isHeaderAudioLoading,
+  });
 
   const navigateSafelyRef = useRef(false);
 
@@ -498,16 +292,14 @@ const RecorderScreen = ({
 
       void (async () => {
         try {
-          if (isRecording) {
-            await stopRecording();
-          }
+          if (shadowingRecorder.isRecording) await shadowingRecorder.stop();
         } catch (e) {
           console.warn("stopRecording while navigating failed", e);
         }
         nav();
       })();
     },
-    [isRecording, stopRecording]
+    [shadowingRecorder]
   );
 
   const { recognizeModel, disabled: modelRecognizeDisabled } =
@@ -576,40 +368,20 @@ const RecorderScreen = ({
     recognizing,
   });
 
-  const hadRecordingRecognizingRef = useRef(false);
-
-  useEffect(() => {
-    if (!isTranscribing) return;
-    if (waitingModel) return;
-
-    const recognizingKeys = Object.keys(recognizing);
-    if (recognizingKeys.length > 0) {
-      hadRecordingRecognizingRef.current = true;
-    } else if (hadRecordingRecognizingRef.current) {
-      hadRecordingRecognizingRef.current = false;
-      setIsTranscribingState(false);
-      return;
-    } else {
-      // uploaded/model など「recognizing で追えない」文字起こしはここで落とさない
-      return;
-    }
-
-    const donePaths = recognizingKeys.filter((p) => transcripts[p]);
-    if (donePaths.length === 0) return;
-
-    setRecordingState((prev) => {
-      let changed = false;
-      const nextRecognizing = { ...prev.recognizing };
-      for (const p of donePaths) {
-        if (nextRecognizing[p]) {
-          delete nextRecognizing[p];
-          changed = true;
-        }
-      }
-      if (!changed) return prev;
-      return { ...prev, recognizing: nextRecognizing };
+  const { showModelAreaTranscribing, autoRecognizingUploaded } =
+    useTranscriptionCompletion({
+      sourceKind,
+      sentenceText: sentence.text,
+      displayText,
+      modelText,
+      isTranscribing,
+      waitingModel,
+      recognizing,
+      transcripts,
+      setRecognizing,
+      setIsTranscribing: (v) => setIsTranscribingState(v),
+      setDisplayText,
     });
-  }, [isTranscribing, waitingModel, recognizing, transcripts]);
 
   useModelTranscriptLoader({
     sentenceHash,
@@ -618,46 +390,6 @@ const RecorderScreen = ({
     waitingModel,
     setModelText: (v) => setModelTextState(v),
   });
-
-  useEffect(() => {
-    if (sourceKind !== "uploaded") return;
-
-    const hasUserProvidedSentenceText = Boolean(sentence.text?.trim());
-    const hasDisplayText = Boolean(displayText?.trim());
-    const recognizedText = (modelText ?? "").trim();
-
-    if (!hasUserProvidedSentenceText && !hasDisplayText && recognizedText) {
-      setDisplayText(recognizedText);
-    }
-
-    // transcript-final を取りこぼしても、ファイルから modelText が読めていれば完了扱いにする
-    if (
-      isTranscribing &&
-      !waitingModel &&
-      Object.keys(recognizing).length === 0 &&
-      recognizedText
-    ) {
-      setIsTranscribingState(false);
-    }
-  }, [
-    sourceKind,
-    sentence.text,
-    displayText,
-    modelText,
-    isTranscribing,
-    waitingModel,
-    recognizing,
-  ]);
-
-  const isRecordingsTranscribing =
-    !waitingModel && Object.keys(recognizing).length > 0;
-  const showModelAreaTranscribing = isTranscribing && !isRecordingsTranscribing;
-
-  const autoRecognizingUploaded =
-    sourceKind === "uploaded" &&
-    isTranscribing &&
-    !waitingModel &&
-    Object.keys(recognizing).length === 0;
 
   return (
     <div
@@ -677,29 +409,6 @@ const RecorderScreen = ({
           }
           onOpenCommonMistakes={() => navigateSafely(onOpenCommonMistakes)}
         />
-
-        {/* Audio Debug Info - コメントアウトして非表示
-        {audioDebugInfo && (
-          <Typography.Paragraph
-            style={{
-              fontSize: 11,
-              fontFamily: "monospace",
-              whiteSpace: "pre-wrap",
-              backgroundColor: "#f5f5f5",
-              padding: 8,
-              borderRadius: 4,
-              maxHeight: 200,
-              overflow: "auto",
-            }}
-          >
-            <strong>Audio Debug:</strong>
-            <br />
-            {audioDebugInfo}
-            <br />
-            <strong>Current headerAudioUrl:</strong> {headerAudioUrl?.substring(0, 100) || "null"}
-          </Typography.Paragraph>
-        )}
-        */}
 
         <RecorderHeader
           headerAudioUrl={headerAudioUrl}
@@ -727,11 +436,11 @@ const RecorderScreen = ({
         <RecordingControls
           isRecording={isRecording}
           status={status}
-          onMimic={handleMimic}
-          mimicLoading={isMimicLoading}
+          onMimic={() => shadowingRecorder.start({ mode: "mimic" })}
+          mimicLoading={shadowingRecorder.isMimicLoading}
           mimicDisabled={!headerAudioUrl || isHeaderAudioLoading}
-          onStartRecording={handleStartRecording}
-          onStopRecording={stopRecording}
+          onStartRecording={() => shadowingRecorder.start()}
+          onStopRecording={shadowingRecorder.stop}
         />
 
         <RecordingsSection
