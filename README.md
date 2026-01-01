@@ -7,7 +7,9 @@
 
 ## 📸 Screenshots
 
-_Coming soon..._
+![Falkoe Screenshot 01](docs/screenshots/Falkoe_Screenshot01.png)
+
+![Falkoe Screenshot 02](docs/screenshots/Falkoe_Screenshot02.png)
 
 ---
 
@@ -320,6 +322,7 @@ Alternatively, you can allow it from
 .
 ├── src/              # React frontend
 ├── src-tauri/        # Tauri / Rust backend
+├── docs/             # Documentation (screenshots, etc.)
 ├── public/
 ├── dist/
 └── README.md
@@ -424,8 +427,7 @@ See [LICENSE](LICENSE) file for details.
 - [Tauri](https://tauri.app/) — Desktop app framework
 - [Whisper](https://github.com/openai/whisper) — Speech recognition
 - [Anki](https://apps.ankiweb.net/) — Spaced repetition learning
-- [Tatoeba](https://tatoeba.org/) — 多言語例文データベース（一部例文データに利用・感謝します）  
-  (Tatoeba — Multilingual sentence database. Some example sentences are used in this app. Thank you for the great resource!)
+- [Tatoeba](https://tatoeba.org/) — Multilingual sentence database. Some example sentences are used in this app. Thank you for the great resource!
 
 ---
 
