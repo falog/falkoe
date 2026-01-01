@@ -1,31 +1,30 @@
 import { useEffect, useState, useRef } from "react";
-import { Button, message, Space, Spin, Typography, theme } from "antd";
+import { message, Space, theme } from "antd";
 import { invoke } from "@tauri-apps/api/core";
 import type { Sentence } from "../components/ExampleList";
 import { sha256 } from "../utils/hash";
 import { useAudioUrlCache } from "./recorder/useAudioUrlCache";
 import { useHeaderAudioUrl } from "./recorder/useHeaderAudioUrl";
 import { useModelStatus } from "./recorder/useModelStatus";
-import {
-  loadModelTranscript,
-  loadTranscript,
-  loadUploadedTranscript,
-  parseRecording,
-} from "./recorder/transcriptUtils";
-import HeaderAudioPlayButton from "./recorder/HeaderAudioPlayButton";
+import { loadTranscript, parseRecording } from "./recorder/transcriptUtils";
 import { renderLinkingRust } from "../utils/linkingInvoke";
 import type { RenderLinkingResult, DisplayMode } from "../types/linking";
 import { loadIpaIndex, type IpaIndex } from "../utils/ipaResources";
 import { unlockAudioFromUserGesture } from "../utils/ipaPlayer";
 import TopNav from "../components/TopNav";
-import RecordingsList from "../components/RecordingsList";
 import type { Recording, Transcript } from "../types/recording";
-import LinkingStressArea from "./recorder/LinkingStressArea";
 import { useWhisperEvents } from "./recorder/useWhisperEvents";
 import { useRecordingControls } from "./recorder/useRecordingControls";
 import { useModelRecognition } from "./recorder/useModelRecognition";
 import { useAddToAnki } from "./recorder/useAddToAnki";
 import { useUploadedAudio } from "./recorder/useUploadedAudio";
+import { useAutoTranscribeUploaded } from "./recorder/useAutoTranscribeUploaded";
+import { useLoadRecordingsTranscripts } from "./recorder/useLoadRecordingsTranscripts";
+import { useModelTranscriptLoader } from "./recorder/useModelTranscriptLoader";
+import { RecorderHeader } from "./recorder/components/RecorderHeader";
+import { ModelTranscriptSection } from "./recorder/components/ModelTranscriptSection";
+import { RecordingControls } from "./recorder/components/RecordingControls";
+import { RecordingsSection } from "./recorder/components/RecordingsSection";
 
 type RecorderScreenProps = {
   source: any;
@@ -154,7 +153,6 @@ const RecorderScreen = ({
       });
   }, []);
 
-  const autoStartedRef = useRef(false);
   const { audioUrls, ensureBlobAudioUrl, toAssetUrl, resetAudioUrls } =
     useAudioUrlCache();
 
@@ -207,59 +205,19 @@ const RecorderScreen = ({
     setModelText(null);
     setWaitingModel(false);
     resetAudioUrls();
-    autoStartedRef.current = false;
     refreshFiles();
   }, [sentenceHash]);
 
-  useEffect(() => {
-    if (
-      source.kind !== "uploaded" ||
-      !(!sentence.text || sentence.text.trim() === "") ||
-      !uploadedAudioPath ||
-      status !== "ready" ||
-      autoStartedRef.current
-    ) {
-      return;
-    }
-
-    autoStartedRef.current = true;
-
-    let cancelled = false;
-
-    const run = async () => {
-      const cached = await loadUploadedTranscript(uploadedAudioPath);
-      if (cancelled) return;
-      if (cached) {
-        const joined = cached.segments
-          .map((s) => s.text)
-          .join(" ")
-          .trim();
-        setDisplayText((prev) => prev || joined);
-        return;
-      }
-
-      invoke("run_whisper_uploaded", {
-        uploadedPath: uploadedAudioPath,
-        sentenceHash: sentenceHash,
-        lang: sentence.lang,
-      });
-
-      setIsTranscribing(true);
-    };
-
-    run();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    source,
-    sentence.text,
+  useAutoTranscribeUploaded({
+    sourceKind: source.kind,
+    sentenceText: sentence.text,
     uploadedAudioPath,
     status,
     sentenceHash,
-    sentence.lang,
-  ]);
+    lang: sentence.lang,
+    setDisplayText,
+    setIsTranscribing,
+  });
 
   const refreshFiles = async () => {
     const list = await invoke<string[]>("list_recordings", {
@@ -344,55 +302,19 @@ const RecorderScreen = ({
     }
   };
 
-  useEffect(() => {
-    const run = async () => {
-      for (const rec of recordings) {
-        if (transcripts[rec.path] === undefined) {
-          const transcript = await loadTranscript(rec.path);
-          setTranscripts((prev) => ({
-            ...prev,
-            [rec.path]: transcript,
-          }));
-        }
-      }
-    };
-    run();
-  }, [recordings]);
+  useLoadRecordingsTranscripts({
+    recordings,
+    transcripts,
+    setTranscripts,
+  });
 
-  useEffect(() => {
-    if (!sentenceHash) return;
-    if (waitingModel) return;
-
-    let cancelled = false;
-
-    const run = async () => {
-      try {
-        const transcript =
-          source.kind === "uploaded"
-            ? uploadedAudioPath
-              ? await loadUploadedTranscript(uploadedAudioPath)
-              : null
-            : await loadModelTranscript(sentenceHash);
-
-        if (cancelled) return;
-
-        if (transcript && transcript.segments.length > 0) {
-          setModelText(transcript.segments.map((s) => s.text).join(" "));
-        } else {
-          setModelText(null);
-        }
-      } catch {
-        if (cancelled) return;
-        setModelText(null);
-      }
-    };
-
-    void run();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [sentenceHash, source.kind, uploadedAudioPath, waitingModel]);
+  useModelTranscriptLoader({
+    sentenceHash,
+    sourceKind: source.kind,
+    uploadedAudioPath,
+    waitingModel,
+    setModelText,
+  });
 
   return (
     <div
@@ -434,85 +356,36 @@ const RecorderScreen = ({
         )}
         */}
 
-        {isTranscribing && (
-          <Space>
-            <Spin size="small" />
-            <Typography.Text type="secondary">文字起こし中…</Typography.Text>
-          </Space>
-        )}
+        <RecorderHeader
+          headerAudioUrl={headerAudioUrl}
+          isHeaderAudioLoading={isHeaderAudioLoading}
+          displayText={displayText}
+          sentenceText={sentence.text}
+          onRecognizeModel={recognizeModel}
+          waitingModel={waitingModel}
+          modelRecognizeDisabled={modelRecognizeDisabled}
+          sourceKind={source.kind}
+        />
 
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 12,
-          }}
-        >
-          <HeaderAudioPlayButton
-            url={headerAudioUrl}
-            loading={isHeaderAudioLoading}
-            disabled={!headerAudioUrl || isHeaderAudioLoading}
-          />
-          <Typography.Title level={4} style={{ margin: 0, flex: 1 }}>
-            {displayText || sentence.text}
-          </Typography.Title>
-          <Button
-            onClick={recognizeModel}
-            loading={waitingModel}
-            disabled={modelRecognizeDisabled}
-          >
-            {source.kind === "uploaded"
-              ? "アップロード音声を音声認識する"
-              : "模範音声を音声認識する"}
-          </Button>
-        </div>
-        <Typography.Paragraph>
-          <strong>Model transcript:</strong>
-          <br />
-          {modelText ? (
-            modelText
-          ) : (
-            <Typography.Text type="secondary">
-              音声認識されていません
-            </Typography.Text>
-          )}
-        </Typography.Paragraph>
-        {linkingResult?.joined && (
-          <LinkingStressArea
-            linkingResult={linkingResult}
-            linkingDisplayMode={linkingDisplayMode}
-            setLinkingDisplayMode={setLinkingDisplayMode}
-            ipaIndex={ipaIndex}
-          />
-        )}
-        <Typography.Text type="secondary">
-          Model status: {status}
-        </Typography.Text>
+        <ModelTranscriptSection
+          isTranscribing={isTranscribing}
+          modelText={modelText}
+          linkingResult={linkingResult}
+          linkingDisplayMode={linkingDisplayMode}
+          setLinkingDisplayMode={setLinkingDisplayMode}
+          ipaIndex={ipaIndex}
+          status={status}
+          progress={progress}
+        />
 
-        {status === "downloading" && (
-          <Typography.Text type="secondary">
-            Downloading model… {progress ?? 0}%
-          </Typography.Text>
-        )}
-        <Space>
-          <Button
-            type="primary"
-            disabled={isRecording || status !== "ready"}
-            onClick={startRecording}
-          >
-            Start Recording
-          </Button>
+        <RecordingControls
+          isRecording={isRecording}
+          status={status}
+          onStartRecording={startRecording}
+          onStopRecording={stopRecording}
+        />
 
-          <Button danger disabled={!isRecording} onClick={stopRecording}>
-            Stop Recording
-          </Button>
-        </Space>
-
-        {isRecording && <Typography.Text>Recording...</Typography.Text>}
-
-        <Typography.Title level={5}>Recordings</Typography.Title>
-        <RecordingsList
+        <RecordingsSection
           recordings={recordings}
           transcripts={transcripts}
           recognizing={recognizing}
