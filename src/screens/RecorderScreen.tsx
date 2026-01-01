@@ -1,10 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useState,
-  useRef,
-  type SetStateAction,
-} from "react";
+import { useEffect, useState, useRef } from "react";
 import { message, Space, theme } from "antd";
 import { invoke } from "@tauri-apps/api/core";
 import { useAudioUrlCache } from "./recorder/useAudioUrlCache";
@@ -35,6 +29,8 @@ import { usePreferAssetProtocol } from "./recorder/usePreferAssetProtocol";
 import { useIpaIndex } from "./recorder/useIpaIndex";
 import { useLinkingResult } from "./recorder/useLinkingResult";
 import { useRecordingsState } from "./recorder/useRecordingsState";
+import { useModelUiState } from "./recorder/useModelUiState";
+import { useSafeNavigation } from "./recorder/useSafeNavigation";
 
 type RecorderScreenProps = {
   source: SpeechSource;
@@ -42,12 +38,6 @@ type RecorderScreenProps = {
   onOpenIpaList: () => void;
   onOpenDevelopersMistakes: () => void;
   onOpenCommonMistakes: () => void;
-};
-
-type ModelState = {
-  modelText: string | null;
-  waitingModel: boolean;
-  isTranscribing: boolean;
 };
 
 const RecorderScreen = ({
@@ -77,43 +67,15 @@ const RecorderScreen = ({
     refreshFiles,
   } = useRecordingsState(sentenceHash);
 
-  const [modelState, setModelState] = useState<ModelState>({
-    modelText: null,
-    waitingModel: false,
-    isTranscribing: false,
-  });
-
-  const { modelText, waitingModel, isTranscribing } = modelState;
-
-  const setModelTextState = (action: SetStateAction<string | null>) => {
-    setModelState((prev) => ({
-      ...prev,
-      modelText:
-        typeof action === "function"
-          ? (action as (p: string | null) => string | null)(prev.modelText)
-          : action,
-    }));
-  };
-
-  const setWaitingModelState = (action: SetStateAction<boolean>) => {
-    setModelState((prev) => ({
-      ...prev,
-      waitingModel:
-        typeof action === "function"
-          ? (action as (p: boolean) => boolean)(prev.waitingModel)
-          : action,
-    }));
-  };
-
-  const setIsTranscribingState = (action: SetStateAction<boolean>) => {
-    setModelState((prev) => ({
-      ...prev,
-      isTranscribing:
-        typeof action === "function"
-          ? (action as (p: boolean) => boolean)(prev.isTranscribing)
-          : action,
-    }));
-  };
+  const {
+    modelText,
+    waitingModel,
+    isTranscribing,
+    setModelText,
+    setWaitingModel,
+    setIsTranscribing,
+    resetModelUiState,
+  } = useModelUiState(sentenceHash);
 
   const { status, progress }: { status: ModelStatus; progress: number | null } =
     useModelStatus();
@@ -150,13 +112,9 @@ const RecorderScreen = ({
   });
 
   useEffect(() => {
-    setModelState({
-      modelText: null,
-      waitingModel: false,
-      isTranscribing: false,
-    });
+    resetModelUiState();
     resetAudioUrls();
-  }, [sentenceHash]);
+  }, [sentenceHash, resetAudioUrls, resetModelUiState]);
 
   useAutoTranscribeUploaded({
     sourceKind,
@@ -166,7 +124,7 @@ const RecorderScreen = ({
     sentenceHash,
     lang: sentence.lang,
     setDisplayText,
-    setIsTranscribing: (v) => setIsTranscribingState(v),
+    setIsTranscribing: (v) => setIsTranscribing(v),
   });
 
   const { isRecording, startRecording, stopRecording } = useRecordingControls({
@@ -175,7 +133,7 @@ const RecorderScreen = ({
     refreshFiles,
     setRecognizing,
     setTranscripts,
-    setIsTranscribing: setIsTranscribingState,
+    setIsTranscribing,
   });
 
   const shadowingRecorder = useShadowingRecorder({
@@ -187,24 +145,12 @@ const RecorderScreen = ({
     isHeaderAudioLoading,
   });
 
-  const navigateSafelyRef = useRef(false);
-
-  const navigateSafely = useCallback(
-    (nav: () => void) => {
-      if (navigateSafelyRef.current) return;
-      navigateSafelyRef.current = true;
-
-      void (async () => {
-        try {
-          if (shadowingRecorder.isRecording) await shadowingRecorder.stop();
-        } catch (e) {
-          console.warn("stopRecording while navigating failed", e);
-        }
-        nav();
-      })();
+  const { navigateSafely } = useSafeNavigation({
+    beforeNavigate: async () => {
+      if (!shadowingRecorder.isRecording) return;
+      await shadowingRecorder.stop();
     },
-    [shadowingRecorder]
-  );
+  });
 
   const { recognizeModel, disabled: modelRecognizeDisabled } =
     useModelRecognition({
@@ -215,9 +161,9 @@ const RecorderScreen = ({
       sentenceAudioUrl: sentence.audioUrl,
       waitingModel,
       modelText,
-      setModelText: setModelTextState,
-      setWaitingModel: setWaitingModelState,
-      setIsTranscribing: setIsTranscribingState,
+      setModelText,
+      setWaitingModel,
+      setIsTranscribing,
     });
 
   const { addToAnki } = useAddToAnki({
@@ -234,9 +180,9 @@ const RecorderScreen = ({
     sentenceText: sentence.text,
     waitingModel,
     loadTranscript,
-    setWaitingModel: (v) => setWaitingModelState(v),
-    setIsTranscribing: (v) => setIsTranscribingState(v),
-    setModelText: (v) => setModelTextState(v),
+    setWaitingModel: (v) => setWaitingModel(v),
+    setIsTranscribing: (v) => setIsTranscribing(v),
+    setModelText: (v) => setModelText(v),
     setDisplayText,
     setRecognizing,
     setTranscripts,
@@ -247,7 +193,7 @@ const RecorderScreen = ({
     if (recognizing[rec.path]) return;
 
     setRecognizing((prev) => ({ ...prev, [rec.path]: true }));
-    setIsTranscribingState(true);
+    setIsTranscribing(true);
     try {
       await invoke("run_whisper", {
         path: rec.path,
@@ -260,7 +206,7 @@ const RecorderScreen = ({
         delete next[rec.path];
         return next;
       });
-      setIsTranscribingState(false);
+      setIsTranscribing(false);
       message.error("音声認識の開始に失敗しました: " + String(e));
     }
   };
@@ -283,7 +229,7 @@ const RecorderScreen = ({
       recognizing,
       transcripts,
       setRecognizing,
-      setIsTranscribing: (v) => setIsTranscribingState(v),
+      setIsTranscribing: (v) => setIsTranscribing(v),
       setDisplayText,
     });
 
@@ -292,7 +238,7 @@ const RecorderScreen = ({
     sourceKind,
     uploadedAudioPath,
     waitingModel,
-    setModelText: (v) => setModelTextState(v),
+    setModelText: (v) => setModelText(v),
   });
 
   return (
