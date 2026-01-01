@@ -2,6 +2,7 @@ import { Space, Spin, Typography } from "antd";
 import type { RenderLinkingResult, DisplayMode } from "../../../types/linking";
 import type { IpaIndex } from "../../../utils/ipaResources";
 import LinkingStressArea from "../LinkingStressArea";
+import type { ModelStatus } from "../../../types/model";
 
 type Props = {
   isTranscribing: boolean;
@@ -10,7 +11,7 @@ type Props = {
   linkingDisplayMode: DisplayMode;
   setLinkingDisplayMode: (mode: DisplayMode) => void;
   ipaIndex: IpaIndex | null;
-  status: string;
+  status: ModelStatus;
   progress: number | null;
 };
 

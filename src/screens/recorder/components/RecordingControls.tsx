@@ -1,8 +1,9 @@
 import { Button, Space } from "antd";
+import type { ModelStatus } from "../../../types/model";
 
 type Props = {
   isRecording: boolean;
-  status: string;
+  status: ModelStatus;
   onStartRecording: () => void;
   onStopRecording: () => void;
 };

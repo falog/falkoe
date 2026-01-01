@@ -8,6 +8,7 @@ type Props = {
   sentenceText: string;
   onRecognizeModel: () => void;
   waitingModel: boolean;
+  autoRecognizingUploaded: boolean;
   modelRecognizeDisabled: boolean;
   sourceKind: string;
 };
@@ -19,6 +20,7 @@ export function RecorderHeader({
   sentenceText,
   onRecognizeModel,
   waitingModel,
+  autoRecognizingUploaded,
   modelRecognizeDisabled,
   sourceKind,
 }: Props) {
@@ -41,8 +43,8 @@ export function RecorderHeader({
       </Typography.Title>
       <Button
         onClick={onRecognizeModel}
-        loading={waitingModel}
-        disabled={modelRecognizeDisabled}
+        loading={waitingModel || autoRecognizingUploaded}
+        disabled={modelRecognizeDisabled || autoRecognizingUploaded}
       >
         {sourceKind === "uploaded"
           ? "アップロード音声を音声認識する"

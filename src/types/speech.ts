@@ -20,3 +20,5 @@ export type SpeechSource =
       kind: "tatoeba";
       sentence: Sentence;
     };
+
+export type SourceKind = SpeechSource["kind"];

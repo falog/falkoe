@@ -1,4 +1,4 @@
-import { Button, Flex, Typography } from "antd";
+import { Button, Flex, Typography, Spin, Space } from "antd";
 import { useRef } from "react";
 import type { Recording, Transcript } from "../types/recording";
 
@@ -57,11 +57,6 @@ export default function RecordingItem({
         <div>
           <strong>Take {total - index}</strong>
           {rec.dateLabel ? <> / {rec.dateLabel}</> : null}
-          {recognizing && (
-            <Typography.Text type="secondary" style={{ marginLeft: 8 }}>
-              文字起こし中…
-            </Typography.Text>
-          )}
         </div>
         <Flex gap={8}>
           {transcript === null && recognize && !recognizing && (
@@ -89,6 +84,13 @@ export default function RecordingItem({
             <div key={i}>{s.text.trim()}</div>
           ))}
         </div>
+      )}
+
+      {!transcript && recognizing && (
+        <Space style={{ marginLeft: 8 }}>
+          <Spin size="small" />
+          <Typography.Text type="secondary">文字起こし中…</Typography.Text>
+        </Space>
       )}
 
       {transcript?.segments?.length === 0 && (

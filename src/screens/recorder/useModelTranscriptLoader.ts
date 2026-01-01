@@ -1,9 +1,10 @@
 import { useEffect } from "react";
 import { loadModelTranscript, loadUploadedTranscript } from "./transcriptUtils";
+import type { SourceKind } from "../../types/speech";
 
 type Args = {
   sentenceHash: string;
-  sourceKind: string;
+  sourceKind: SourceKind;
   uploadedAudioPath: string | null;
   waitingModel: boolean;
   setModelText: (value: string | null) => void;

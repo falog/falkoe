@@ -1,12 +1,16 @@
 import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { loadUploadedTranscript } from "./transcriptUtils";
+import type { SourceKind } from "../../types/speech";
+import type { ModelStatus } from "../../types/model";
 
 type Args = {
-  sourceKind: string;
+  enabled?: boolean;
+  loadCached?: boolean;
+  sourceKind: SourceKind;
   sentenceText: string;
   uploadedAudioPath: string | null;
-  status: string;
+  status: ModelStatus;
   sentenceHash: string;
   lang: string;
   setDisplayText: Dispatch<SetStateAction<string>>;
@@ -14,6 +18,8 @@ type Args = {
 };
 
 export function useAutoTranscribeUploaded({
+  enabled = true,
+  loadCached = true,
   sourceKind,
   sentenceText,
   uploadedAudioPath,
@@ -30,33 +36,46 @@ export function useAutoTranscribeUploaded({
   }, [sentenceHash]);
 
   useEffect(() => {
-    if (
-      sourceKind !== "uploaded" ||
-      !(!sentenceText || sentenceText.trim() === "") ||
-      !uploadedAudioPath ||
-      status !== "ready" ||
-      autoStartedRef.current
-    ) {
+    if (sourceKind !== "uploaded" || !uploadedAudioPath) {
       return;
     }
 
-    autoStartedRef.current = true;
+    // 手動でテキストが入力済みなら自動認識は不要
+    if (sentenceText.trim() !== "") {
+      return;
+    }
+
+    if (!enabled && !loadCached) {
+      return;
+    }
+
+    if (autoStartedRef.current) {
+      return;
+    }
 
     let cancelled = false;
 
     const run = async () => {
-      const cached = await loadUploadedTranscript(uploadedAudioPath);
-      if (cancelled) return;
+      if (loadCached) {
+        const cached = await loadUploadedTranscript(uploadedAudioPath);
+        if (cancelled) return;
 
-      if (cached) {
-        const joined = cached.segments
-          .map((s) => s.text)
-          .join(" ")
-          .trim();
+        if (cached) {
+          const joined = cached.segments
+            .map((s) => s.text)
+            .join(" ")
+            .trim();
 
-        setDisplayText((prev) => prev || joined);
-        return;
+          setDisplayText((prev) => prev || joined);
+          autoStartedRef.current = true;
+          return;
+        }
       }
+
+      if (!enabled) return;
+      if (status !== "ready") return;
+
+      autoStartedRef.current = true;
 
       invoke("run_whisper_uploaded", {
         uploadedPath: uploadedAudioPath,
@@ -73,6 +92,8 @@ export function useAutoTranscribeUploaded({
       cancelled = true;
     };
   }, [
+    enabled,
+    loadCached,
     sourceKind,
     sentenceText,
     uploadedAudioPath,

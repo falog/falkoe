@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import type { Transcript } from "../../types/recording";
+import type { SourceKind } from "../../types/speech";
 
 type FinalResultPayload = {
   wav_path: string;
@@ -9,7 +10,7 @@ type FinalResultPayload = {
 
 type Params = {
   sentenceId: string | number;
-  sourceKind: string;
+  sourceKind: SourceKind;
   sentenceText: string;
   waitingModel: boolean;
 

@@ -1,4 +1,10 @@
-import { useEffect, useState, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  useRef,
+  type SetStateAction,
+} from "react";
 import { message, Space, theme } from "antd";
 import { invoke } from "@tauri-apps/api/core";
 import type { Sentence } from "../components/ExampleList";
@@ -13,6 +19,8 @@ import { loadIpaIndex, type IpaIndex } from "../utils/ipaResources";
 import { unlockAudioFromUserGesture } from "../utils/ipaPlayer";
 import TopNav from "../components/TopNav";
 import type { Recording, Transcript } from "../types/recording";
+import type { SourceKind, SpeechSource } from "../types/speech";
+import type { ModelStatus } from "../types/model";
 import { useWhisperEvents } from "./recorder/useWhisperEvents";
 import { useRecordingControls } from "./recorder/useRecordingControls";
 import { useModelRecognition } from "./recorder/useModelRecognition";
@@ -27,20 +35,32 @@ import { RecordingControls } from "./recorder/components/RecordingControls";
 import { RecordingsSection } from "./recorder/components/RecordingsSection";
 
 type RecorderScreenProps = {
-  source: any;
+  source: SpeechSource;
   onBack: () => void;
   onOpenIpaList: () => void;
   onOpenDevelopersMistakes: () => void;
   onOpenCommonMistakes: () => void;
 };
 
-function hashText(text: string): string {
+type RecordingState = {
+  recordings: Recording[];
+  transcripts: Record<string, Transcript | null>;
+  recognizing: Record<string, boolean>;
+};
+
+type ModelState = {
+  modelText: string | null;
+  waitingModel: boolean;
+  isTranscribing: boolean;
+};
+
+function hashText(text: string): number {
   let hash = 0;
   for (let i = 0; i < text.length; i++) {
     hash = (hash << 5) - hash + text.charCodeAt(i);
     hash |= 0;
   }
-  return Math.abs(hash).toString(36);
+  return Math.abs(hash);
 }
 
 const RecorderScreen = ({
@@ -61,6 +81,8 @@ const RecorderScreen = ({
     return /Linux/i.test(ua) || /Linux/i.test(String(plat));
   })();
   const preferAssetProtocol = !isLinux;
+
+  const sourceKind: SourceKind = source.kind;
 
   const [sentenceHash, setSentenceHash] = useState<string>("");
 
@@ -124,15 +146,86 @@ const RecorderScreen = ({
     sha256(sentenceTextForHash, sentenceLangForHash).then(setSentenceHash);
   }, [source, sentenceTextForHash, sentenceLangForHash]);
 
-  const [recordings, setRecordings] = useState<Recording[]>([]);
-  const [transcripts, setTranscripts] = useState<
-    Record<string, Transcript | null>
-  >({});
-  const { status, progress } = useModelStatus();
-  const [modelText, setModelText] = useState<string | null>(null);
-  const [waitingModel, setWaitingModel] = useState(false);
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const [recognizing, setRecognizing] = useState<Record<string, boolean>>({});
+  const [recordingState, setRecordingState] = useState<RecordingState>({
+    recordings: [],
+    transcripts: {},
+    recognizing: {},
+  });
+
+  const [modelState, setModelState] = useState<ModelState>({
+    modelText: null,
+    waitingModel: false,
+    isTranscribing: false,
+  });
+
+  const { recordings, transcripts, recognizing } = recordingState;
+  const { modelText, waitingModel, isTranscribing } = modelState;
+
+  const setRecordings = (next: Recording[]) => {
+    setRecordingState((prev) => ({ ...prev, recordings: next }));
+  };
+
+  const setTranscripts = (
+    action: SetStateAction<Record<string, Transcript | null>>
+  ) => {
+    setRecordingState((prev) => ({
+      ...prev,
+      transcripts:
+        typeof action === "function"
+          ? (
+              action as (
+                p: Record<string, Transcript | null>
+              ) => Record<string, Transcript | null>
+            )(prev.transcripts)
+          : action,
+    }));
+  };
+
+  const setRecognizing = (action: SetStateAction<Record<string, boolean>>) => {
+    setRecordingState((prev) => ({
+      ...prev,
+      recognizing:
+        typeof action === "function"
+          ? (action as (p: Record<string, boolean>) => Record<string, boolean>)(
+              prev.recognizing
+            )
+          : action,
+    }));
+  };
+
+  const setModelTextState = (action: SetStateAction<string | null>) => {
+    setModelState((prev) => ({
+      ...prev,
+      modelText:
+        typeof action === "function"
+          ? (action as (p: string | null) => string | null)(prev.modelText)
+          : action,
+    }));
+  };
+
+  const setWaitingModelState = (action: SetStateAction<boolean>) => {
+    setModelState((prev) => ({
+      ...prev,
+      waitingModel:
+        typeof action === "function"
+          ? (action as (p: boolean) => boolean)(prev.waitingModel)
+          : action,
+    }));
+  };
+
+  const setIsTranscribingState = (action: SetStateAction<boolean>) => {
+    setModelState((prev) => ({
+      ...prev,
+      isTranscribing:
+        typeof action === "function"
+          ? (action as (p: boolean) => boolean)(prev.isTranscribing)
+          : action,
+    }));
+  };
+
+  const { status, progress }: { status: ModelStatus; progress: number | null } =
+    useModelStatus();
+
   const [displayText, setDisplayText] = useState<string>(sentence.text);
   const [linkingResult, setLinkingResult] =
     useState<RenderLinkingResult | null>(null);
@@ -157,7 +250,7 @@ const RecorderScreen = ({
     useAudioUrlCache();
 
   const { headerAudioUrl, isHeaderAudioLoading } = useHeaderAudioUrl({
-    sourceKind: source.kind,
+    sourceKind,
     sentenceAudioUrl: sentence.audioUrl,
     uploadedAudioPath,
     preferAssetProtocol,
@@ -200,23 +293,25 @@ const RecorderScreen = ({
   }, [displayText, sentence.text, sentence.lang, linkingDisplayMode]);
 
   useEffect(() => {
-    setRecordings([]);
-    setTranscripts({});
-    setModelText(null);
-    setWaitingModel(false);
+    setRecordingState({ recordings: [], transcripts: {}, recognizing: {} });
+    setModelState({
+      modelText: null,
+      waitingModel: false,
+      isTranscribing: false,
+    });
     resetAudioUrls();
     refreshFiles();
   }, [sentenceHash]);
 
   useAutoTranscribeUploaded({
-    sourceKind: source.kind,
+    sourceKind,
     sentenceText: sentence.text,
     uploadedAudioPath,
     status,
     sentenceHash,
     lang: sentence.lang,
     setDisplayText,
-    setIsTranscribing,
+    setIsTranscribing: (v) => setIsTranscribingState(v),
   });
 
   const refreshFiles = async () => {
@@ -240,25 +335,46 @@ const RecorderScreen = ({
     refreshFiles,
     setRecognizing,
     setTranscripts,
-    setIsTranscribing,
+    setIsTranscribing: setIsTranscribingState,
   });
+
+  const navigateSafelyRef = useRef(false);
+
+  const navigateSafely = useCallback(
+    (nav: () => void) => {
+      if (navigateSafelyRef.current) return;
+      navigateSafelyRef.current = true;
+
+      void (async () => {
+        try {
+          if (isRecording) {
+            await stopRecording();
+          }
+        } catch (e) {
+          console.warn("stopRecording while navigating failed", e);
+        }
+        nav();
+      })();
+    },
+    [isRecording, stopRecording]
+  );
 
   const { recognizeModel, disabled: modelRecognizeDisabled } =
     useModelRecognition({
-      sourceKind: source.kind,
+      sourceKind,
       uploadedAudioPath,
       sentenceHash,
       lang: sentence.lang,
       sentenceAudioUrl: sentence.audioUrl,
       waitingModel,
       modelText,
-      setModelText,
-      setWaitingModel,
-      setIsTranscribing,
+      setModelText: setModelTextState,
+      setWaitingModel: setWaitingModelState,
+      setIsTranscribing: setIsTranscribingState,
     });
 
   const { addToAnki } = useAddToAnki({
-    sourceKind: source.kind,
+    sourceKind,
     sentence,
     sentenceHash,
     uploadedAudioPath,
@@ -267,13 +383,13 @@ const RecorderScreen = ({
 
   useWhisperEvents({
     sentenceId: sentence.id,
-    sourceKind: source.kind,
+    sourceKind,
     sentenceText: sentence.text,
     waitingModel,
     loadTranscript,
-    setWaitingModel,
-    setIsTranscribing,
-    setModelText,
+    setWaitingModel: (v) => setWaitingModelState(v),
+    setIsTranscribing: (v) => setIsTranscribingState(v),
+    setModelText: (v) => setModelTextState(v),
     setDisplayText,
     setRecognizing,
     setTranscripts,
@@ -284,7 +400,7 @@ const RecorderScreen = ({
     if (recognizing[rec.path]) return;
 
     setRecognizing((prev) => ({ ...prev, [rec.path]: true }));
-    setIsTranscribing(true);
+    setIsTranscribingState(true);
     try {
       await invoke("run_whisper", {
         path: rec.path,
@@ -297,7 +413,7 @@ const RecorderScreen = ({
         delete next[rec.path];
         return next;
       });
-      setIsTranscribing(false);
+      setIsTranscribingState(false);
       message.error("音声認識の開始に失敗しました: " + String(e));
     }
   };
@@ -306,15 +422,91 @@ const RecorderScreen = ({
     recordings,
     transcripts,
     setTranscripts,
+    recognizing,
   });
+
+  const hadRecordingRecognizingRef = useRef(false);
+
+  useEffect(() => {
+    if (!isTranscribing) return;
+    if (waitingModel) return;
+
+    const recognizingKeys = Object.keys(recognizing);
+    if (recognizingKeys.length > 0) {
+      hadRecordingRecognizingRef.current = true;
+    } else if (hadRecordingRecognizingRef.current) {
+      hadRecordingRecognizingRef.current = false;
+      setIsTranscribingState(false);
+      return;
+    } else {
+      // uploaded/model など「recognizing で追えない」文字起こしはここで落とさない
+      return;
+    }
+
+    const donePaths = recognizingKeys.filter((p) => transcripts[p]);
+    if (donePaths.length === 0) return;
+
+    setRecordingState((prev) => {
+      let changed = false;
+      const nextRecognizing = { ...prev.recognizing };
+      for (const p of donePaths) {
+        if (nextRecognizing[p]) {
+          delete nextRecognizing[p];
+          changed = true;
+        }
+      }
+      if (!changed) return prev;
+      return { ...prev, recognizing: nextRecognizing };
+    });
+  }, [isTranscribing, waitingModel, recognizing, transcripts]);
 
   useModelTranscriptLoader({
     sentenceHash,
-    sourceKind: source.kind,
+    sourceKind,
     uploadedAudioPath,
     waitingModel,
-    setModelText,
+    setModelText: (v) => setModelTextState(v),
   });
+
+  useEffect(() => {
+    if (sourceKind !== "uploaded") return;
+
+    const hasUserProvidedSentenceText = Boolean(sentence.text?.trim());
+    const hasDisplayText = Boolean(displayText?.trim());
+    const recognizedText = (modelText ?? "").trim();
+
+    if (!hasUserProvidedSentenceText && !hasDisplayText && recognizedText) {
+      setDisplayText(recognizedText);
+    }
+
+    // transcript-final を取りこぼしても、ファイルから modelText が読めていれば完了扱いにする
+    if (
+      isTranscribing &&
+      !waitingModel &&
+      Object.keys(recognizing).length === 0 &&
+      recognizedText
+    ) {
+      setIsTranscribingState(false);
+    }
+  }, [
+    sourceKind,
+    sentence.text,
+    displayText,
+    modelText,
+    isTranscribing,
+    waitingModel,
+    recognizing,
+  ]);
+
+  const isRecordingsTranscribing =
+    !waitingModel && Object.keys(recognizing).length > 0;
+  const showModelAreaTranscribing = isTranscribing && !isRecordingsTranscribing;
+
+  const autoRecognizingUploaded =
+    sourceKind === "uploaded" &&
+    isTranscribing &&
+    !waitingModel &&
+    Object.keys(recognizing).length === 0;
 
   return (
     <div
@@ -327,10 +519,12 @@ const RecorderScreen = ({
       <Space orientation="vertical" style={{ width: "100%" }}>
         <TopNav
           current="record"
-          onBack={onBack}
-          onOpenIpaList={onOpenIpaList}
-          onOpenDevelopersMistakes={onOpenDevelopersMistakes}
-          onOpenCommonMistakes={onOpenCommonMistakes}
+          onBack={onBack ? () => navigateSafely(onBack) : undefined}
+          onOpenIpaList={() => navigateSafely(onOpenIpaList)}
+          onOpenDevelopersMistakes={() =>
+            navigateSafely(onOpenDevelopersMistakes)
+          }
+          onOpenCommonMistakes={() => navigateSafely(onOpenCommonMistakes)}
         />
 
         {/* Audio Debug Info - コメントアウトして非表示
@@ -363,12 +557,13 @@ const RecorderScreen = ({
           sentenceText={sentence.text}
           onRecognizeModel={recognizeModel}
           waitingModel={waitingModel}
+          autoRecognizingUploaded={autoRecognizingUploaded}
           modelRecognizeDisabled={modelRecognizeDisabled}
-          sourceKind={source.kind}
+          sourceKind={sourceKind}
         />
 
         <ModelTranscriptSection
-          isTranscribing={isTranscribing}
+          isTranscribing={showModelAreaTranscribing}
           modelText={modelText}
           linkingResult={linkingResult}
           linkingDisplayMode={linkingDisplayMode}

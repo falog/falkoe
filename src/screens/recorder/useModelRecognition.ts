@@ -3,9 +3,10 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Dispatch, SetStateAction } from "react";
 import { confirmOverwriteExisting } from "./uiUtils";
 import { loadModelTranscript, loadUploadedTranscript } from "./transcriptUtils";
+import type { SourceKind } from "../../types/speech";
 
 type Params = {
-  sourceKind: string;
+  sourceKind: SourceKind;
   uploadedAudioPath: string | null;
   sentenceHash: string;
   lang: string;

@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { message } from "antd";
+import { coerceModelStatus, type ModelStatus } from "../../types/model";
 
 export function useModelStatus() {
-  const [status, setStatus] = useState<string>("idle");
+  const [status, setStatus] = useState<ModelStatus>("idle");
   const [progress, setProgress] = useState<number | null>(null);
   const modelMissingShown = useRef(false);
 
@@ -14,7 +15,7 @@ export function useModelStatus() {
     invoke<string>("get_model_status")
       .then((s) => {
         if (cancelled) return;
-        setStatus(s);
+        setStatus(coerceModelStatus(s));
       })
       .catch(() => {
         if (cancelled) return;
@@ -22,7 +23,7 @@ export function useModelStatus() {
       });
 
     const unlistenPromise = listen<string>("model-status", (e) => {
-      setStatus(e.payload);
+      setStatus(coerceModelStatus(e.payload));
     });
 
     return () => {

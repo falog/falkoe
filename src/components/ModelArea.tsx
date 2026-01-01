@@ -2,6 +2,7 @@ import { Typography, Space, Radio } from "antd";
 import type { RenderLinkingResult, DisplayMode } from "../types/linking";
 import type { IpaIndex } from "../utils/ipaResources";
 import React from "react";
+import type { ModelStatus } from "../types/model";
 
 export type ModelAreaProps = {
   modelText: string | null;
@@ -17,7 +18,7 @@ export type ModelAreaProps = {
     secondary: string[];
   };
   renderStressColored: (text: string) => React.ReactNode;
-  status: string;
+  status: ModelStatus;
   progress: number | null;
 };
 

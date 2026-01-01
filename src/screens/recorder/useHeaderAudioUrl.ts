@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { message } from "antd";
 import { guessAudioMimeFromPath, isHttpUrl } from "./audioUtils";
+import type { SourceKind } from "../../types/speech";
 
 type HeaderAudioArgs = {
-  sourceKind: "tatoeba" | "uploaded" | "recorded";
+  sourceKind: SourceKind;
   sentenceAudioUrl: string;
   uploadedAudioPath: string | null;
   preferAssetProtocol: boolean;
