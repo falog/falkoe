@@ -12,7 +12,6 @@ import {
   loadUploadedTranscript,
   parseRecording,
 } from "./recorder/transcriptUtils";
-import { confirmOverwriteExisting } from "./recorder/uiUtils";
 import HeaderAudioPlayButton from "./recorder/HeaderAudioPlayButton";
 import { renderLinkingRust } from "../utils/linkingInvoke";
 import type { RenderLinkingResult, DisplayMode } from "../types/linking";
@@ -26,6 +25,7 @@ import { useWhisperEvents } from "./recorder/useWhisperEvents";
 import { useRecordingControls } from "./recorder/useRecordingControls";
 import { useModelRecognition } from "./recorder/useModelRecognition";
 import { useAddToAnki } from "./recorder/useAddToAnki";
+import { useUploadedAudio } from "./recorder/useUploadedAudio";
 
 type RecorderScreenProps = {
   source: any;
@@ -33,11 +33,6 @@ type RecorderScreenProps = {
   onOpenIpaList: () => void;
   onOpenDevelopersMistakes: () => void;
   onOpenCommonMistakes: () => void;
-};
-
-type UploadedAudioInfo = {
-  exists: boolean;
-  path: string;
 };
 
 function hashText(text: string): string {
@@ -68,42 +63,38 @@ const RecorderScreen = ({
   })();
   const preferAssetProtocol = !isLinux;
 
-  const uploadedFileRef = useRef<File | null>(null);
-  const uploadedFileUrlRef = useRef<string | null>(null);
-  const [uploadedFileAudioUrl, setUploadedFileAudioUrl] = useState<string>("");
+  const [sentenceHash, setSentenceHash] = useState<string>("");
 
-  useEffect(() => {
-    if (source.kind !== "uploaded" || !source.file) {
-      if (uploadedFileUrlRef.current) {
-        URL.revokeObjectURL(uploadedFileUrlRef.current);
-      }
-      uploadedFileRef.current = null;
-      uploadedFileUrlRef.current = null;
-      setUploadedFileAudioUrl("");
-      return;
+  const sentenceTextForHash: string = (() => {
+    switch (source.kind) {
+      case "tatoeba":
+        return source.sentence?.text ?? "";
+      case "uploaded":
+      case "recorded":
+        return source.text ?? "";
+      default:
+        return "";
     }
+  })();
 
-    if (uploadedFileRef.current === source.file && uploadedFileUrlRef.current) {
-      return;
+  const sentenceLangForHash: string = (() => {
+    switch (source.kind) {
+      case "tatoeba":
+        return source.sentence?.lang ?? "";
+      case "uploaded":
+      case "recorded":
+        return source.lang ?? "";
+      default:
+        return "";
     }
+  })();
 
-    if (uploadedFileUrlRef.current) {
-      URL.revokeObjectURL(uploadedFileUrlRef.current);
-    }
-
-    const url = URL.createObjectURL(source.file);
-    uploadedFileRef.current = source.file;
-    uploadedFileUrlRef.current = url;
-    setUploadedFileAudioUrl(url);
-  }, [source.kind, source.file]);
-
-  useEffect(() => {
-    return () => {
-      if (uploadedFileUrlRef.current) {
-        URL.revokeObjectURL(uploadedFileUrlRef.current);
-      }
-    };
-  }, []);
+  const { uploadedFileAudioUrl, uploadedAudioPath } = useUploadedAudio({
+    source,
+    sentenceHash,
+    sentenceText: sentenceTextForHash,
+    lang: sentenceLangForHash,
+  });
 
   const sentence: Sentence = (() => {
     switch (source.kind) {
@@ -126,15 +117,13 @@ const RecorderScreen = ({
     }
   })();
 
-  const [sentenceHash, setSentenceHash] = useState<string>("");
-
   useEffect(() => {
     if (source.kind === "uploaded" && source.sentenceHash) {
       setSentenceHash(source.sentenceHash);
       return;
     }
-    sha256(sentence.text, sentence.lang).then(setSentenceHash);
-  }, [source, sentence.text, sentence.lang]);
+    sha256(sentenceTextForHash, sentenceLangForHash).then(setSentenceHash);
+  }, [source, sentenceTextForHash, sentenceLangForHash]);
 
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [transcripts, setTranscripts] = useState<
@@ -145,9 +134,6 @@ const RecorderScreen = ({
   const [waitingModel, setWaitingModel] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [recognizing, setRecognizing] = useState<Record<string, boolean>>({});
-  const [uploadedAudioPath, setUploadedAudioPath] = useState<string | null>(
-    null
-  );
   const [displayText, setDisplayText] = useState<string>(sentence.text);
   const [linkingResult, setLinkingResult] =
     useState<RenderLinkingResult | null>(null);
@@ -214,74 +200,6 @@ const RecorderScreen = ({
       cancelled = true;
     };
   }, [displayText, sentence.text, sentence.lang, linkingDisplayMode]);
-
-  useEffect(() => {
-    if (source.kind !== "uploaded" || !sentenceHash || uploadedAudioPath)
-      return;
-
-    const applySavedPath = async (p: string) => {
-      setUploadedAudioPath(p);
-    };
-
-    if (source.savedPath) {
-      applySavedPath(source.savedPath);
-      return;
-    }
-
-    const saveUploadedFile = async () => {
-      try {
-        if (!source.file) return;
-        const arrayBuffer = await source.file.arrayBuffer();
-        const uint8Array = new Uint8Array(arrayBuffer);
-
-        const info = await invoke<UploadedAudioInfo>(
-          "get_uploaded_audio_info",
-          {
-            sentenceHash: sentenceHash,
-            originalFilename: source.file.name,
-          }
-        );
-
-        if (info.exists) {
-          const overwrite = await confirmOverwriteExisting();
-          if (!overwrite) {
-            await applySavedPath(info.path);
-            message.info("既存の保存済み音声を使用します");
-            return;
-          }
-        }
-
-        const savedPath = await invoke<string>("save_uploaded_audio", {
-          fileData: Array.from(uint8Array),
-          sentenceHash: sentenceHash,
-          originalFilename: source.file.name,
-          overwrite: true,
-        });
-
-        try {
-          sessionStorage.setItem("falkoe.uploadedSavedPath", savedPath);
-          sessionStorage.setItem(
-            "falkoe.uploadedFilename",
-            source.file?.name ?? "uploaded"
-          );
-          sessionStorage.setItem("falkoe.useSpeech", "true");
-          sessionStorage.setItem(
-            "falkoe.useRecognition",
-            String(!sentence.text || sentence.text.trim() === "")
-          );
-          sessionStorage.setItem("falkoe.manualText", sentence.text ?? "");
-          sessionStorage.setItem("falkoe.lang", sentence.lang);
-        } catch {}
-
-        await applySavedPath(savedPath);
-        message.success("音声ファイルを保存しました");
-      } catch (e) {
-        message.error("音声ファイルの保存に失敗しました: " + String(e));
-      }
-    };
-
-    saveUploadedFile();
-  }, [source, sentenceHash, uploadedAudioPath]);
 
   useEffect(() => {
     setRecordings([]);
