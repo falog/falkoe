@@ -1,15 +1,16 @@
-use crate::commands::whisper::run_whisper;
-use crate::commands::recordings::{get_uploaded_audio_info, list_recordings, move_recorded_audio, save_uploaded_audio};
-use crate::commands::status::get_model_status;
 use crate::commands::audio::fetch_audio_base64;
-use crate::commands::whisper::{run_whisper_model, run_whisper_uploaded};
-use crate::commands::sentences::{find_audio_by_sentence, upsert_sentence_manifest_text};
 use crate::commands::linking::render_linking;
+use crate::commands::recordings::{
+    get_uploaded_audio_info, list_recordings, move_recorded_audio, save_uploaded_audio,
+};
+use crate::commands::sentences::{find_audio_by_sentence, upsert_sentence_manifest_text};
+use crate::commands::status::get_model_status;
+use crate::commands::whisper::run_whisper;
+use crate::commands::whisper::{run_whisper_model, run_whisper_uploaded};
 use tauri_plugin_mic_recorder::init as mic_recorder;
 
-mod model;
 mod commands;
-
+mod model;
 
 pub fn run() {
     tauri::Builder::default()

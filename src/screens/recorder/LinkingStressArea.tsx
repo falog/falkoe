@@ -1,5 +1,5 @@
 import { Radio, Space, Typography, message, theme } from "antd";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { tokenizeIpa } from "../../utils/ipaTokenize";
 import { playBundledAudio } from "../../utils/ipaPlayer";
 import type { RenderLinkingResult, DisplayMode } from "../../types/linking";
@@ -19,6 +19,9 @@ export default function LinkingStressArea({
   ipaIndex,
 }: Props) {
   const { token: antdToken } = theme.useToken();
+
+  const [lastHoveredTok, setLastHoveredTok] = useState<string | null>(null);
+  //const [lastHoveredHasDetails, setLastHoveredHasDetails] = useState(false);
 
   const hoverTimerRef = useRef<number | null>(null);
   const lastHoverRef = useRef<{ tok: string; ts: number } | null>(null);
@@ -110,6 +113,7 @@ export default function LinkingStressArea({
           const hoverAudio = entry?.audio;
           const clickAudio = entry?.explainAudio ?? entry?.audio;
           const isInteractive = Boolean(hoverAudio || clickAudio);
+          //const hasDetails = Boolean(entry?.explainAudio);
 
           if (!entry || !isInteractive) {
             return (
@@ -128,6 +132,8 @@ export default function LinkingStressArea({
                 color,
               }}
               onPointerEnter={() => {
+                setLastHoveredTok(tok);
+                //setLastHoveredHasDetails(hasDetails);
                 if (!hoverAudio) return;
                 requestPlayIpaTok(tok, hoverAudio, "enter");
               }}
@@ -534,9 +540,16 @@ export default function LinkingStressArea({
   const p = primary.length ? primary.join(" / ") : "なし";
   const s = secondary.length ? secondary.join(" / ") : "なし";
 
+  const ipaKeysCount = ipaIndex ? Object.keys(ipaIndex).length : 0;
+  const hasParens = /\(|\)|（|）/.test(linkingResult.joined ?? "");
+
   return (
     <>
-      <Space size={8} style={{ display: "flex" }}>
+      <Space
+        size={8}
+        wrap
+        style={{ display: "flex", alignItems: "center", marginBottom: 8 }}
+      >
         <Typography.Text type="secondary">表示:</Typography.Text>
         <Radio.Group
           size="small"
@@ -549,17 +562,31 @@ export default function LinkingStressArea({
           optionType="button"
           buttonStyle="solid"
         />
+        {linkingDisplayMode === "phoneme" && (
+          <Typography.Text type="secondary">
+            {`IPA audio: ${ipaKeysCount} keys | mode: ${linkingDisplayMode} | parens: ${
+              hasParens ? "yes" : "no"
+            }`}
+            {lastHoveredTok ? ` | last: ${lastHoveredTok}` : ""}
+            {/*lastHoveredTok && lastHoveredHasDetails
+              ? " | Click for details"
+              : ""*/}
+          </Typography.Text>
+        )}
       </Space>
 
-      {renderLegend()}
+      <div style={{ marginBottom: 6, lineHeight: 1.7 }}>{renderLegend()}</div>
 
       {(linkingDisplayMode === "phoneme" || linkingDisplayMode === "kana") && (
-        <Typography.Text type="secondary" style={{ display: "block" }}>
+        <Typography.Text
+          type="secondary"
+          style={{ display: "block", marginBottom: 10, lineHeight: 1.7 }}
+        >
           {`強勢: ${p} / 副強勢: ${s}`}
         </Typography.Text>
       )}
 
-      <div style={{ display: "block", fontSize: 18, lineHeight: 1.6 }}>
+      <div style={{ display: "block", fontSize: 18, lineHeight: 1.9 }}>
         {renderStressColored(linkingResult.joined)}
       </div>
     </>

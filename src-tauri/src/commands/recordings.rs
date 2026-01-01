@@ -1,14 +1,10 @@
-use tauri::{AppHandle, Manager};
-use std::fs;
 use chrono::Local;
 use serde::Serialize;
-
+use std::fs;
+use tauri::{AppHandle, Manager};
 
 #[tauri::command]
-pub fn list_recordings(
-    app: AppHandle,
-    sentence_hash: String,
-) -> Result<Vec<String>, String> {
+pub fn list_recordings(app: AppHandle, sentence_hash: String) -> Result<Vec<String>, String> {
     let dir = app
         .path()
         .document_dir()
@@ -34,15 +30,12 @@ pub fn list_recordings(
     Ok(files)
 }
 
-
-
 #[tauri::command]
 pub fn move_recorded_audio(
     app: AppHandle,
     src_path: String,
     sentence_hash: String,
 ) -> Result<String, String> {
-
     let base_dir = app
         .path()
         .document_dir()
@@ -87,7 +80,7 @@ pub fn save_uploaded_audio(
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("mp3");
-    
+
     let filename = format!("uploaded.{}", ext);
     let dest = base_dir.join(&filename);
 

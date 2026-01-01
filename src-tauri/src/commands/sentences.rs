@@ -91,8 +91,8 @@ pub fn upsert_sentence_manifest_text(
 
     if manifest_path.exists() {
         let manifest_text = fs::read_to_string(&manifest_path).map_err(|e| e.to_string())?;
-        let mut manifest = serde_json::from_str::<SentenceManifest>(&manifest_text)
-            .map_err(|e| e.to_string())?;
+        let mut manifest =
+            serde_json::from_str::<SentenceManifest>(&manifest_text).map_err(|e| e.to_string())?;
 
         let prev = manifest.text.clone();
         let prev_norm = prev.as_deref().unwrap_or("").trim();

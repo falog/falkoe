@@ -246,7 +246,9 @@ fn ends_with_vowel(phonemes: &[String]) -> bool {
 }
 
 fn ends_with_consonant(phonemes: &[String]) -> bool {
-    phonemes.last().is_some_and(|p| !is_vowel_phoneme(p.as_str()))
+    phonemes
+        .last()
+        .is_some_and(|p| !is_vowel_phoneme(p.as_str()))
 }
 
 fn stress_mark(stress: u8) -> &'static str {
@@ -536,11 +538,7 @@ fn syllabify(phonemes: &[String]) -> Vec<Syllable> {
 
     for p in phonemes {
         if is_vowel_phoneme(p) {
-            let stress = p
-                .chars()
-                .last()
-                .and_then(|c| c.to_digit(10))
-                .unwrap_or(0) as u8;
+            let stress = p.chars().last().and_then(|c| c.to_digit(10)).unwrap_or(0) as u8;
 
             let mut phs = std::mem::take(&mut onset);
 
@@ -568,7 +566,10 @@ fn syllabify(phonemes: &[String]) -> Vec<Syllable> {
             }
             phs.push(p.clone());
 
-            syllables.push(Syllable { phonemes: phs, stress });
+            syllables.push(Syllable {
+                phonemes: phs,
+                stress,
+            });
         } else {
             onset.push(p.clone());
         }
@@ -1416,10 +1417,7 @@ pub fn render_linking(
             if is_punct_token(&next_word) {
                 break;
             }
-            let prev_word = group_words
-                .last()
-                .map(|s| s.as_str())
-                .unwrap_or("");
+            let prev_word = group_words.last().map(|s| s.as_str()).unwrap_or("");
 
             if is_punct_token(prev_word) {
                 break;
@@ -1433,11 +1431,7 @@ pub fn render_linking(
                 if at_len > 0 && at_len <= group_phonemes.len() {
                     group_phonemes.truncate(group_phonemes.len() - at_len);
                 }
-                group_phonemes.extend(
-                    ["AH0", "R", "AO1"]
-                        .iter()
-                        .map(|s| (*s).to_string()),
-                );
+                group_phonemes.extend(["AH0", "R", "AO1"].iter().map(|s| (*s).to_string()));
 
                 // Update lens: at -> AH0, all -> R AO1
                 if let Some(last) = word_phoneme_lens.last_mut() {

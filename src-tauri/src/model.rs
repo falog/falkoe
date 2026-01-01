@@ -1,14 +1,13 @@
-use std::sync::{Mutex, OnceLock};
-use std::io::{Read, Write};
+use sha2::{Digest, Sha256};
 use std::fs::{self, File};
-use tauri::{AppHandle,Emitter, Manager};
-use sha2::{Sha256, Digest};
+use std::io::{Read, Write};
+use std::sync::{Mutex, OnceLock};
+use tauri::{AppHandle, Emitter, Manager};
 
 static MODEL_STATUS: OnceLock<Mutex<String>> = OnceLock::new();
 
-const MODEL_URL: &str =
-    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin";
-    
+const MODEL_URL: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin";
+
 /// setup() で必ず呼ぶ
 pub fn init_model_state() {
     let _ = MODEL_STATUS.set(Mutex::new("idle".to_string()));
@@ -31,10 +30,38 @@ pub fn get_model_status() -> String {
 pub fn ensure_model(app: &AppHandle) -> anyhow::Result<std::path::PathBuf> {
     let dir = app.path().app_data_dir().unwrap();
     let model_path = dir.join("ggml-small.bin");
+    let ok_path = model_path.with_extension("bin.ok");
 
+    // A previous download can leave a truncated file. We track successful
+    // downloads via a small marker file next to the model.
     if model_path.exists() {
-        set_status(app, "ready");
-        return Ok(model_path);
+        if !ok_path.exists() {
+            let _ = fs::remove_file(&model_path);
+        } else {
+            let local_len = fs::metadata(&model_path).map(|m| m.len()).unwrap_or(0);
+            if local_len < 10_000_000 {
+                let _ = fs::remove_file(&model_path);
+                let _ = fs::remove_file(&ok_path);
+            } else {
+                // If we can get remote size, verify it too.
+                let client = reqwest::blocking::Client::new();
+                let remote_len = client
+                    .head(MODEL_URL)
+                    .send()
+                    .ok()
+                    .and_then(|r| r.content_length())
+                    .unwrap_or(0);
+
+                if remote_len == 0 || local_len == remote_len {
+                    set_status(app, "ready");
+                    return Ok(model_path);
+                }
+
+                // Remote length known and mismatch => redownload.
+                let _ = fs::remove_file(&model_path);
+                let _ = fs::remove_file(&ok_path);
+            }
+        }
     }
 
     let _ = app.emit("model-missing", ());
@@ -42,12 +69,14 @@ pub fn ensure_model(app: &AppHandle) -> anyhow::Result<std::path::PathBuf> {
 
     fs::create_dir_all(&dir)?;
 
-    let mut resp = reqwest::blocking::get(MODEL_URL)?;
-    let total = resp
-        .content_length()
-        .unwrap_or(0);
+    // We're about to (re)download, so invalidate any previous marker.
+    let _ = fs::remove_file(&ok_path);
 
-    let mut file = File::create(&model_path)?;
+    let mut resp = reqwest::blocking::get(MODEL_URL)?;
+    let total = resp.content_length().unwrap_or(0);
+
+    let tmp_path = model_path.with_extension("bin.part");
+    let mut file = File::create(&tmp_path)?;
     let mut downloaded: u64 = 0;
     let mut buf = [0u8; 8192];
 
@@ -67,6 +96,16 @@ pub fn ensure_model(app: &AppHandle) -> anyhow::Result<std::path::PathBuf> {
     }
 
     file.flush()?;
+
+    // Replace atomically when possible.
+    let _ = fs::remove_file(&model_path);
+    fs::rename(&tmp_path, &model_path)?;
+
+    // Mark download as complete.
+    let mut ok = File::create(&ok_path)?;
+    let local_len = fs::metadata(&model_path).map(|m| m.len()).unwrap_or(0);
+    let _ = writeln!(ok, "bytes={}", local_len);
+    ok.flush()?;
 
     let _ = app.emit("model-progress", 100u8);
     set_status(app, "ready");
