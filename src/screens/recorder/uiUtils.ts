@@ -26,3 +26,28 @@ export async function playAudioUrl(url: string | null) {
     message.error("音声の再生に失敗しました");
   }
 }
+
+export async function playAudioUrlUntilEnded(
+  url: string | null
+): Promise<boolean> {
+  if (!url) {
+    message.info("音声を読み込み中…");
+    return false;
+  }
+
+  try {
+    const audio = new Audio(url);
+    await audio.play();
+
+    const ok = await new Promise<boolean>((resolve) => {
+      audio.addEventListener("ended", () => resolve(true), { once: true });
+      audio.addEventListener("error", () => resolve(false), { once: true });
+    });
+
+    return ok;
+  } catch (e) {
+    console.error("Audio playback failed:", e);
+    message.error("音声の再生に失敗しました");
+    return false;
+  }
+}

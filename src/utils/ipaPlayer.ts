@@ -29,7 +29,7 @@ function createSilentWavBytes(
   const numChannels = 1;
   const bitsPerSample = 16;
   const bytesPerSample = bitsPerSample / 8;
-  const numSamples = Math.max(1, Math.floor((durationMs / 1000) * sampleRate));
+  const numSamples = Math.max(1, Math.floor((durationMs / 3000) * sampleRate));
   const dataSize = numSamples * numChannels * bytesPerSample;
   const buffer = new ArrayBuffer(44 + dataSize);
   const view = new DataView(buffer);

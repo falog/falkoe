@@ -29,6 +29,10 @@ import { useUploadedAudio } from "./recorder/useUploadedAudio";
 import { useAutoTranscribeUploaded } from "./recorder/useAutoTranscribeUploaded";
 import { useLoadRecordingsTranscripts } from "./recorder/useLoadRecordingsTranscripts";
 import { useModelTranscriptLoader } from "./recorder/useModelTranscriptLoader";
+import {
+  startMicRecorderSilenceWatcher,
+  type MicRecorderSilenceWatcher,
+} from "./recorder/micRecorderSilenceWatcher";
 import { RecorderHeader } from "./recorder/components/RecorderHeader";
 import { ModelTranscriptSection } from "./recorder/components/ModelTranscriptSection";
 import { RecordingControls } from "./recorder/components/RecordingControls";
@@ -339,6 +343,152 @@ const RecorderScreen = ({
     setIsTranscribing: setIsTranscribingState,
   });
 
+  const isRecordingRef = useRef(isRecording);
+  useEffect(() => {
+    isRecordingRef.current = isRecording;
+  }, [isRecording]);
+
+  const autoPracticeInFlightRef = useRef(false);
+  const [isMimicLoading, setIsMimicLoading] = useState(false);
+  const autoStopArmedRef = useRef(false);
+  const silenceWatcherRef = useRef<MicRecorderSilenceWatcher | null>(null);
+  const silenceUnavailableNotifiedRef = useRef(false);
+
+  const startAutoStopWatcher = useCallback(() => {
+    if (!isRecordingRef.current) {
+      return Promise.resolve(null);
+    }
+    autoStopArmedRef.current = true;
+    silenceWatcherRef.current?.stop();
+    silenceWatcherRef.current = null;
+
+    return startMicRecorderSilenceWatcher({
+      silenceMs: 1000,
+      rmsThreshold: 0.006,
+      pollIntervalMs: 50,
+      onSilence: () => {
+        if (!autoStopArmedRef.current) return false;
+        if (!isRecordingRef.current) return false;
+        void stopRecording();
+        return true;
+      },
+    })
+      .then((watcher) => {
+        silenceWatcherRef.current = watcher;
+        return watcher;
+      })
+      .catch((e) => {
+        console.warn("silence watcher unavailable", e);
+        if (!silenceUnavailableNotifiedRef.current) {
+          silenceUnavailableNotifiedRef.current = true;
+          const msg = String((e as any)?.message ?? e);
+          message.info(
+            "無音検知を開始できません（デバイス競合の可能性）: " + msg
+          );
+        }
+        return null;
+      });
+  }, [stopRecording]);
+
+  const handleStartRecording = useCallback(async () => {
+    if (isRecording) return;
+    if (status !== "ready") {
+      message.info("モデル準備中のため録音を開始できません");
+      return;
+    }
+
+    await startRecording();
+    isRecordingRef.current = true;
+    await startAutoStopWatcher();
+  }, [isRecording, startAutoStopWatcher, startRecording, status]);
+
+  useEffect(() => {
+    return () => {
+      silenceWatcherRef.current?.stop();
+      silenceWatcherRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isRecording) return;
+    autoStopArmedRef.current = false;
+    silenceWatcherRef.current?.stop();
+    silenceWatcherRef.current = null;
+  }, [isRecording]);
+
+  const handleMimic = useCallback(async () => {
+    if (autoPracticeInFlightRef.current) return;
+    autoPracticeInFlightRef.current = true;
+    setIsMimicLoading(true);
+
+    try {
+      if (!headerAudioUrl || isHeaderAudioLoading) {
+        message.info("音声を読み込み中…");
+        return;
+      }
+      if (status !== "ready") {
+        message.info("モデル準備中のため録音を開始できません");
+        return;
+      }
+      if (isRecording) return;
+
+      // Important: start sample playback BEFORE awaiting anything.
+      // Awaiting here can break the user-gesture chain and cause audio.play() to be blocked.
+      const audio = new Audio(headerAudioUrl);
+
+      // Shadowing UX: while the sample is playing, the user might be silent (listening).
+      // If we start silence detection immediately, it can auto-stop during playback.
+      // So we start the auto-stop watcher only AFTER the sample finishes (or fails).
+      const startWatcherAfterPlayback = () => {
+        if (!isRecordingRef.current) return;
+        if (!autoStopArmedRef.current) return;
+        void startAutoStopWatcher();
+      };
+
+      audio.addEventListener("ended", startWatcherAfterPlayback, {
+        once: true,
+      });
+      audio.addEventListener("error", startWatcherAfterPlayback, {
+        once: true,
+      });
+
+      try {
+        void audio.play().catch((e) => {
+          console.warn("Mimic sample playback blocked/failed", e);
+          // If playback fails, start watcher immediately (we still want auto-stop).
+          startWatcherAfterPlayback();
+        });
+      } catch (e) {
+        console.warn("Mimic sample playback failed", e);
+        startWatcherAfterPlayback();
+      }
+
+      // Start recording immediately so the user can shadow it.
+      try {
+        await startRecording();
+        isRecordingRef.current = true;
+        autoStopArmedRef.current = true;
+      } catch (e) {
+        autoStopArmedRef.current = false;
+        const watcher =
+          silenceWatcherRef.current as unknown as MicRecorderSilenceWatcher | null;
+        watcher?.stop();
+        silenceWatcherRef.current = null;
+        throw e;
+      }
+    } finally {
+      setIsMimicLoading(false);
+      autoPracticeInFlightRef.current = false;
+    }
+  }, [
+    headerAudioUrl,
+    isHeaderAudioLoading,
+    isRecording,
+    startRecording,
+    status,
+    stopRecording,
+  ]);
+
   const navigateSafelyRef = useRef(false);
 
   const navigateSafely = useCallback(
@@ -577,7 +727,10 @@ const RecorderScreen = ({
         <RecordingControls
           isRecording={isRecording}
           status={status}
-          onStartRecording={startRecording}
+          onMimic={handleMimic}
+          mimicLoading={isMimicLoading}
+          mimicDisabled={!headerAudioUrl || isHeaderAudioLoading}
+          onStartRecording={handleStartRecording}
           onStopRecording={stopRecording}
         />
 

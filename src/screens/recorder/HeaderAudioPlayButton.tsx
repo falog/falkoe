@@ -6,12 +6,14 @@ type Props = {
   url: string | null;
   loading: boolean;
   disabled: boolean;
+  onClick?: (url: string | null) => void | Promise<void>;
 };
 
 export default function HeaderAudioPlayButton({
   url,
   loading,
   disabled,
+  onClick,
 }: Props) {
   return (
     <Button
@@ -20,6 +22,10 @@ export default function HeaderAudioPlayButton({
       disabled={disabled}
       loading={loading}
       onClick={async () => {
+        if (onClick) {
+          await onClick(url);
+          return;
+        }
         await playAudioUrl(url);
       }}
       style={{ opacity: 0.7 }}

@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "Falkoe"
-version = "0.2.8"
+version = "0.2.9"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
@@ -4650,8 +4650,6 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-mic-recorder"
 version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ceccca393df4f90abba52602125d526c71ddd0557b03ac7dd9c3f818325b6d95"
 dependencies = [
  "chrono",
  "clap",
