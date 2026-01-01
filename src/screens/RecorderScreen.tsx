@@ -10,11 +10,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAudioUrlCache } from "./recorder/useAudioUrlCache";
 import { useHeaderAudioUrl } from "./recorder/useHeaderAudioUrl";
 import { useModelStatus } from "./recorder/useModelStatus";
-import { loadTranscript, parseRecording } from "./recorder/transcriptUtils";
+import { loadTranscript } from "./recorder/transcriptUtils";
 import type { DisplayMode } from "../types/linking";
 import { unlockAudioFromUserGesture } from "../utils/ipaPlayer";
 import TopNav from "../components/TopNav";
-import type { Recording, Transcript } from "../types/recording";
+import type { Recording } from "../types/recording";
 import type { SpeechSource } from "../types/speech";
 import type { ModelStatus } from "../types/model";
 import { useWhisperEvents } from "./recorder/useWhisperEvents";
@@ -34,6 +34,7 @@ import { useTranscriptionCompletion } from "./recorder/useTranscriptionCompletio
 import { usePreferAssetProtocol } from "./recorder/usePreferAssetProtocol";
 import { useIpaIndex } from "./recorder/useIpaIndex";
 import { useLinkingResult } from "./recorder/useLinkingResult";
+import { useRecordingsState } from "./recorder/useRecordingsState";
 
 type RecorderScreenProps = {
   source: SpeechSource;
@@ -41,12 +42,6 @@ type RecorderScreenProps = {
   onOpenIpaList: () => void;
   onOpenDevelopersMistakes: () => void;
   onOpenCommonMistakes: () => void;
-};
-
-type RecordingState = {
-  recordings: Recording[];
-  transcripts: Record<string, Transcript | null>;
-  recognizing: Record<string, boolean>;
 };
 
 type ModelState = {
@@ -73,11 +68,14 @@ const RecorderScreen = ({
     hasUploadedFile,
   } = useSentenceContext(source);
 
-  const [recordingState, setRecordingState] = useState<RecordingState>({
-    recordings: [],
-    transcripts: {},
-    recognizing: {},
-  });
+  const {
+    recordings,
+    transcripts,
+    recognizing,
+    setRecognizing,
+    setTranscripts,
+    refreshFiles,
+  } = useRecordingsState(sentenceHash);
 
   const [modelState, setModelState] = useState<ModelState>({
     modelText: null,
@@ -85,40 +83,7 @@ const RecorderScreen = ({
     isTranscribing: false,
   });
 
-  const { recordings, transcripts, recognizing } = recordingState;
   const { modelText, waitingModel, isTranscribing } = modelState;
-
-  const setRecordings = (next: Recording[]) => {
-    setRecordingState((prev) => ({ ...prev, recordings: next }));
-  };
-
-  const setTranscripts = (
-    action: SetStateAction<Record<string, Transcript | null>>
-  ) => {
-    setRecordingState((prev) => ({
-      ...prev,
-      transcripts:
-        typeof action === "function"
-          ? (
-              action as (
-                p: Record<string, Transcript | null>
-              ) => Record<string, Transcript | null>
-            )(prev.transcripts)
-          : action,
-    }));
-  };
-
-  const setRecognizing = (action: SetStateAction<Record<string, boolean>>) => {
-    setRecordingState((prev) => ({
-      ...prev,
-      recognizing:
-        typeof action === "function"
-          ? (action as (p: Record<string, boolean>) => Record<string, boolean>)(
-              prev.recognizing
-            )
-          : action,
-    }));
-  };
 
   const setModelTextState = (action: SetStateAction<string | null>) => {
     setModelState((prev) => ({
@@ -185,14 +150,12 @@ const RecorderScreen = ({
   });
 
   useEffect(() => {
-    setRecordingState({ recordings: [], transcripts: {}, recognizing: {} });
     setModelState({
       modelText: null,
       waitingModel: false,
       isTranscribing: false,
     });
     resetAudioUrls();
-    refreshFiles();
   }, [sentenceHash]);
 
   useAutoTranscribeUploaded({
@@ -205,21 +168,6 @@ const RecorderScreen = ({
     setDisplayText,
     setIsTranscribing: (v) => setIsTranscribingState(v),
   });
-
-  const refreshFiles = async () => {
-    const list = await invoke<string[]>("list_recordings", {
-      sentenceHash,
-    });
-
-    const parsed = list.map(parseRecording).sort((a, b) => {
-      if (!a.timestamp && !b.timestamp) return 0;
-      if (!a.timestamp) return 1;
-      if (!b.timestamp) return -1;
-      return b.timestamp.localeCompare(a.timestamp);
-    });
-
-    setRecordings(parsed);
-  };
 
   const { isRecording, startRecording, stopRecording } = useRecordingControls({
     sentenceHash,
