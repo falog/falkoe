@@ -11,9 +11,7 @@ import { useAudioUrlCache } from "./recorder/useAudioUrlCache";
 import { useHeaderAudioUrl } from "./recorder/useHeaderAudioUrl";
 import { useModelStatus } from "./recorder/useModelStatus";
 import { loadTranscript, parseRecording } from "./recorder/transcriptUtils";
-import { renderLinkingRust } from "../utils/linkingInvoke";
-import type { RenderLinkingResult, DisplayMode } from "../types/linking";
-import { loadIpaIndex, type IpaIndex } from "../utils/ipaResources";
+import type { DisplayMode } from "../types/linking";
 import { unlockAudioFromUserGesture } from "../utils/ipaPlayer";
 import TopNav from "../components/TopNav";
 import type { Recording, Transcript } from "../types/recording";
@@ -33,6 +31,9 @@ import { RecordingsSection } from "./recorder/components/RecordingsSection";
 import { useSentenceContext } from "./recorder/useSentenceContext";
 import { useShadowingRecorder } from "./recorder/useShadowingRecorder";
 import { useTranscriptionCompletion } from "./recorder/useTranscriptionCompletion";
+import { usePreferAssetProtocol } from "./recorder/usePreferAssetProtocol";
+import { useIpaIndex } from "./recorder/useIpaIndex";
+import { useLinkingResult } from "./recorder/useLinkingResult";
 
 type RecorderScreenProps = {
   source: SpeechSource;
@@ -62,16 +63,7 @@ const RecorderScreen = ({
   onOpenCommonMistakes,
 }: RecorderScreenProps) => {
   theme.useToken();
-  const isLinux = (() => {
-    const ua =
-      typeof navigator !== "undefined" ? (navigator.userAgent ?? "") : "";
-    const plat =
-      typeof navigator !== "undefined"
-        ? ((navigator as any).platform ?? "")
-        : "";
-    return /Linux/i.test(ua) || /Linux/i.test(String(plat));
-  })();
-  const preferAssetProtocol = !isLinux;
+  const preferAssetProtocol = usePreferAssetProtocol();
 
   const {
     sourceKind,
@@ -162,24 +154,10 @@ const RecorderScreen = ({
     useModelStatus();
 
   const [displayText, setDisplayText] = useState<string>(sentence.text);
-  const [linkingResult, setLinkingResult] =
-    useState<RenderLinkingResult | null>(null);
   const [linkingDisplayMode, setLinkingDisplayMode] =
     useState<DisplayMode>("phoneme");
-  const [ipaIndex, setIpaIndex] = useState<IpaIndex | null>(null);
+  const ipaIndex = useIpaIndex();
   const audioUnlockTriedRef = useRef(false);
-
-  useEffect(() => {
-    loadIpaIndex()
-      .then((idx) => {
-        setIpaIndex(idx);
-      })
-      .catch((e) => {
-        setIpaIndex(null);
-        const msg = String((e as any)?.message ?? e);
-        message.error(`IPA index 読み込み失敗: ${msg}`);
-      });
-  }, []);
 
   const { audioUrls, ensureBlobAudioUrl, toAssetUrl, resetAudioUrls } =
     useAudioUrlCache();
@@ -199,34 +177,12 @@ const RecorderScreen = ({
     setDisplayText(sentence.text);
   }, [sentence.text]);
 
-  useEffect(() => {
-    const text = (displayText || sentence.text || "").trim();
-    if (!text || sentence.lang !== "eng") {
-      setLinkingResult(null);
-      return;
-    }
-
-    let cancelled = false;
-
-    renderLinkingRust(text, {
-      linkingMode: true,
-      displayMode: linkingDisplayMode,
-      useDict: true,
-    })
-      .then((res) => {
-        if (cancelled) return;
-        setLinkingResult(res);
-      })
-      .catch((e) => {
-        console.warn("render_linking failed", e);
-        if (cancelled) return;
-        setLinkingResult(null);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [displayText, sentence.text, sentence.lang, linkingDisplayMode]);
+  const linkingResult = useLinkingResult({
+    displayText,
+    sentenceText: sentence.text,
+    lang: sentence.lang,
+    linkingDisplayMode,
+  });
 
   useEffect(() => {
     setRecordingState({ recordings: [], transcripts: {}, recognizing: {} });
