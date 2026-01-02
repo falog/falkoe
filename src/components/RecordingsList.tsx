@@ -29,7 +29,7 @@ export default function RecordingsList({
 }: Props) {
   if (!recordings.length) {
     return (
-      <Typography.Text type="secondary">録音はまだありません</Typography.Text>
+      <Typography.Text type="secondary">No reconrdings yet.</Typography.Text>
     );
   }
 

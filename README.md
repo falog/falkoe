@@ -164,6 +164,26 @@ Tauri の `resource_dir` から次のパスを探します（見つからなけ�
 
 > 注意: `ffmpeg` の再配布はライセンス条件(LGPL/GPLなど)の確認が必要です。配布形態に合わせて適切なビルド/ライセンス表記を行ってください。
 
+---
+
+Falkoe uses `ffmpeg` for audio conversion (e.g., mp3 → wav).
+
+- **Distribution build (recommended)**: `ffmpeg` can be bundled with the app.
+- **Development / non-bundled**: System `ffmpeg` must be available in PATH.
+
+### Bundled Path
+
+The app searches for `ffmpeg` in the following paths from Tauri's `resource_dir` (falls back to PATH if not found):
+
+- Windows: `resources/bin/ffmpeg.exe`
+- macOS / Linux: `resources/bin/ffmpeg`
+
+Configuration is set in [src-tauri/tauri.conf.json](src-tauri/tauri.conf.json) with `resources/bin` included in `bundle.resources`.
+
+> Note: Redistribution of `ffmpeg` requires compliance with license terms (LGPL/GPL, etc.). Please ensure proper build configuration and license attribution for your distribution.
+
+---
+
 ## 📦 Bundled Tools (Praat) / 同梱ツール(Praat)
 
 Falkoe のピッチ抽出は、可能なら **Praat** を使います（より安定したF0抽出のため）。
@@ -189,6 +209,34 @@ Tauri の `resource_dir` から次の順で探します。
 設定は [src-tauri/tauri.conf.json](src-tauri/tauri.conf.json) の `bundle.resources` に `resources/praat` を含めています。
 
 > 注意: Praat の再配布・同梱はライセンス条件の確認が必要です。
+
+---
+
+Falkoe uses **Praat** for pitch extraction when available (for more stable F0 extraction).
+
+- **Distribution build (recommended)**: `praat` / `praatcon` can be bundled with the app.
+- **Non-bundled**: System `praat` in PATH will be used if available.
+- **Fallback**: If Praat is unavailable, the app falls back to a built-in simple YIN implementation (functionality continues).
+
+### Bundled Path
+
+The app searches in the following order from Tauri's `resource_dir`:
+
+1. `resources/bin/praatcon(.exe)`
+2. `resources/bin/praat(.exe)`
+3. `praat` in PATH
+
+### Bundled Script
+
+The bundled script is located at:
+
+- `resources/praat/extract_pitch_to_tsv.praat`
+
+Configuration is set in [src-tauri/tauri.conf.json](src-tauri/tauri.conf.json) with `resources/praat` included in `bundle.resources`.
+
+> Note: Redistribution and bundling of Praat requires compliance with its license terms.
+
+---
 
 ## 🚀 Getting Started / はじめ方
 

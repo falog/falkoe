@@ -1,6 +1,6 @@
 [package]
 name = "Falkoe"
-version = "0.2.10"
+version = "0.2.11"
 description = "Falkoe Voice-powered language learning app"
 authors = ["fal"]
 edition = "2021"
