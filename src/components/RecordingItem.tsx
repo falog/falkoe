@@ -11,6 +11,7 @@ type Props = {
   index: number;
   total: number;
   transcript: Transcript | null | undefined;
+  lang: string;
   recognizing?: boolean;
   recognize?: (rec: Recording) => void;
   audioUrl?: string;
@@ -23,12 +24,16 @@ export default function RecordingItem({
   index,
   total,
   transcript,
+  lang,
   recognizing,
   recognize,
   audioUrl,
   ensureAudioUrl,
   addToAnki,
 }: Props) {
+  const langNorm = (lang ?? "").toLowerCase();
+  const enablePitchAccent =
+    langNorm === "jpn" || langNorm === "ja" || langNorm.startsWith("ja-");
   const audioRef = useRef<HTMLAudioElement>(null);
   const [pitch, setPitch] = useState<PitchAnalysis | null>(null);
   const [pitchLoading, setPitchLoading] = useState(false);
@@ -49,6 +54,7 @@ export default function RecordingItem({
   };
 
   const ensurePitch = useCallback(async () => {
+    if (!enablePitchAccent) return;
     if (pitchRequestedRef.current) return;
     pitchRequestedRef.current = true;
 
@@ -76,14 +82,15 @@ export default function RecordingItem({
     } finally {
       setPitchLoading(false);
     }
-  }, [rec.path]);
+  }, [enablePitchAccent, rec.path]);
 
   // Run pitch analysis as soon as a transcript exists so users don't need to play back first.
   useEffect(() => {
     if (!transcript) return;
     if (!transcript.segments?.length) return;
+    if (!enablePitchAccent) return;
     void ensurePitch();
-  }, [ensurePitch, transcript]);
+  }, [enablePitchAccent, ensurePitch, transcript]);
 
   const handleAudioError = () => {
     console.error("[RecordingItem] audio error", {
@@ -131,7 +138,7 @@ export default function RecordingItem({
         </div>
       )}
 
-      {transcript && (
+      {transcript && enablePitchAccent && (
         <div style={{ marginTop: 8 }}>
           {pitchLoading && (
             <Space>

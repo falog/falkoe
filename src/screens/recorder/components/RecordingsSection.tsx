@@ -12,6 +12,7 @@ type Props = {
   toAssetUrl: (path: string) => string;
   ensureBlobAudioUrl: (path: string) => Promise<string | null>;
   addToAnki: (rec: Recording) => Promise<void>;
+  lang: string;
 };
 
 export function RecordingsSection({
@@ -24,6 +25,7 @@ export function RecordingsSection({
   toAssetUrl,
   ensureBlobAudioUrl,
   addToAnki,
+  lang,
 }: Props) {
   return (
     <>
@@ -38,6 +40,7 @@ export function RecordingsSection({
         toAssetUrl={toAssetUrl}
         ensureBlobAudioUrl={ensureBlobAudioUrl}
         addToAnki={addToAnki}
+        lang={lang}
       />
     </>
   );

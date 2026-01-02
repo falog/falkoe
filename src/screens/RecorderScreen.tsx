@@ -276,6 +276,7 @@ const RecorderScreen = ({
           isTranscribing={showModelAreaTranscribing}
           modelText={modelText}
           sentenceHash={sentenceHash}
+          lang={sentence.lang}
           linkingResult={linkingResult}
           linkingDisplayMode={linkingDisplayMode}
           setLinkingDisplayMode={setLinkingDisplayMode}
@@ -304,6 +305,7 @@ const RecorderScreen = ({
           toAssetUrl={toAssetUrl}
           ensureBlobAudioUrl={ensureBlobAudioUrl}
           addToAnki={addToAnki}
+          lang={sentence.lang}
         />
       </Space>
     </div>

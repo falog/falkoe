@@ -18,6 +18,7 @@ type Props = {
   isTranscribing: boolean;
   modelText: string | null;
   sentenceHash: string;
+  lang: string;
   linkingResult: RenderLinkingResult | null;
   linkingDisplayMode: DisplayMode;
   setLinkingDisplayMode: (mode: DisplayMode) => void;
@@ -30,6 +31,7 @@ export function ModelTranscriptSection({
   isTranscribing,
   modelText,
   sentenceHash,
+  lang,
   linkingResult,
   linkingDisplayMode,
   setLinkingDisplayMode,
@@ -37,6 +39,9 @@ export function ModelTranscriptSection({
   status,
   progress,
 }: Props) {
+  const langNorm = (lang ?? "").toLowerCase();
+  const enablePitchAccent =
+    langNorm === "jpn" || langNorm === "ja" || langNorm.startsWith("ja-");
   const [pitch, setPitch] = useState<PitchAnalysis | null>(null);
   const [accentWords, setAccentWords] = useState<WordPitch[] | null>(null);
   const [pitchLoading, setPitchLoading] = useState(false);
@@ -54,6 +59,7 @@ export function ModelTranscriptSection({
   useEffect(() => {
     // Only run after we have a transcript for the model audio.
     if (!modelText?.trim()) return;
+    if (!enablePitchAccent) return;
     if (pitchRequestedRef.current) return;
     pitchRequestedRef.current = true;
 
@@ -140,7 +146,7 @@ export function ModelTranscriptSection({
     return () => {
       cancelled = true;
     };
-  }, [modelText, sentenceHash]);
+  }, [enablePitchAccent, modelText, sentenceHash]);
 
   return (
     <>
@@ -172,7 +178,7 @@ export function ModelTranscriptSection({
         />
       )}
 
-      {modelText && (
+      {modelText && enablePitchAccent && (
         <div style={{ marginTop: 8 }}>
           {pitchLoading && (
             <Space>

@@ -12,6 +12,7 @@ type Props = {
   toAssetUrl: (p: string) => string;
   ensureBlobAudioUrl: (p: string) => Promise<string | null>;
   addToAnki: (rec: Recording) => void;
+  lang: string;
 };
 
 export default function RecordingsList({
@@ -24,6 +25,7 @@ export default function RecordingsList({
   toAssetUrl,
   ensureBlobAudioUrl,
   addToAnki,
+  lang,
 }: Props) {
   if (!recordings.length) {
     return (
@@ -40,6 +42,7 @@ export default function RecordingsList({
           index={i}
           total={recordings.length}
           transcript={transcripts[rec.path]}
+          lang={lang}
           recognizing={!!recognizing[rec.path]}
           recognize={recognizeRecording}
           audioUrl={
