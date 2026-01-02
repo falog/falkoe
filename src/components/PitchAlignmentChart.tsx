@@ -151,7 +151,7 @@ export function PitchAlignmentChart({ analysis, words, height = 320 }: Props) {
                   y={H - 4}
                   textAnchor="middle"
                   fill={token.colorTextSecondary}
-                  fontSize={12}
+                  fontSize={18}
                 >
                   Time (s)
                 </text>
@@ -161,9 +161,9 @@ export function PitchAlignmentChart({ analysis, words, height = 320 }: Props) {
                   transform={`rotate(-90 14 ${padY + plotH / 2})`}
                   textAnchor="middle"
                   fill={token.colorTextSecondary}
-                  fontSize={12}
+                  fontSize={18}
                 >
-                  Pitch (Hz)
+                  Pitch (f0 rel.)
                 </text>
 
                 {/* word regions */}
