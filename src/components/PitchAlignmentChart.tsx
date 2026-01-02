@@ -1,4 +1,4 @@
-import { Typography, theme } from "antd";
+import { Collapse, Typography, theme } from "antd";
 import type { PitchAnalysis, SegmentPitch, WordPitch } from "../types/pitch";
 
 type Props = {
@@ -121,83 +121,112 @@ export function PitchAlignmentChart({ analysis, words, height = 320 }: Props) {
   const pathD = parts.join(" ");
 
   return (
-    <div style={{ width: "100%" }}>
-      <div style={{ marginBottom: 6 }}>
-        <Typography.Text type="secondary">
-          Pitch × Whisper Alignment
-        </Typography.Text>
-      </div>
-
-      <div style={{ width: "100%", overflowX: "auto" }}>
-        <svg
-          viewBox={`0 0 ${W} ${H}`}
-          width={renderWidthPx}
-          height={H}
-          style={{
-            display: "block",
-            border: `1px solid ${token.colorBorderSecondary}`,
-            borderRadius: token.borderRadius,
-            background: token.colorBgContainer,
-          }}
-        >
-          {/* word regions */}
-          {overlayWords.map((w, idx) => {
-            const x0 = xForTime(w.start);
-            const x1 = xForTime(w.end);
-            const left = Math.min(x0, x1);
-            const width = Math.max(1, Math.abs(x1 - x0));
-            return (
-              <g key={`${w.start}-${w.end}-${idx}`}>
-                <rect
-                  x={left}
-                  y={padY}
-                  width={width}
-                  height={plotH}
-                  fill={token.colorFillTertiary}
-                  opacity={0.8}
-                />
+    <Collapse
+      bordered={false}
+      defaultActiveKey={[]}
+      items={[
+        {
+          key: "pitch-alignment",
+          label: (
+            <Typography.Text type="secondary">
+              Pitch × Whisper Alignment
+            </Typography.Text>
+          ),
+          children: (
+            <div style={{ width: "100%", overflowX: "auto" }}>
+              <svg
+                viewBox={`0 0 ${W} ${H}`}
+                width={renderWidthPx}
+                height={H}
+                style={{
+                  display: "block",
+                  border: `1px solid ${token.colorBorderSecondary}`,
+                  borderRadius: token.borderRadius,
+                  background: token.colorBgContainer,
+                }}
+              >
+                {/* axis labels */}
                 <text
-                  x={left + width / 2}
-                  y={padY + 14}
+                  x={padX + plotW / 2}
+                  y={H - 4}
                   textAnchor="middle"
-                  fill={token.colorText}
+                  fill={token.colorTextSecondary}
                   fontSize={12}
                 >
-                  {w.text}
-                  {w.label ? (
-                    <tspan
-                      x={left + width / 2}
-                      dy={14}
-                      fill={token.colorTextSecondary}
-                      fontSize={11}
-                    >
-                      [{w.label}]
-                    </tspan>
-                  ) : null}
+                  Time (s)
                 </text>
-              </g>
-            );
-          })}
+                <text
+                  x={14}
+                  y={padY + plotH / 2}
+                  transform={`rotate(-90 14 ${padY + plotH / 2})`}
+                  textAnchor="middle"
+                  fill={token.colorTextSecondary}
+                  fontSize={12}
+                >
+                  Pitch (Hz)
+                </text>
 
-          {/* baseline */}
-          <line
-            x1={padX}
-            x2={padX + plotW}
-            y1={baselineY}
-            y2={baselineY}
-            stroke={token.colorBorder}
-            strokeDasharray="6 4"
-          />
+                {/* word regions */}
+                {overlayWords.map((w, idx) => {
+                  const x0 = xForTime(w.start);
+                  const x1 = xForTime(w.end);
+                  const left = Math.min(x0, x1);
+                  const width = Math.max(1, Math.abs(x1 - x0));
+                  return (
+                    <g key={`${w.start}-${w.end}-${idx}`}>
+                      <rect
+                        x={left}
+                        y={padY}
+                        width={width}
+                        height={plotH}
+                        fill={token.colorFillTertiary}
+                        opacity={0.8}
+                      />
+                      <text
+                        x={left + width / 2}
+                        y={padY + 14}
+                        textAnchor="middle"
+                        fill={token.colorText}
+                        fontSize={12}
+                      >
+                        {w.text}
+                        {w.label ? (
+                          <tspan
+                            x={left + width / 2}
+                            dy={14}
+                            fill={token.colorTextSecondary}
+                            fontSize={11}
+                          >
+                            [{w.label}]
+                          </tspan>
+                        ) : null}
+                      </text>
+                    </g>
+                  );
+                })}
 
-          {/* pitch curve */}
-          <path
-            d={pathD}
-            fill="none"
-            stroke={token.colorPrimary}
-            strokeWidth={2}
-          />
-        </svg>
-      </div>
-    </div>
+                {/* baseline */}
+                <line
+                  x1={padX}
+                  x2={padX + plotW}
+                  y1={baselineY}
+                  y2={baselineY}
+                  stroke={token.colorBorder}
+                  strokeDasharray="6 4"
+                />
+
+                {/* pitch curve */}
+                <path
+                  d={pathD}
+                  fill="none"
+                  stroke={token.colorPrimary}
+                  strokeWidth={2}
+                />
+              </svg>
+            </div>
+          ),
+        },
+      ]}
+    />
   );
 }
