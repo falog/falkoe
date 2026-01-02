@@ -1,12 +1,23 @@
 import { Space, Spin, Typography } from "antd";
+import { invoke } from "@tauri-apps/api/core";
+import { documentDir, join } from "@tauri-apps/api/path";
+import { readTextFile } from "@tauri-apps/plugin-fs";
+import { useEffect, useRef, useState } from "react";
 import type { RenderLinkingResult, DisplayMode } from "../../../types/linking";
 import type { IpaIndex } from "../../../utils/ipaResources";
 import LinkingStressArea from "../LinkingStressArea";
 import type { ModelStatus } from "../../../types/model";
+import type { PitchAnalysis, WordPitch } from "../../../types/pitch";
+import { PitchAlignmentChart } from "../../../components/PitchAlignmentChart";
+
+type AccentOut = {
+  words: WordPitch[];
+};
 
 type Props = {
   isTranscribing: boolean;
   modelText: string | null;
+  sentenceHash: string;
   linkingResult: RenderLinkingResult | null;
   linkingDisplayMode: DisplayMode;
   setLinkingDisplayMode: (mode: DisplayMode) => void;
@@ -18,6 +29,7 @@ type Props = {
 export function ModelTranscriptSection({
   isTranscribing,
   modelText,
+  sentenceHash,
   linkingResult,
   linkingDisplayMode,
   setLinkingDisplayMode,
@@ -25,6 +37,111 @@ export function ModelTranscriptSection({
   status,
   progress,
 }: Props) {
+  const [pitch, setPitch] = useState<PitchAnalysis | null>(null);
+  const [accentWords, setAccentWords] = useState<WordPitch[] | null>(null);
+  const [pitchLoading, setPitchLoading] = useState(false);
+  const [pitchError, setPitchError] = useState<string | null>(null);
+  const pitchRequestedRef = useRef(false);
+
+  useEffect(() => {
+    pitchRequestedRef.current = false;
+    setPitch(null);
+    setAccentWords(null);
+    setPitchLoading(false);
+    setPitchError(null);
+  }, [sentenceHash]);
+
+  useEffect(() => {
+    // Only run after we have a transcript for the model audio.
+    if (!modelText?.trim()) return;
+    if (pitchRequestedRef.current) return;
+    pitchRequestedRef.current = true;
+
+    let cancelled = false;
+    (async () => {
+      setPitchLoading(true);
+      setPitchError(null);
+      try {
+        const dir = await documentDir();
+        const wavPath = await join(
+          dir,
+          "falkoe",
+          "sentences",
+          sentenceHash,
+          "model",
+          "model.wav"
+        );
+
+        // Prefer cached pitch analysis if present.
+        try {
+          const pitchPath = await join(
+            dir,
+            "falkoe",
+            "sentences",
+            sentenceHash,
+            "model",
+            "model.pitch.json"
+          );
+          const cached = await readTextFile(pitchPath);
+          const parsed = JSON.parse(cached) as PitchAnalysis;
+          if (!cancelled) setPitch(parsed);
+
+          // Prefer accent overlay from model.accent.json if present.
+          try {
+            const accentPath = await join(
+              dir,
+              "falkoe",
+              "sentences",
+              sentenceHash,
+              "model",
+              "model.accent.json"
+            );
+            const accentCached = await readTextFile(accentPath);
+            const accentParsed = JSON.parse(accentCached) as AccentOut;
+            if (!cancelled) setAccentWords(accentParsed.words ?? null);
+          } catch {
+            // ignore; fall back to pitch.words/segments
+          }
+          return;
+        } catch {
+          // ignore; fall back to live analysis
+        }
+
+        const res = await invoke<PitchAnalysis>("analyze_pitch", {
+          wavPath,
+          includeSegments: true,
+        });
+
+        if (!cancelled) setPitch(res);
+
+        // If available, load accent overlay generated during transcription.
+        try {
+          const accentPath = await join(
+            dir,
+            "falkoe",
+            "sentences",
+            sentenceHash,
+            "model",
+            "model.accent.json"
+          );
+          const accentCached = await readTextFile(accentPath);
+          const accentParsed = JSON.parse(accentCached) as AccentOut;
+          if (!cancelled) setAccentWords(accentParsed.words ?? null);
+        } catch {
+          // ignore
+        }
+      } catch (e) {
+        if (!cancelled) setPitchError(String(e));
+      } finally {
+        if (!cancelled) setPitchLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [modelText, sentenceHash]);
+
   return (
     <>
       {isTranscribing && (
@@ -53,6 +170,34 @@ export function ModelTranscriptSection({
           setLinkingDisplayMode={setLinkingDisplayMode}
           ipaIndex={ipaIndex}
         />
+      )}
+
+      {modelText && (
+        <div style={{ marginTop: 8 }}>
+          {pitchLoading && (
+            <Space>
+              <Spin size="small" />
+              <Typography.Text type="secondary">
+                模範音声のピッチ解析中…
+              </Typography.Text>
+            </Space>
+          )}
+
+          {!pitchLoading && pitchError && (
+            <Typography.Text type="secondary">
+              模範音声のピッチ解析に失敗しました: {pitchError}
+            </Typography.Text>
+          )}
+
+          {!pitchLoading && !pitchError && pitch && (
+            <>
+              <Typography.Text type="secondary">
+                Pitch extractor: {pitch.extractor ?? "(unknown)"}
+              </Typography.Text>
+              <PitchAlignmentChart analysis={pitch} words={accentWords} />
+            </>
+          )}
+        </div>
       )}
 
       <Typography.Text type="secondary">Model status: {status}</Typography.Text>

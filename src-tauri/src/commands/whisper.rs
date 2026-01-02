@@ -15,7 +15,10 @@ use std::{
     process::Command,
 };
 use tauri::{AppHandle, Emitter, Manager};
-use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
+use whisper_rs::{
+    DtwMode, DtwModelPreset, FullParams, SamplingStrategy, WhisperContext,
+    WhisperContextParameters,
+};
 
 #[derive(serde::Serialize, Clone)]
 pub struct PreviewResult {
@@ -45,6 +48,26 @@ pub struct Segment {
 #[derive(serde::Serialize)]
 pub struct Transcript {
     pub segments: Vec<Segment>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tokens: Option<Vec<TokenTimestamp>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub words: Option<Vec<WordTimestamp>>,
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct TokenTimestamp {
+    pub start: f32,
+    pub end: f32,
+    pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dtw: Option<f32>,
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct WordTimestamp {
+    pub start: f32,
+    pub end: f32,
+    pub text: String,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -71,8 +94,26 @@ fn whisper_language(lang: &str) -> Option<&'static str> {
     }
 }
 
-fn ffmpeg_convert_to_wav(input: &Path, output_wav: &Path) -> Result<()> {
-    let status = Command::new("ffmpeg")
+fn resolve_bundled_tool(app: &AppHandle, base_name: &str) -> Option<PathBuf> {
+    let resource_dir = app.path().resource_dir().ok()?;
+    let exe_name = if cfg!(target_os = "windows") {
+        format!("{base_name}.exe")
+    } else {
+        base_name.to_string()
+    };
+
+    let candidates = [
+        resource_dir.join("bin").join(&exe_name),
+        resource_dir.join(&exe_name),
+    ];
+
+    candidates.into_iter().find(|p| p.exists())
+}
+
+fn ffmpeg_convert_to_wav(app: &AppHandle, input: &Path, output_wav: &Path) -> Result<()> {
+    let cmd = resolve_bundled_tool(app, "ffmpeg").unwrap_or_else(|| PathBuf::from("ffmpeg"));
+
+    let status = Command::new(&cmd)
         .args([
             "-y",
             "-i",
@@ -90,7 +131,7 @@ fn ffmpeg_convert_to_wav(input: &Path, output_wav: &Path) -> Result<()> {
         .status()?;
 
     if !status.success() {
-        bail!("ffmpeg conversion failed");
+        bail!("ffmpeg conversion failed (cmd={:?})", cmd);
     }
 
     Ok(())
@@ -114,6 +155,215 @@ fn run_whisper_for_wav(
 
     let transcript = transcribe(wav_path, &model_path, whisper_language(lang))?;
     save_transcript_json(wav_path, &transcript)?;
+
+    // For Japanese recognition, also run pitch analysis and persist it next to the transcript.
+    // This enables Heiban/Odaka/Nakadaka/Atamadaka labels without requiring UI-triggered analysis.
+    if whisper_language(lang) == Some("ja") {
+        if let Ok(pitch) = crate::commands::pitch::analyze_pitch(
+            app.clone(),
+            wav_path.to_string(),
+            None,
+            None,
+            None,
+            Some(true),
+        ) {
+            let pitch_path = Path::new(wav_path).with_extension("pitch.json");
+            if let Ok(json) = serde_json::to_string_pretty(&pitch) {
+                let _ = fs::write(&pitch_path, json);
+                println!("saved pitch: {:?}", pitch_path);
+            }
+
+            // Also write a compact, human-friendly accent JSON.
+            // This mirrors the schema the UI/debug tools want: { words: [...] }.
+            #[derive(serde::Serialize)]
+            struct AccentWordOut {
+                word: String,
+                start: f32,
+                end: f32,
+                text: String,
+                label: Option<String>,
+                peak_pos: Option<f32>,
+                pitch_range: Option<f32>,
+                slope: Option<f32>,
+            }
+
+            #[derive(serde::Serialize)]
+            struct AccentOut {
+                words: Vec<AccentWordOut>,
+            }
+
+            // Match the Python reference heuristics.
+            fn estimate_accent_label_py(peak_pos: f32, pitch_range: f32) -> String {
+                if pitch_range < 0.8 {
+                    return "Heiban".to_string();
+                }
+                if peak_pos < 0.25 {
+                    return "Atamadaka".to_string();
+                }
+                if (0.25..=0.6).contains(&peak_pos) {
+                    return "Nakadaka".to_string();
+                }
+                "Odaka".to_string()
+            }
+
+            fn segment_features_py(seg: &[f32]) -> (f32, f32, f32) {
+                let mut max_v = f32::NEG_INFINITY;
+                let mut min_v = f32::INFINITY;
+                let mut peak_i = 0usize;
+                for (i, &v) in seg.iter().enumerate() {
+                    if v > max_v {
+                        max_v = v;
+                        peak_i = i;
+                    }
+                    if v < min_v {
+                        min_v = v;
+                    }
+                }
+                let pitch_range = max_v - min_v;
+                let peak_pos = if seg.is_empty() {
+                    0.0
+                } else {
+                    peak_i as f32 / seg.len() as f32
+                };
+
+                let mut slope_sum = 0.0f32;
+                let mut slope_n = 0usize;
+                for w in seg.windows(2) {
+                    slope_sum += w[1] - w[0];
+                    slope_n += 1;
+                }
+                let slope = if slope_n > 0 {
+                    slope_sum / slope_n as f32
+                } else {
+                    0.0
+                };
+
+                (peak_pos, pitch_range, slope)
+            }
+
+            fn time_to_index_round(t: f32, time_step: f32) -> usize {
+                ((t / time_step).round() as i64).max(0) as usize
+            }
+
+            fn collect_voiced(f0_rel: &[Option<f32>], si: usize, ei: usize) -> Vec<f32> {
+                if si >= f0_rel.len() {
+                    return Vec::new();
+                }
+                let ei = ei.min(f0_rel.len());
+                if ei <= si {
+                    return Vec::new();
+                }
+                f0_rel[si..ei].iter().copied().flatten().collect()
+            }
+
+            fn expand_window(si: usize, ei: usize, n: usize, len: usize) -> (usize, usize) {
+                let s = si.saturating_sub(n);
+                let e = (ei + n).min(len);
+                (s, e)
+            }
+
+            fn is_punct_word(s: &str) -> bool {
+                let t = s.trim();
+                if t.is_empty() {
+                    return true;
+                }
+                matches!(
+                    t,
+                    "。" | "、" | "！" | "？" | "!" | "?" | "." | "," | "…" | "・" | ":" | ";"
+                )
+            }
+
+            let mut out_words: Vec<AccentWordOut> = Vec::new();
+
+            // Prefer transcript word timestamps (DTW-adjusted upstream) and compute
+            // labels with the same rules as the Python reference.
+            if let Some(t_words) = transcript.words.as_ref() {
+                let n = pitch.f0_rel.len();
+                for w in t_words {
+                    let si = time_to_index_round(w.start, pitch.time_step);
+                    let ei = time_to_index_round(w.end, pitch.time_step);
+                    let (label, peak_pos, pitch_range, slope) = if si >= n || ei <= si {
+                        (None, None, None, None)
+                    } else {
+                        let mut voiced = collect_voiced(&pitch.f0_rel, si, ei);
+
+                        // Python reference requires at least 5 voiced samples.
+                        // If we don't have enough (often due to slightly shifted word timing),
+                        // try a small expansion to recover a stable estimate.
+                        if voiced.len() < 5 {
+                            for expand in [5usize, 10, 15] {
+                                let (s2, e2) = expand_window(si, ei, expand, n);
+                                voiced = collect_voiced(&pitch.f0_rel, s2, e2);
+                                if voiced.len() >= 5 {
+                                    break;
+                                }
+                            }
+                        }
+
+                        if voiced.len() < 5 {
+                            (None, None, None, None)
+                        } else {
+                            let (pp, pr, sl) = segment_features_py(&voiced);
+                            let lab = estimate_accent_label_py(pp, pr);
+                            (Some(lab), Some(pp), Some(pr), Some(sl))
+                        }
+                    };
+
+                    let word_text = w.text.trim().to_string();
+                    if word_text.is_empty() {
+                        continue;
+                    }
+
+                    if is_punct_word(&word_text) && !out_words.is_empty() {
+                        let last = out_words.last_mut().unwrap();
+                        last.word.push_str(&word_text);
+                        last.text.push_str(&word_text);
+                        last.end = w.end;
+                        continue;
+                    }
+
+                    out_words.push(AccentWordOut {
+                        word: word_text.clone(),
+                        start: w.start,
+                        end: w.end,
+                        text: word_text,
+                        label,
+                        peak_pos,
+                        pitch_range,
+                        slope,
+                    });
+                }
+            } else if let Some(words) = &pitch.words {
+                // Fallback: use whatever pitch analysis produced.
+                for w in words {
+                    if is_punct_word(&w.text) && !out_words.is_empty() {
+                        let last = out_words.last_mut().unwrap();
+                        last.word.push_str(&w.text);
+                        last.text.push_str(&w.text);
+                        last.end = w.end;
+                        continue;
+                    }
+
+                    out_words.push(AccentWordOut {
+                        word: w.word.clone(),
+                        start: w.start,
+                        end: w.end,
+                        text: w.text.clone(),
+                        label: w.label.clone(),
+                        peak_pos: w.peak_pos,
+                        pitch_range: w.pitch_range,
+                        slope: w.slope,
+                    });
+                }
+            }
+
+            let accent_path = Path::new(wav_path).with_extension("accent.json");
+            if let Ok(json) = serde_json::to_string_pretty(&AccentOut { words: out_words }) {
+                let _ = fs::write(&accent_path, json);
+                println!("saved accent: {:?}", accent_path);
+            }
+        }
+    }
 
     let full_text = transcript
         .segments
@@ -183,7 +433,7 @@ fn convert_uploaded_to_wav(
         fs::create_dir_all(&base_dir)?;
 
         let wav_path = base_dir.join("uploaded.wav");
-        ffmpeg_convert_to_wav(Path::new(uploaded_path), &wav_path)?;
+        ffmpeg_convert_to_wav(app, Path::new(uploaded_path), &wav_path)?;
         Ok(wav_path.to_string_lossy().to_string())
     })()
     .map_err(|e| e.to_string())
@@ -205,7 +455,7 @@ fn download_and_convert_to_wav(
         let bytes = resp.bytes()?;
         fs::write(&mp3_path, &bytes)?;
 
-        ffmpeg_convert_to_wav(&mp3_path, &wav_path)?;
+        ffmpeg_convert_to_wav(app, &mp3_path, &wav_path)?;
 
         Ok(wav_path.to_string_lossy().to_string())
     })()
@@ -444,10 +694,13 @@ pub fn transcribe(
     let audio = load_wav_as_f32(wav_path)?;
 
     println!("before WhisperContext::new_with_params");
-    let ctx = WhisperContext::new_with_params(
-        model_path.to_str().unwrap(),
-        WhisperContextParameters::default(),
-    )?;
+    let mut ctx_params = WhisperContextParameters::default();
+    // Falkoe downloads ggml-small.bin, so use the Small preset.
+    ctx_params.dtw_parameters.mode = DtwMode::ModelPreset {
+        model_preset: DtwModelPreset::Small,
+    };
+
+    let ctx = WhisperContext::new_with_params(model_path.to_str().unwrap(), ctx_params)?;
     println!("after WhisperContext::new_with_params");
     let mut state = ctx.create_state()?;
 
@@ -458,6 +711,11 @@ pub fn transcribe(
     params.set_language(whisper_lang);
     params.set_translate(false);
 
+    // Token-level timestamps.
+    params.set_token_timestamps(true);
+    // Prefer word-ish splitting only for whitespace-separated languages.
+    params.set_split_on_word(matches!(whisper_lang, Some("en")));
+
     // ❌ streaming / chunk 系は一切使わない
     // params.set_single_segment(false);
     // params.set_split_on_word(false);
@@ -465,28 +723,306 @@ pub fn transcribe(
     // ★ full は state に対して呼ぶ
     state.full(params, &audio)?;
 
-    let segments: Vec<Segment> = state
-        .as_iter()
-        .filter_map(|s| {
-            let text = s.to_string().trim().to_string();
+    let mut segments: Vec<Segment> = Vec::new();
+    let mut tokens: Vec<TokenTimestamp> = Vec::new();
+    let mut token_bytes: Vec<(f32, f32, Vec<u8>)> = Vec::new();
+    let mut prev_end_for_ja: Option<f32> = None;
 
-            if text.is_empty()
-                || text == "[BLANK_AUDIO]"
-                || (text.starts_with('(') && text.ends_with(')'))
-                || (text.starts_with('[') && text.ends_with(']'))
-            {
-                return None;
+    for s in state.as_iter() {
+        let text = s.to_string().trim().to_string();
+
+        if text.is_empty()
+            || text == "[BLANK_AUDIO]"
+            || (text.starts_with('(') && text.ends_with(')'))
+            || (text.starts_with('[') && text.ends_with(']'))
+        {
+            continue;
+        }
+
+        segments.push(Segment {
+            start: s.start_timestamp() as f32 / 100.0,
+            end: s.end_timestamp() as f32 / 100.0,
+            text,
+        });
+
+        let token_count = s.n_tokens();
+        for token_idx in 0..token_count {
+            let Some(tok) = s.get_token(token_idx) else {
+                continue;
+            };
+
+            // Use raw bytes because Whisper may split tokens away from UTF-8 boundaries (common in JA).
+            // `to_str_lossy` would show "�" for such fragments.
+            let bytes = match tok.to_bytes() {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+            let token_text = std::str::from_utf8(bytes)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|_| String::from_utf8_lossy(bytes).into_owned());
+
+            // Skip whisper timestamp pseudo tokens if they show up.
+            if token_text.starts_with("<|") && token_text.ends_with("|>") {
+                continue;
             }
 
-            Some(Segment {
-                start: s.start_timestamp() as f32 / 100.0,
-                end: s.end_timestamp() as f32 / 100.0,
-                text,
-            })
-        })
-        .collect();
+            if token_text.trim().is_empty() {
+                continue;
+            }
 
-    Ok(Transcript { segments })
+            let td = tok.token_data();
+            // Some tokens (often trailing punctuation/last words in JA) can have zero-length
+            // timestamps. Dropping them makes the UI miss text like "何？". Keep them and
+            // synthesize a small duration when needed.
+            let raw_start = td.t0 as f32 / 100.0;
+            let raw_end = if td.t1 > td.t0 {
+                td.t1 as f32 / 100.0
+            } else {
+                raw_start
+            };
+            let raw_dur = (raw_end - raw_start).max(0.0);
+
+            // DTW-assisted alignment:
+            // For JA, token timestamps often include leading silence.
+            // If DTW time is available, treat it as a better-aligned token boundary.
+            // We build continuous boundaries using prev token's DTW end when possible.
+            let dtw = if td.t_dtw > 0 {
+                Some(td.t_dtw as f32 / 100.0)
+            } else {
+                None
+            };
+
+            let (start, end) = if matches!(whisper_lang, Some("ja")) {
+                if let Some(dtw_end) = dtw {
+                    // Cap duration to avoid leading-silence skew; tuned to match the Python reference.
+                    let capped_dur = raw_dur.clamp(0.04, 0.30);
+                    let start = match prev_end_for_ja {
+                        Some(prev) if prev <= dtw_end => prev,
+                        // For the first token, raw duration can be unrealistically short.
+                        // Apply a small minimum so starts don't jump too late.
+                        _ => (dtw_end - capped_dur.max(0.25)).max(0.0),
+                    };
+                    let end = dtw_end.max(start);
+                    prev_end_for_ja = Some(end);
+                    (start, end)
+                } else {
+                    // fallback to raw timestamps
+                    prev_end_for_ja = Some(raw_end);
+                    (raw_start, raw_end)
+                }
+            } else {
+                (raw_start, raw_end)
+            };
+
+            // Ensure a minimal non-zero duration so later word/segment slicing works.
+            let (start, end) = if end <= start {
+                (start, start + 0.04)
+            } else {
+                (start, end)
+            };
+
+            if matches!(whisper_lang, Some("ja")) {
+                prev_end_for_ja = Some(end);
+            }
+
+            tokens.push(TokenTimestamp {
+                start,
+                end,
+                text: token_text,
+                dtw,
+            });
+
+            token_bytes.push((start, end, bytes.to_vec()));
+        }
+    }
+
+    let words = if matches!(whisper_lang, Some("ja")) {
+        build_words_from_token_bytes(&token_bytes)
+    } else {
+        build_words_from_tokens(&tokens)
+    };
+
+    Ok(Transcript {
+        segments,
+        tokens: Some(tokens),
+        words: Some(words),
+    })
+}
+
+fn is_nonling_text(s: &str) -> bool {
+    let t = s.trim();
+    if t.is_empty() {
+        return true;
+    }
+    // Whisper special tokens like "[_BEG_]", "[_TT_100]", "[_EOT_]".
+    if t.starts_with("[_") && t.ends_with("]") {
+        return true;
+    }
+    // Non-verbal markers.
+    if (t.starts_with('(') && t.ends_with(')')) || (t.starts_with('[') && t.ends_with(']')) {
+        return true;
+    }
+    false
+}
+
+fn build_words_from_token_bytes(tokens: &[(f32, f32, Vec<u8>)]) -> Vec<WordTimestamp> {
+    let mut words: Vec<WordTimestamp> = Vec::new();
+    let mut buf: Vec<u8> = Vec::new();
+    let mut cur_start: Option<f32> = None;
+    let mut cur_end: Option<f32> = None;
+
+    let flush = |words: &mut Vec<WordTimestamp>,
+                     buf: &mut Vec<u8>,
+                     cur_start: &mut Option<f32>,
+                     cur_end: &mut Option<f32>| {
+        if buf.is_empty() {
+            *cur_start = None;
+            *cur_end = None;
+            return;
+        }
+
+        let text = match std::str::from_utf8(buf) {
+            Ok(s) => s.trim().to_string(),
+            Err(_) => String::from_utf8_lossy(buf).trim().to_string(),
+        };
+
+        if text.is_empty() {
+            buf.clear();
+            *cur_start = None;
+            *cur_end = None;
+            return;
+        }
+
+        if is_nonling_text(&text) {
+            buf.clear();
+            *cur_start = None;
+            *cur_end = None;
+            return;
+        }
+
+        let (Some(start), Some(end)) = (*cur_start, *cur_end) else {
+            buf.clear();
+            *cur_start = None;
+            *cur_end = None;
+            return;
+        };
+
+        words.push(WordTimestamp { start, end, text });
+
+        buf.clear();
+        *cur_start = None;
+        *cur_end = None;
+    };
+
+    for (start, end, b) in tokens {
+        let starts_with_space = b
+            .first()
+            .copied()
+            .map(|c| (c as char).is_whitespace())
+            .unwrap_or(false);
+        let has_newline = b.contains(&b'\n');
+
+        if starts_with_space || has_newline {
+            flush(&mut words, &mut buf, &mut cur_start, &mut cur_end);
+        }
+
+        if cur_start.is_none() {
+            cur_start = Some(*start);
+        }
+        cur_end = Some(*end);
+
+        buf.extend_from_slice(b);
+
+        // For JA, flush at every UTF-8 boundary so we don't emit invalid fragments.
+        if std::str::from_utf8(&buf).is_ok() {
+            flush(&mut words, &mut buf, &mut cur_start, &mut cur_end);
+        }
+    }
+
+    flush(&mut words, &mut buf, &mut cur_start, &mut cur_end);
+    words
+}
+
+fn build_words_from_tokens(tokens: &[TokenTimestamp]) -> Vec<WordTimestamp> {
+    let mut words: Vec<WordTimestamp> = Vec::new();
+
+    let mut cur_text = String::new();
+    let mut cur_start: Option<f32> = None;
+    let mut cur_end: Option<f32> = None;
+
+    let flush = |words: &mut Vec<WordTimestamp>,
+                     cur_text: &mut String,
+                     cur_start: &mut Option<f32>,
+                     cur_end: &mut Option<f32>| {
+        if cur_text.trim().is_empty() {
+            cur_text.clear();
+            *cur_start = None;
+            *cur_end = None;
+            return;
+        }
+
+        let (Some(start), Some(end)) = (*cur_start, *cur_end) else {
+            cur_text.clear();
+            *cur_start = None;
+            *cur_end = None;
+            return;
+        };
+
+        let text = cur_text.trim().to_string();
+        if !is_nonling_text(&text) {
+            words.push(WordTimestamp { start, end, text });
+        }
+
+        cur_text.clear();
+        *cur_start = None;
+        *cur_end = None;
+    };
+
+    for tok in tokens {
+        let t = tok.text.as_str();
+        let starts_with_space = t
+            .chars()
+            .next()
+            .map(|c| c.is_whitespace())
+            .unwrap_or(false);
+        let has_newline = t.contains('\n');
+
+        if starts_with_space || has_newline {
+            flush(&mut words, &mut cur_text, &mut cur_start, &mut cur_end);
+        }
+
+        if cur_start.is_none() {
+            cur_start = Some(tok.start);
+        }
+        cur_end = Some(tok.end);
+        cur_text.push_str(t);
+    }
+
+    flush(&mut words, &mut cur_text, &mut cur_start, &mut cur_end);
+
+    // If everything got grouped into one big chunk (common for languages without spaces),
+    // fall back to per-token words so we still get useful alignment points.
+    if words.len() <= 1 && tokens.len() > 1 {
+        return tokens
+            .iter()
+            .filter_map(|t| {
+                let text = t.text.trim();
+                if text.is_empty() {
+                    return None;
+                }
+                if is_nonling_text(text) {
+                    return None;
+                }
+                Some(WordTimestamp {
+                    start: t.start,
+                    end: t.end,
+                    text: text.to_string(),
+                })
+            })
+            .collect();
+    }
+
+    words
 }
 
 fn save_transcript_json(wav_path: &str, transcript: &Transcript) -> Result<()> {

@@ -12,6 +12,11 @@ use tauri_plugin_mic_recorder::init as mic_recorder;
 mod commands;
 mod model;
 
+// Minimal public surface for internal tooling (e.g. src/bin/*).
+pub use commands::whisper::transcribe as transcribe;
+pub use commands::pitch::analyze_pitch_noapp as analyze_pitch_noapp;
+pub use model::find_existing_model_path_noapp;
+
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
@@ -36,6 +41,7 @@ pub fn run() {
             run_whisper,
             run_whisper_model,
             run_whisper_uploaded,
+            crate::commands::pitch::analyze_pitch,
             list_recordings,
             get_model_status,
             move_recorded_audio,

@@ -11,6 +11,21 @@ export type Segment = {
   text: string;
 };
 
+export type TokenTimestamp = {
+  start: number;
+  end: number;
+  text: string;
+  dtw?: number;
+};
+
+export type WordTimestamp = {
+  start: number;
+  end: number;
+  text: string;
+};
+
 export type Transcript = {
   segments: Segment[];
+  tokens?: TokenTimestamp[];
+  words?: WordTimestamp[];
 };

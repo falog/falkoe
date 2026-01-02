@@ -38,7 +38,57 @@ jobs:
             librsvg2-dev \
             libssl-dev \
             libasound2-dev \
-            build-essential
+            build-essential \
+            ffmpeg \
+            praat
+
+      - name: Install tools (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: powershell
+        run: |
+          choco install -y ffmpeg praat
+
+      - name: Install tools (macOS)
+        if: matrix.os == 'macos-14'
+        run: |
+          brew update
+          brew install ffmpeg
+          brew install --cask praat
+
+      - name: Bundle ffmpeg + praat into resources/bin
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p src-tauri/resources/bin
+
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            cp "$(command -v ffmpeg)" src-tauri/resources/bin/ffmpeg
+            if command -v praatcon >/dev/null 2>&1; then
+              cp "$(command -v praatcon)" src-tauri/resources/bin/praatcon
+            fi
+            cp "$(command -v praat)" src-tauri/resources/bin/praat
+            chmod +x src-tauri/resources/bin/ffmpeg src-tauri/resources/bin/praat || true
+            chmod +x src-tauri/resources/bin/praatcon || true
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            cp "$(command -v ffmpeg)" src-tauri/resources/bin/ffmpeg
+            if command -v praatcon >/dev/null 2>&1; then
+              cp "$(command -v praatcon)" src-tauri/resources/bin/praatcon
+            fi
+            cp "$(command -v praat)" src-tauri/resources/bin/praat
+            chmod +x src-tauri/resources/bin/ffmpeg src-tauri/resources/bin/praat || true
+            chmod +x src-tauri/resources/bin/praatcon || true
+          elif [[ "$RUNNER_OS" == "Windows" ]]; then
+            FFMPEG_PATH="$(where.exe ffmpeg | head -n 1 | tr -d '\r')"
+            PRAAT_PATH="$(where.exe praat | head -n 1 | tr -d '\r')"
+            cp "$FFMPEG_PATH" src-tauri/resources/bin/ffmpeg.exe
+            cp "$PRAAT_PATH" src-tauri/resources/bin/praat.exe
+
+            PRAATCON_PATH=""
+            if where.exe praatcon > /dev/null 2>&1; then
+              PRAATCON_PATH="$(where.exe praatcon | head -n 1 | tr -d '\r')"
+              cp "$PRAATCON_PATH" src-tauri/resources/bin/praatcon.exe
+            fi
+          fi
 
       # ---- Node / pnpm ----
       - name: Setup pnpm

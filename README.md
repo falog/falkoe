@@ -146,6 +146,50 @@ Your voice might help someone else's learning journey.
 
 ---
 
+## 📦 Bundled Tools (ffmpeg) / 同梱ツール(ffmpeg)
+
+Falkoe は音声変換(mp3→wavなど)のために `ffmpeg` を使います。
+
+- **配布版(推奨)**: アプリに `ffmpeg` を同梱できます。
+- **開発/同梱なし**: システムの `ffmpeg` が PATH に入っている必要があります。
+
+### 同梱パス
+
+Tauri の `resource_dir` から次のパスを探します（見つからなければ PATH の `ffmpeg` にフォールバックします）。
+
+- Windows: `resources/bin/ffmpeg.exe`
+- macOS / Linux: `resources/bin/ffmpeg`
+
+設定は [src-tauri/tauri.conf.json](src-tauri/tauri.conf.json) の `bundle.resources` に `resources/bin` を含めています。
+
+> 注意: `ffmpeg` の再配布はライセンス条件(LGPL/GPLなど)の確認が必要です。配布形態に合わせて適切なビルド/ライセンス表記を行ってください。
+
+## 📦 Bundled Tools (Praat) / 同梱ツール(Praat)
+
+Falkoe のピッチ抽出は、可能なら **Praat** を使います（より安定したF0抽出のため）。
+
+- **配布版(推奨)**: アプリに `praat` / `praatcon` を同梱できます。
+- **同梱なし**: システムの `praat` が PATH に入っていれば使われます。
+- **Praatが使えない場合**: 内蔵の簡易YIN実装にフォールバックします（動作は継続します）。
+
+### 同梱パス
+
+Tauri の `resource_dir` から次の順で探します。
+
+1. `resources/bin/praatcon(.exe)`
+2. `resources/bin/praat(.exe)`
+3. PATH の `praat`
+
+### 同梱スクリプト
+
+同梱スクリプトは次に置かれます:
+
+- `resources/praat/extract_pitch_to_tsv.praat`
+
+設定は [src-tauri/tauri.conf.json](src-tauri/tauri.conf.json) の `bundle.resources` に `resources/praat` を含めています。
+
+> 注意: Praat の再配布・同梱はライセンス条件の確認が必要です。
+
 ## 🚀 Getting Started / はじめ方
 
 ### 1. Download / ダウンロード

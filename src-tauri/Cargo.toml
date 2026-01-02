@@ -4,6 +4,7 @@ version = "0.2.10"
 description = "Falkoe Voice-powered language learning app"
 authors = ["fal"]
 edition = "2021"
+default-run = "Falkoe"
 
 [lib]
 name = "falkoe_lib"

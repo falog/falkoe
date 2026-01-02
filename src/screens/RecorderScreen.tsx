@@ -275,6 +275,7 @@ const RecorderScreen = ({
         <ModelTranscriptSection
           isTranscribing={showModelAreaTranscribing}
           modelText={modelText}
+          sentenceHash={sentenceHash}
           linkingResult={linkingResult}
           linkingDisplayMode={linkingDisplayMode}
           setLinkingDisplayMode={setLinkingDisplayMode}

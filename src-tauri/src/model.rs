@@ -1,12 +1,34 @@
 use sha2::{Digest, Sha256};
+use std::env;
 use std::fs::{self, File};
 use std::io::{Read, Write};
+use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use tauri::{AppHandle, Emitter, Manager};
 
 static MODEL_STATUS: OnceLock<Mutex<String>> = OnceLock::new();
 
 const MODEL_URL: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin";
+pub const MODEL_FILENAME: &str = "ggml-small.bin";
+
+// Keep this in sync with src-tauri/tauri.conf.json "identifier".
+pub const APP_IDENTIFIER: &str = "net.falog.falkoe";
+
+/// Resolve the on-disk model path without requiring a Tauri `AppHandle`.
+///
+/// Used by internal tooling binaries (e.g. `src/bin/transcribe_wav.rs`).
+pub fn find_existing_model_path_noapp() -> Option<PathBuf> {
+    if let Ok(p) = env::var("FALKOE_MODEL_PATH") {
+        let pb = PathBuf::from(p);
+        if pb.is_file() {
+            return Some(pb);
+        }
+    }
+
+    let dir = dirs::data_dir()?.join(APP_IDENTIFIER);
+    let model_path = dir.join(MODEL_FILENAME);
+    model_path.is_file().then_some(model_path)
+}
 
 /// setup() で必ず呼ぶ
 pub fn init_model_state() {
@@ -29,7 +51,7 @@ pub fn get_model_status() -> String {
 
 pub fn ensure_model(app: &AppHandle) -> anyhow::Result<std::path::PathBuf> {
     let dir = app.path().app_data_dir().unwrap();
-    let model_path = dir.join("ggml-small.bin");
+    let model_path = dir.join(MODEL_FILENAME);
     let ok_path = model_path.with_extension("bin.ok");
 
     // A previous download can leave a truncated file. We track successful

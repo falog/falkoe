@@ -1,6 +1,10 @@
 import { Button, Flex, Typography, Spin, Space } from "antd";
-import { useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { readTextFile } from "@tauri-apps/plugin-fs";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Recording, Transcript } from "../types/recording";
+import type { PitchAnalysis } from "../types/pitch";
+import { PitchAlignmentChart } from "./PitchAlignmentChart";
 
 type Props = {
   rec: Recording;
@@ -26,6 +30,10 @@ export default function RecordingItem({
   addToAnki,
 }: Props) {
   const audioRef = useRef<HTMLAudioElement>(null);
+  const [pitch, setPitch] = useState<PitchAnalysis | null>(null);
+  const [pitchLoading, setPitchLoading] = useState(false);
+  const [pitchError, setPitchError] = useState<string | null>(null);
+  const pitchRequestedRef = useRef(false);
 
   const handleRecognizeClick = () => {
     recognize?.(rec);
@@ -39,6 +47,43 @@ export default function RecordingItem({
     if (audioUrl) return;
     ensureAudioUrl?.(rec);
   };
+
+  const ensurePitch = useCallback(async () => {
+    if (pitchRequestedRef.current) return;
+    pitchRequestedRef.current = true;
+
+    setPitchLoading(true);
+    setPitchError(null);
+    try {
+      // Prefer cached pitch analysis (generated during JP Whisper) if present.
+      try {
+        const pitchPath = rec.path.replace(/\.wav$/i, ".pitch.json");
+        const cached = await readTextFile(pitchPath);
+        const parsed = JSON.parse(cached) as PitchAnalysis;
+        setPitch(parsed);
+        return;
+      } catch {
+        // ignore; fall back to live analysis
+      }
+
+      const res = await invoke<PitchAnalysis>("analyze_pitch", {
+        wavPath: rec.path,
+        includeSegments: true,
+      });
+      setPitch(res);
+    } catch (e) {
+      setPitchError(String(e));
+    } finally {
+      setPitchLoading(false);
+    }
+  }, [rec.path]);
+
+  // Run pitch analysis as soon as a transcript exists so users don't need to play back first.
+  useEffect(() => {
+    if (!transcript) return;
+    if (!transcript.segments?.length) return;
+    void ensurePitch();
+  }, [ensurePitch, transcript]);
 
   const handleAudioError = () => {
     console.error("[RecordingItem] audio error", {
@@ -83,6 +128,27 @@ export default function RecordingItem({
           {transcript.segments.map((s, i) => (
             <div key={i}>{s.text.trim()}</div>
           ))}
+        </div>
+      )}
+
+      {transcript && (
+        <div style={{ marginTop: 8 }}>
+          {pitchLoading && (
+            <Space>
+              <Spin size="small" />
+              <Typography.Text type="secondary">ピッチ解析中…</Typography.Text>
+            </Space>
+          )}
+
+          {!pitchLoading && pitchError && (
+            <Typography.Text type="secondary">
+              ピッチ解析に失敗しました: {pitchError}
+            </Typography.Text>
+          )}
+
+          {!pitchLoading && !pitchError && pitch && (
+            <PitchAlignmentChart analysis={pitch} />
+          )}
         </div>
       )}
 
