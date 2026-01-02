@@ -211,8 +211,8 @@ export function PitchAlignmentChart({ analysis, words, height = 320 }: Props) {
                   x2={padX + plotW}
                   y1={baselineY}
                   y2={baselineY}
-                  stroke={token.colorBorder}
-                  strokeDasharray="6 4"
+                  stroke={token.colorTextSecondary}
+                  strokeDasharray="4 3"
                 />
 
                 {/* pitch curve */}
