@@ -156,23 +156,38 @@ fn run_whisper_for_wav(
     let transcript = transcribe(wav_path, &model_path, whisper_language(lang))?;
     save_transcript_json(wav_path, &transcript)?;
 
-    // For Japanese recognition, also run pitch analysis and persist it next to the transcript.
-    // This enables Heiban/Odaka/Nakadaka/Atamadaka labels without requiring UI-triggered analysis.
-    if whisper_language(lang) == Some("ja") {
-        if let Ok(pitch) = crate::commands::pitch::analyze_pitch(
-            app.clone(),
-            wav_path.to_string(),
-            None,
-            None,
-            None,
-            Some(true),
-        ) {
+    // Run pitch analysis and persist it next to the transcript.
+    // Japanese-only: also write accent.json (Heiban/Odaka/Nakadaka/Atamadaka labels).
+    let is_ja = whisper_language(lang) == Some("ja");
+    if let Ok(mut pitch) = crate::commands::pitch::analyze_pitch(
+        app.clone(),
+        wav_path.to_string(),
+        None,
+        None,
+        None,
+        Some(true),
+    ) {
+        // For non-Japanese, avoid emitting Japanese pitch-accent category labels.
+        if !is_ja {
+            if let Some(words) = pitch.words.as_mut() {
+                for w in words {
+                    w.label = None;
+                }
+            }
+            if let Some(segs) = pitch.segments.as_mut() {
+                for s in segs {
+                    s.label = None;
+                }
+            }
+        }
+
             let pitch_path = Path::new(wav_path).with_extension("pitch.json");
             if let Ok(json) = serde_json::to_string_pretty(&pitch) {
                 let _ = fs::write(&pitch_path, json);
                 println!("saved pitch: {:?}", pitch_path);
             }
 
+        if is_ja {
             // Also write a compact, human-friendly accent JSON.
             // This mirrors the schema the UI/debug tools want: { words: [...] }.
             #[derive(serde::Serialize)]
@@ -729,7 +744,9 @@ pub fn transcribe(
     let mut prev_end_for_ja: Option<f32> = None;
 
     for s in state.as_iter() {
-        let text = s.to_string().trim().to_string();
+        let text = strip_whisper_special_tokens(&s.to_string())
+            .trim()
+            .to_string();
 
         if text.is_empty()
             || text == "[BLANK_AUDIO]"
@@ -763,6 +780,11 @@ pub fn transcribe(
 
             // Skip whisper timestamp pseudo tokens if they show up.
             if token_text.starts_with("<|") && token_text.ends_with("|>") {
+                continue;
+            }
+
+            // Skip Whisper special tokens like "[_TT_100]"/"[_BEG_]" anywhere.
+            if is_nonling_text(&token_text) {
                 continue;
             }
 
@@ -847,6 +869,30 @@ pub fn transcribe(
         tokens: Some(tokens),
         words: Some(words),
     })
+}
+
+fn strip_whisper_special_tokens(s: &str) -> String {
+    // Remove inline Whisper special tokens like "[_TT_100]" or "[_BEG_]".
+    // These sometimes appear concatenated with real text (e.g. "[_TT_100]こんにちは").
+    let mut out = String::with_capacity(s.len());
+    let bytes = s.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        // Detect "[_".
+        if bytes[i] == b'[' && i + 1 < bytes.len() && bytes[i + 1] == b'_' {
+            // Skip until the next ']'. If none, stop stripping and keep the rest.
+            if let Some(rel_end) = bytes[i + 2..].iter().position(|&c| c == b']') {
+                i = i + 2 + rel_end + 1;
+                continue;
+            }
+        }
+
+        // Copy one UTF-8 char.
+        let ch = s[i..].chars().next().unwrap();
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    out
 }
 
 fn is_nonling_text(s: &str) -> bool {

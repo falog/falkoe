@@ -40,8 +40,14 @@ export function ModelTranscriptSection({
   progress,
 }: Props) {
   const langNorm = (lang ?? "").toLowerCase();
-  const enablePitchAccent =
+  const isJapanese =
     langNorm === "jpn" || langNorm === "ja" || langNorm.startsWith("ja-");
+
+  const stripWhisperSpecialTokens = (s: string) =>
+    s
+      .replace(/\[_[^\]]+\]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
   const [pitch, setPitch] = useState<PitchAnalysis | null>(null);
   const [accentWords, setAccentWords] = useState<WordPitch[] | null>(null);
   const [pitchLoading, setPitchLoading] = useState(false);
@@ -59,7 +65,6 @@ export function ModelTranscriptSection({
   useEffect(() => {
     // Only run after we have a transcript for the model audio.
     if (!modelText?.trim()) return;
-    if (!enablePitchAccent) return;
     if (pitchRequestedRef.current) return;
     pitchRequestedRef.current = true;
 
@@ -92,21 +97,23 @@ export function ModelTranscriptSection({
           const parsed = JSON.parse(cached) as PitchAnalysis;
           if (!cancelled) setPitch(parsed);
 
-          // Prefer accent overlay from model.accent.json if present.
-          try {
-            const accentPath = await join(
-              dir,
-              "falkoe",
-              "sentences",
-              sentenceHash,
-              "model",
-              "model.accent.json"
-            );
-            const accentCached = await readTextFile(accentPath);
-            const accentParsed = JSON.parse(accentCached) as AccentOut;
-            if (!cancelled) setAccentWords(accentParsed.words ?? null);
-          } catch {
-            // ignore; fall back to pitch.words/segments
+          if (isJapanese) {
+            // Prefer accent overlay from model.accent.json if present (Japanese only).
+            try {
+              const accentPath = await join(
+                dir,
+                "falkoe",
+                "sentences",
+                sentenceHash,
+                "model",
+                "model.accent.json"
+              );
+              const accentCached = await readTextFile(accentPath);
+              const accentParsed = JSON.parse(accentCached) as AccentOut;
+              if (!cancelled) setAccentWords(accentParsed.words ?? null);
+            } catch {
+              // ignore; fall back to pitch.words/segments
+            }
           }
           return;
         } catch {
@@ -120,21 +127,23 @@ export function ModelTranscriptSection({
 
         if (!cancelled) setPitch(res);
 
-        // If available, load accent overlay generated during transcription.
-        try {
-          const accentPath = await join(
-            dir,
-            "falkoe",
-            "sentences",
-            sentenceHash,
-            "model",
-            "model.accent.json"
-          );
-          const accentCached = await readTextFile(accentPath);
-          const accentParsed = JSON.parse(accentCached) as AccentOut;
-          if (!cancelled) setAccentWords(accentParsed.words ?? null);
-        } catch {
-          // ignore
+        if (isJapanese) {
+          // If available, load accent overlay generated during transcription (Japanese only).
+          try {
+            const accentPath = await join(
+              dir,
+              "falkoe",
+              "sentences",
+              sentenceHash,
+              "model",
+              "model.accent.json"
+            );
+            const accentCached = await readTextFile(accentPath);
+            const accentParsed = JSON.parse(accentCached) as AccentOut;
+            if (!cancelled) setAccentWords(accentParsed.words ?? null);
+          } catch {
+            // ignore
+          }
         }
       } catch (e) {
         if (!cancelled) setPitchError(String(e));
@@ -146,7 +155,7 @@ export function ModelTranscriptSection({
     return () => {
       cancelled = true;
     };
-  }, [enablePitchAccent, modelText, sentenceHash]);
+  }, [isJapanese, modelText, sentenceHash]);
 
   return (
     <>
@@ -161,7 +170,7 @@ export function ModelTranscriptSection({
         <strong>Model transcript:</strong>
         <br />
         {modelText ? (
-          modelText
+          stripWhisperSpecialTokens(modelText)
         ) : (
           <Typography.Text type="secondary">
             音声認識されていません
@@ -169,16 +178,7 @@ export function ModelTranscriptSection({
         )}
       </Typography.Paragraph>
 
-      {linkingResult?.joined && (
-        <LinkingStressArea
-          linkingResult={linkingResult}
-          linkingDisplayMode={linkingDisplayMode}
-          setLinkingDisplayMode={setLinkingDisplayMode}
-          ipaIndex={ipaIndex}
-        />
-      )}
-
-      {modelText && enablePitchAccent && (
+      {modelText && (
         <div style={{ marginTop: 8 }}>
           {pitchLoading && (
             <Space>
@@ -196,14 +196,27 @@ export function ModelTranscriptSection({
           )}
 
           {!pitchLoading && !pitchError && pitch && (
-            <>
+            <div style={{ marginBottom: 15 }}>
               <Typography.Text type="secondary">
                 Pitch extractor: {pitch.extractor ?? "(unknown)"}
               </Typography.Text>
-              <PitchAlignmentChart analysis={pitch} words={accentWords} />
-            </>
+              <PitchAlignmentChart
+                analysis={pitch}
+                words={isJapanese ? accentWords : undefined}
+                showLabels={isJapanese}
+              />
+            </div>
           )}
         </div>
+      )}
+
+      {linkingResult?.joined && (
+        <LinkingStressArea
+          linkingResult={linkingResult}
+          linkingDisplayMode={linkingDisplayMode}
+          setLinkingDisplayMode={setLinkingDisplayMode}
+          ipaIndex={ipaIndex}
+        />
       )}
 
       <Typography.Text type="secondary">Model status: {status}</Typography.Text>

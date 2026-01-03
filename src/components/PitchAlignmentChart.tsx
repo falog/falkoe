@@ -5,13 +5,19 @@ type Props = {
   analysis: PitchAnalysis;
   words?: Array<WordPitch | SegmentPitch> | null;
   height?: number;
+  showLabels?: boolean;
 };
 
 function clamp(v: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, v));
 }
 
-export function PitchAlignmentChart({ analysis, words, height = 320 }: Props) {
+export function PitchAlignmentChart({
+  analysis,
+  words,
+  height = 320,
+  showLabels = true,
+}: Props) {
   const { token } = theme.useToken();
 
   // Render wider than the container to keep dense word overlays readable.
@@ -190,7 +196,7 @@ export function PitchAlignmentChart({ analysis, words, height = 320 }: Props) {
                         fontSize={12}
                       >
                         {w.text}
-                        {w.label ? (
+                        {showLabels && w.label ? (
                           <tspan
                             x={left + width / 2}
                             dy={14}
