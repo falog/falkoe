@@ -41,8 +41,7 @@ This app runs on multiple platforms: **Windows (msi), Linux (deb / rpm), and mac
 - **Anki 用のデッキを自動生成**
 - **発音やフレーズ練習を記録・振り返り**
 
-ができます。  
-（※ 練習風景を動画として残す機能は、今後の構想です）
+ができます。
 
 ---
 
@@ -81,8 +80,6 @@ With this app, you can use _your own voice_ to:
 
 - **Automatically generate Anki decks**
 - **Record and review pronunciation and phrase practice**
-
-(Recording practice as video is a planned feature for the future.)
 
 ---
 
@@ -132,8 +129,8 @@ Your voice might help someone else's learning journey.
 - ✅ **音声認識 (Whisper)** — ローカルで音声をテキスト化
 - ✅ **Anki デッキ生成** — 録音からAnki用のデッキを自動作成
 - ✅ **クロスプラットフォーム** — Windows / Linux / macOS 対応
+- ✅ **練習動画の記録** — 発音練習を動画で残す
 - 🚧 **音声共有 (P2P)** — ユーザー間で音声を共有（開発中）
-- 🚧 **練習動画の記録** — 発音練習を動画で残す（予定）
 
 ---
 
@@ -141,8 +138,8 @@ Your voice might help someone else's learning journey.
 - ✅ **Speech recognition (Whisper)** — Local, offline speech-to-text
 - ✅ **Anki deck generation** — Auto-generate Anki decks from recordings
 - ✅ **Cross-platform** — Windows / Linux / macOS support
+- ✅ **Practice video recording** — Save pronunciation practice as video
 - 🚧 **Voice sharing (P2P)** — Share voices between users (in development)
-- 🚧 **Practice video recording** — Save pronunciation practice as video (planned)
 
 ---
 
