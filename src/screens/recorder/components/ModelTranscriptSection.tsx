@@ -231,8 +231,7 @@ export function ModelTranscriptSection({
       )}
 
       <Typography.Paragraph>
-        <strong>Model transcript:</strong>
-        <br />
+        <strong style={{ whiteSpace: "nowrap" }}>Model transcript:</strong>{" "}
         {modelText ? (
           stripWhisperSpecialTokens(modelText)
         ) : (

@@ -54,7 +54,10 @@ export function useSentenceContext(
   const [sentenceHash, setSentenceHash] = useState<string>("");
 
   useEffect(() => {
-    if (source.kind === "uploaded" && source.sentenceHash) {
+    if (
+      (source.kind === "uploaded" || source.kind === "recorded") &&
+      source.sentenceHash
+    ) {
       setSentenceHash(source.sentenceHash);
       return;
     }

@@ -35,6 +35,19 @@ pub struct FoundAudio {
     pub uploaded_wav_path: Option<String>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SentenceHistoryItem {
+    pub audio_id: String,
+    pub lang: String,
+    pub text: Option<String>,
+    pub recordings_count: u32,
+    pub last_recording_timestamp: Option<String>,
+    pub last_recording_wav_path: Option<String>,
+    pub model_wav_path: Option<String>,
+    pub uploaded_path: Option<String>,
+}
+
 fn sentences_root(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app
         .path()
@@ -66,6 +79,110 @@ fn pick_uploaded_path(uploaded_dir: &Path) -> Option<PathBuf> {
     }
 
     None
+}
+
+fn list_recorded_wavs(recorded_dir: &Path) -> (u32, Option<String>, Option<String>) {
+    if !recorded_dir.exists() {
+        return (0, None, None);
+    }
+
+    let mut count: u32 = 0;
+    let mut last_ts: Option<String> = None;
+
+    let Ok(entries) = fs::read_dir(recorded_dir) else {
+        return (0, None, None);
+    };
+
+    for ent in entries.flatten() {
+        let p = ent.path();
+        if p.extension().and_then(|e| e.to_str()) != Some("wav") {
+            continue;
+        }
+        count += 1;
+        if let Some(stem) = p.file_stem().and_then(|s| s.to_str()) {
+            // recording file names are timestamps like 20250104_123456
+            if last_ts.as_deref().map(|v| v < stem).unwrap_or(true) {
+                last_ts = Some(stem.to_string());
+            }
+        }
+    }
+
+    let last_wav_path = last_ts.as_deref().map(|stem| {
+        recorded_dir
+            .join(format!("{}.wav", stem))
+            .to_string_lossy()
+            .to_string()
+    });
+
+    (count, last_ts, last_wav_path)
+}
+
+#[tauri::command]
+pub fn list_sentence_history(app: AppHandle) -> Result<Vec<SentenceHistoryItem>, String> {
+    let root = sentences_root(&app)?;
+    if !root.exists() {
+        return Ok(vec![]);
+    }
+
+    let mut out: Vec<SentenceHistoryItem> = Vec::new();
+
+    for entry in fs::read_dir(&root).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let base = entry.path();
+        if !base.is_dir() {
+            continue;
+        }
+
+        let audio_id = match base.file_name().and_then(|s| s.to_str()) {
+            Some(v) => v.to_string(),
+            None => continue,
+        };
+
+        let manifest_path = base.join("manifest.json");
+        let mut lang: Option<String> = None;
+        let mut text: Option<String> = None;
+        if manifest_path.exists() {
+            if let Ok(manifest_text) = fs::read_to_string(&manifest_path) {
+                if let Ok(manifest) = serde_json::from_str::<SentenceManifest>(&manifest_text) {
+                    lang = Some(manifest.lang);
+                    text = manifest.text;
+                }
+            }
+        }
+
+        let recorded_dir = base.join("recorded");
+        let (recordings_count, last_recording_timestamp, last_recording_wav_path) =
+            list_recorded_wavs(&recorded_dir);
+
+        let model_wav = base.join("model").join("model.wav");
+        let model_wav_path = model_wav
+            .exists()
+            .then(|| model_wav.to_string_lossy().to_string());
+
+        let uploaded_dir = base.join("uploaded");
+        let uploaded_path = pick_uploaded_path(&uploaded_dir)
+            .map(|p| p.to_string_lossy().to_string());
+
+        // If we don't know the language yet (manifest missing), still list the item.
+        // Default to "eng" so the UI can open it for playback; the user can later
+        // recreate/overwrite manifest.json by opening the sentence normally.
+        let lang = lang.unwrap_or_else(|| "eng".to_string());
+
+        out.push(SentenceHistoryItem {
+            audio_id,
+            lang,
+            text,
+            recordings_count,
+            last_recording_timestamp,
+            last_recording_wav_path,
+            model_wav_path,
+            uploaded_path,
+        });
+    }
+
+    // Sort by newest recording first.
+    out.sort_by(|a, b| b.last_recording_timestamp.cmp(&a.last_recording_timestamp));
+    Ok(out)
 }
 
 #[tauri::command]

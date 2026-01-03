@@ -1,6 +1,8 @@
-import { useEffect, useState, useRef } from "react";
-import { message, Space, theme } from "antd";
+import { useEffect, useRef, useState } from "react";
+import { Button, message, Space, theme, Row, Col, Modal } from "antd";
 import { invoke } from "@tauri-apps/api/core";
+import { documentDir, join, videoDir } from "@tauri-apps/api/path";
+import { exists, mkdir, readTextFile, writeFile } from "@tauri-apps/plugin-fs";
 import { useAudioUrlCache } from "./recorder/useAudioUrlCache";
 import { useHeaderAudioUrl } from "./recorder/useHeaderAudioUrl";
 import { useModelStatus } from "./recorder/useModelStatus";
@@ -8,6 +10,10 @@ import { loadTranscript } from "./recorder/transcriptUtils";
 import type { DisplayMode } from "../types/linking";
 import { unlockAudioFromUserGesture } from "../utils/ipaPlayer";
 import TopNav from "../components/TopNav";
+import {
+  buildPitchAlignmentChartSvg,
+  type PitchChartSvgResult,
+} from "../components/PitchAlignmentChart";
 import type { Recording } from "../types/recording";
 import type { SpeechSource } from "../types/speech";
 import type { ModelStatus } from "../types/model";
@@ -35,6 +41,7 @@ import { useSafeNavigation } from "./recorder/useSafeNavigation";
 type RecorderScreenProps = {
   source: SpeechSource;
   onBack: () => void;
+  onOpenHistory: () => void;
   onOpenIpaList: () => void;
   onOpenDevelopersMistakes: () => void;
   onOpenCommonMistakes: () => void;
@@ -43,11 +50,12 @@ type RecorderScreenProps = {
 const RecorderScreen = ({
   source,
   onBack,
+  onOpenHistory,
   onOpenIpaList,
   onOpenDevelopersMistakes,
   onOpenCommonMistakes,
 }: RecorderScreenProps) => {
-  theme.useToken();
+  const { token } = theme.useToken();
   const preferAssetProtocol = usePreferAssetProtocol();
 
   const {
@@ -57,6 +65,22 @@ const RecorderScreen = ({
     uploadedAudioPath,
     hasUploadedFile,
   } = useSentenceContext(source);
+
+  // Persist/ensure manifest.json so the History screen can list this sentence reliably.
+  useEffect(() => {
+    const text = sentence.text?.trim() ?? "";
+    const lang = sentence.lang?.trim() ?? "";
+    if (!sentenceHash || !text || !lang) return;
+
+    invoke("upsert_sentence_manifest_text", {
+      audioId: sentenceHash,
+      lang,
+      text,
+      overwrite: false,
+    }).catch(() => {
+      // Non-fatal: history listing will just be less informative.
+    });
+  }, [sentenceHash, sentence.text, sentence.lang]);
 
   const {
     recordings,
@@ -241,6 +265,290 @@ const RecorderScreen = ({
     setModelText: (v) => setModelText(v),
   });
 
+  const [isExportingVideo, setIsExportingVideo] = useState(false);
+
+  const makeSafeVideoBaseName = (text: string) => {
+    const raw = (text ?? "").trim();
+    const replaced = raw
+      .replace(/[\\/\?%\*:|"<>]/g, "_")
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/[.\s]+$/g, "");
+    const base = replaced || "falkoe";
+    // Keep it reasonably short for cross-platform compatibility.
+    return base.length > 80 ? base.slice(0, 80).trim() : base;
+  };
+
+  const isJapanese = (lang?: string | null) => {
+    const l = (lang ?? "").toLowerCase();
+    return l === "jpn" || l === "ja" || l.startsWith("ja-");
+  };
+
+  const pickFirstExisting = async (paths: string[]) => {
+    for (const p of paths) {
+      try {
+        if (await exists(p)) return p;
+      } catch {
+        // ignore
+      }
+    }
+    return null;
+  };
+
+  const confirmExportWithMissingTranscripts = (
+    missingCount: number
+  ): Promise<boolean> => {
+    return new Promise((resolve) => {
+      Modal.confirm({
+        title: "音声認識されていない録音があります",
+        content: `音声認識されていない録音が ${missingCount} 件あります。未認識の録音は動画から除外されます。それでも実行しますか？`,
+        okText: "実行する",
+        cancelText: "キャンセル",
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+  };
+
+  const renderSvgToPngFile = async (
+    svgResult: PitchChartSvgResult,
+    outPath: string
+  ) => {
+    const blob = new Blob([svgResult.svg], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(blob);
+    try {
+      const img = new Image();
+      const loaded = new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("failed to load svg"));
+      });
+      img.src = url;
+      await loaded;
+
+      const canvas = document.createElement("canvas");
+      canvas.width = svgResult.renderWidthPx;
+      canvas.height = svgResult.renderHeightPx;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("no canvas context");
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      const pngBlob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((b) => {
+          if (!b) reject(new Error("failed to encode png"));
+          else resolve(b);
+        }, "image/png");
+      });
+
+      const bytes = new Uint8Array(await pngBlob.arrayBuffer());
+      await writeFile(outPath, bytes);
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  };
+
+  const handleExportVideo = async () => {
+    if (isExportingVideo) return;
+    setIsExportingVideo(true);
+    try {
+      const baseDir = await join(
+        sentenceHash,
+        "tmp",
+        "video",
+        String(Date.now())
+      );
+
+      // Put temp artifacts under $DOCUMENTS/falkoe/tmp/video/... to keep Videos clean.
+      const tmpBase = await join(await documentDir(), "falkoe", baseDir);
+      if (!(await exists(tmpBase))) {
+        await mkdir(tmpBase, { recursive: true });
+      }
+
+      const segments: Array<{
+        label: string;
+        wavPath: string;
+        transcriptJsonPath: string | null;
+        pitchJsonPath: string;
+        chartPngPath: string;
+        chartWidthPx: number;
+        chartHeightPx: number;
+        viewBoxW: number;
+        viewBoxH: number;
+        padX: number;
+        padY: number;
+        plotW: number;
+        plotH: number;
+      }> = [];
+
+      const sentenceDir = await join(
+        await documentDir(),
+        "falkoe",
+        "sentences",
+        sentenceHash
+      );
+
+      const refSubdir = sourceKind === "uploaded" ? "uploaded" : "model";
+      const refWav = await join(
+        sentenceDir,
+        refSubdir,
+        sourceKind === "uploaded" ? "uploaded.wav" : "model.wav"
+      );
+      const refTranscript = await join(
+        sentenceDir,
+        refSubdir,
+        sourceKind === "uploaded" ? "uploaded.json" : "model.json"
+      );
+      const refTranscriptAlt = await join(
+        sentenceDir,
+        refSubdir,
+        "transcript.json"
+      );
+      const refPitch = await join(
+        sentenceDir,
+        refSubdir,
+        sourceKind === "uploaded" ? "uploaded.pitch.json" : "model.pitch.json"
+      );
+
+      // Reference segment (model/uploaded)
+      if (!(await exists(refWav))) {
+        throw new Error(
+          "参照音声(wav)が見つかりません。先に模範/アップロード音声の認識を実行してください。"
+        );
+      }
+
+      const refTranscriptPicked = await pickFirstExisting([
+        refTranscript,
+        refTranscriptAlt,
+      ]);
+
+      let refPitchAnalysis: any;
+      try {
+        refPitchAnalysis = JSON.parse(await readTextFile(refPitch));
+      } catch {
+        // Generate pitch on demand so the reference segment is always included.
+        refPitchAnalysis = await invoke("analyze_pitch", {
+          wavPath: refWav,
+          includeSegments: true,
+        });
+        await writeFile(
+          refPitch,
+          new TextEncoder().encode(JSON.stringify(refPitchAnalysis, null, 2))
+        );
+      }
+
+      const refSvgRes = buildPitchAlignmentChartSvg({
+        analysis: refPitchAnalysis,
+        height: 320,
+        showLabels: isJapanese(sentence.lang) && sourceKind !== "uploaded",
+        token,
+      });
+      const refOutPng = await join(tmpBase, "ref.png");
+      await renderSvgToPngFile(refSvgRes, refOutPng);
+      segments.push({
+        label: sourceKind === "uploaded" ? "Upload" : "Model",
+        wavPath: refWav,
+        transcriptJsonPath: refTranscriptPicked,
+        pitchJsonPath: refPitch,
+        chartPngPath: refOutPng,
+        chartWidthPx: refSvgRes.renderWidthPx,
+        chartHeightPx: refSvgRes.renderHeightPx,
+        viewBoxW: refSvgRes.viewBoxW,
+        viewBoxH: refSvgRes.viewBoxH,
+        padX: refSvgRes.padX,
+        padY: refSvgRes.padY,
+        plotW: refSvgRes.plotW,
+        plotH: refSvgRes.plotH,
+      });
+
+      // Takes
+      const recognizedRecs = recordings.filter((r) => {
+        const t = transcripts[r.path];
+        return t && t.segments && t.segments.length > 0;
+      });
+
+      const missingTranscriptCount = Math.max(
+        0,
+        recordings.length - recognizedRecs.length
+      );
+
+      if (missingTranscriptCount > 0) {
+        const ok = await confirmExportWithMissingTranscripts(
+          missingTranscriptCount
+        );
+        if (!ok) return;
+      }
+
+      // recordings are sorted newest-first; export should be oldest-first
+      // so Take 1 corresponds to the first recording.
+      const doneRecs = recognizedRecs.slice().reverse();
+
+      for (let i = 0; i < doneRecs.length; i++) {
+        const rec = doneRecs[i];
+        const pitchPath = rec.path.replace(/\.wav$/i, ".pitch.json");
+        let pitchAnalysis: any;
+        try {
+          pitchAnalysis = JSON.parse(await readTextFile(pitchPath));
+        } catch {
+          pitchAnalysis = await invoke("analyze_pitch", {
+            wavPath: rec.path,
+            includeSegments: true,
+          });
+          await writeFile(
+            pitchPath,
+            new TextEncoder().encode(JSON.stringify(pitchAnalysis, null, 2))
+          );
+        }
+
+        const svgRes = buildPitchAlignmentChartSvg({
+          analysis: pitchAnalysis,
+          height: 320,
+          showLabels: isJapanese(sentence.lang),
+          token,
+        });
+        const outPng = await join(tmpBase, `take_${i + 1}.png`);
+        await renderSvgToPngFile(svgRes, outPng);
+
+        segments.push({
+          label: `Take ${i + 1}`,
+          wavPath: rec.path,
+          transcriptJsonPath: rec.path.replace(/\.wav$/i, ".json"),
+          pitchJsonPath: pitchPath,
+          chartPngPath: outPng,
+          chartWidthPx: svgRes.renderWidthPx,
+          chartHeightPx: svgRes.renderHeightPx,
+          viewBoxW: svgRes.viewBoxW,
+          viewBoxH: svgRes.viewBoxH,
+          padX: svgRes.padX,
+          padY: svgRes.padY,
+          plotW: svgRes.plotW,
+          plotH: svgRes.plotH,
+        });
+      }
+
+      if (segments.length === 0) {
+        message.warning(
+          "動画に入れるデータがありません（認識済みの録音が必要です）"
+        );
+        return;
+      }
+
+      const outDir = await videoDir();
+      const outBase = `Falkoe_${makeSafeVideoBaseName(sentence.text)}`;
+      const outPath = await invoke<string>("export_practice_video", {
+        outputDir: outDir,
+        outputBase: outBase,
+        modelText: sentence.text,
+        segments,
+      });
+
+      message.success("ビデオに保存しました: " + outPath);
+    } catch (e) {
+      console.error(e);
+      message.error("動画の作成に失敗しました: " + String(e));
+    } finally {
+      setIsExportingVideo(false);
+    }
+  };
+
   return (
     <div
       onPointerDown={() => {
@@ -253,6 +561,7 @@ const RecorderScreen = ({
         <TopNav
           current="record"
           onBack={onBack ? () => navigateSafely(onBack) : undefined}
+          onOpenHistory={() => navigateSafely(onOpenHistory)}
           onOpenIpaList={() => navigateSafely(onOpenIpaList)}
           onOpenDevelopersMistakes={() =>
             navigateSafely(onOpenDevelopersMistakes)
@@ -271,20 +580,33 @@ const RecorderScreen = ({
           modelRecognizeDisabled={modelRecognizeDisabled}
           sourceKind={sourceKind}
         />
+        <Row align="top" gutter={12}>
+          <Col flex="auto">
+            <ModelTranscriptSection
+              isTranscribing={showModelAreaTranscribing}
+              modelText={modelText}
+              sentenceHash={sentenceHash}
+              lang={sentence.lang}
+              modelAudioUrl={headerAudioUrl}
+              linkingResult={linkingResult}
+              linkingDisplayMode={linkingDisplayMode}
+              setLinkingDisplayMode={setLinkingDisplayMode}
+              ipaIndex={ipaIndex}
+              status={status}
+              progress={progress}
+            />
+          </Col>
 
-        <ModelTranscriptSection
-          isTranscribing={showModelAreaTranscribing}
-          modelText={modelText}
-          sentenceHash={sentenceHash}
-          lang={sentence.lang}
-          modelAudioUrl={headerAudioUrl}
-          linkingResult={linkingResult}
-          linkingDisplayMode={linkingDisplayMode}
-          setLinkingDisplayMode={setLinkingDisplayMode}
-          ipaIndex={ipaIndex}
-          status={status}
-          progress={progress}
-        />
+          <Col>
+            <Button
+              onClick={handleExportVideo}
+              loading={isExportingVideo}
+              disabled={isExportingVideo}
+            >
+              動画を作成（mp4）
+            </Button>
+          </Col>
+        </Row>
 
         <RecordingControls
           isRecording={isRecording}
@@ -294,6 +616,7 @@ const RecorderScreen = ({
           mimicDisabled={!headerAudioUrl || isHeaderAudioLoading}
           onStartRecording={() => shadowingRecorder.start()}
           onStopRecording={shadowingRecorder.stop}
+          autoStopRemainingMs={shadowingRecorder.autoStopRemainingMs}
         />
 
         <RecordingsSection

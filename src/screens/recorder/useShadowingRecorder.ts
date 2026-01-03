@@ -22,6 +22,7 @@ type UseShadowingRecorderArgs = {
 type UseShadowingRecorderResult = {
   isRecording: boolean;
   isMimicLoading: boolean;
+  autoStopRemainingMs: number | null;
   start: (options?: ShadowingStartOptions) => Promise<void>;
   stop: () => Promise<void>;
 };
@@ -41,6 +42,10 @@ export function useShadowingRecorder({
 
   const autoPracticeInFlightRef = useRef(false);
   const [isMimicLoading, setIsMimicLoading] = useState(false);
+  const [autoStopRemainingMs, setAutoStopRemainingMs] = useState<number | null>(
+    null
+  );
+  const lastSilenceEndTimeRef = useRef<number>(0);
   const autoStopArmedRef = useRef(false);
   const silenceWatcherRef = useRef<MicRecorderSilenceWatcher | null>(null);
   const silenceUnavailableNotifiedRef = useRef(false);
@@ -55,13 +60,23 @@ export function useShadowingRecorder({
 
     return startMicRecorderSilenceWatcher({
       silenceMs: 3000,
-      rmsThreshold: 0.006,
+      rmsThreshold: 0.001,
       pollIntervalMs: 50,
       onSilence: () => {
         if (!autoStopArmedRef.current) return false;
         if (!isRecordingRef.current) return false;
         void stopRecording();
         return true;
+      },
+      onProgress: (remainingMs) => {
+        // 音声終了時刻より後の更新のみ反映（古い更新は無視）
+        if (Date.now() > lastSilenceEndTimeRef.current + 100) {
+          setAutoStopRemainingMs(remainingMs);
+        }
+      },
+      onSilenceEnd: () => {
+        lastSilenceEndTimeRef.current = Date.now();
+        setAutoStopRemainingMs(null);
       },
     })
       .then((watcher) => {
@@ -91,6 +106,7 @@ export function useShadowingRecorder({
   useEffect(() => {
     if (isRecording) return;
     autoStopArmedRef.current = false;
+    setAutoStopRemainingMs(null);
     silenceWatcherRef.current?.stop();
     silenceWatcherRef.current = null;
   }, [isRecording]);
@@ -101,6 +117,7 @@ export function useShadowingRecorder({
     } finally {
       isRecordingRef.current = false;
       autoStopArmedRef.current = false;
+      setAutoStopRemainingMs(null);
       silenceWatcherRef.current?.stop();
       silenceWatcherRef.current = null;
     }
@@ -199,6 +216,7 @@ export function useShadowingRecorder({
 
   return {
     isRecording,
+    autoStopRemainingMs,
     isMimicLoading,
     start,
     stop,

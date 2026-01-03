@@ -13,6 +13,7 @@ export type SpeechSource =
   | {
       kind: "recorded";
       filePath: string;
+      sentenceHash?: string;
       text?: string;
       lang: string;
     }

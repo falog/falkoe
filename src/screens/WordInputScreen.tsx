@@ -45,6 +45,7 @@ type WordInputScreenProps = {
   onWordcount: (wc: string) => void;
   onSelect: (s: Sentence) => void;
   onUseSpeech: (source: SpeechSource) => void;
+  onOpenHistory: () => void;
   onOpenIpaList: () => void;
   onOpenDevelopersMistakes: () => void;
   onOpenCommonMistakes: () => void;
@@ -181,6 +182,7 @@ const WordInputScreen = ({
   onSearchResult,
   onSelect,
   onUseSpeech,
+  onOpenHistory,
   onOpenIpaList,
   onOpenDevelopersMistakes,
   onOpenCommonMistakes,
@@ -271,6 +273,7 @@ const WordInputScreen = ({
     <Space orientation="vertical" style={{ width: "100%" }}>
       <TopNav
         current="word"
+        onOpenHistory={onOpenHistory}
         onOpenIpaList={onOpenIpaList}
         onOpenDevelopersMistakes={onOpenDevelopersMistakes}
         onOpenCommonMistakes={onOpenCommonMistakes}

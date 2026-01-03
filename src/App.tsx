@@ -1,6 +1,7 @@
 import { useState } from "react";
 import WordInputScreen from "./screens/WordInputScreen";
 import RecorderScreen from "./screens/RecorderScreen";
+import HistoryScreen from "./screens/HistoryScreen";
 import IpaListScreen from "./screens/IpaListScreen.tsx";
 import DevelopersMistakesScreen from "./screens/DevelopersMistakesScreen.tsx";
 import CommonMistakesScreen from "./screens/CommonMistakesScreen.tsx";
@@ -10,7 +11,7 @@ import type { MistakeFocus } from "./data/commonMistakes";
 
 const App = () => {
   const [screen, setScreen] = useState<
-    "word" | "record" | "ipa" | "mistakes" | "common"
+    "word" | "record" | "history" | "ipa" | "mistakes" | "common"
   >("word");
   const [mistakeFocus, setMistakeFocus] = useState<MistakeFocus | null>(null);
   const [lang, setLang] = useState("eng");
@@ -32,6 +33,7 @@ const App = () => {
           onSearchResult={setSentences}
           onWordcount={setWordcount}
           onOpenIpaList={() => setScreen("ipa")}
+          onOpenHistory={() => setScreen("history")}
           onOpenDevelopersMistakes={() => {
             setMistakeFocus(null);
             setScreen("mistakes");
@@ -56,11 +58,31 @@ const App = () => {
           source={source}
           onBack={() => setScreen("word")}
           onOpenIpaList={() => setScreen("ipa")}
+          onOpenHistory={() => setScreen("history")}
           onOpenDevelopersMistakes={() => {
             setMistakeFocus(null);
             setScreen("mistakes");
           }}
           onOpenCommonMistakes={() => setScreen("common")}
+        />
+      )}
+
+      {screen === "history" && (
+        <HistoryScreen
+          onBack={() => setScreen("word")}
+          onOpenIpaList={() => setScreen("ipa")}
+          onOpenHistory={() => {
+            // already here
+          }}
+          onOpenDevelopersMistakes={() => {
+            setMistakeFocus(null);
+            setScreen("mistakes");
+          }}
+          onOpenCommonMistakes={() => setScreen("common")}
+          onOpenFromHistory={(speechSource) => {
+            setSource(speechSource);
+            setScreen("record");
+          }}
         />
       )}
 

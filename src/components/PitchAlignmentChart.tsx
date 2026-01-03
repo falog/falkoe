@@ -1,6 +1,35 @@
 import { Collapse, Typography, theme } from "antd";
 import type { PitchAnalysis, SegmentPitch, WordPitch } from "../types/pitch";
 
+export type PitchChartSvgOptions = {
+  analysis: PitchAnalysis;
+  words?: Array<WordPitch | SegmentPitch> | null;
+  height?: number;
+  showLabels?: boolean;
+  token: {
+    colorBorderSecondary: string;
+    borderRadius: number;
+    colorBgContainer: string;
+    colorTextSecondary: string;
+    colorText: string;
+    colorFillTertiary: string;
+    colorBorder: string;
+    colorPrimary: string;
+  };
+};
+
+export type PitchChartSvgResult = {
+  svg: string;
+  viewBoxW: number;
+  viewBoxH: number;
+  padX: number;
+  padY: number;
+  plotW: number;
+  plotH: number;
+  renderWidthPx: number;
+  renderHeightPx: number;
+};
+
 type Props = {
   analysis: PitchAnalysis;
   words?: Array<WordPitch | SegmentPitch> | null;
@@ -11,6 +40,163 @@ type Props = {
 
 function clamp(v: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, v));
+}
+
+function escapeXml(s: string) {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+export function buildPitchAlignmentChartSvg(
+  opts: PitchChartSvgOptions
+): PitchChartSvgResult {
+  const { analysis } = opts;
+  const words = opts.words;
+  const height = opts.height ?? 320;
+  const showLabels = opts.showLabels ?? true;
+  const token = opts.token;
+
+  const renderWidthPx = 770;
+
+  const f0 = analysis.f0_rel;
+  const voiced = f0.filter((v): v is number => typeof v === "number");
+  const minV = voiced.length ? Math.min(...voiced) : 0;
+  const maxV = voiced.length ? Math.max(...voiced) : 1;
+  const range = Math.max(1e-6, maxV - minV);
+
+  const W = 900;
+  const H = height;
+  const padX = 36;
+  const padY = 18;
+  const plotW = W - padX * 2;
+  const plotH = H - padY * 2;
+  const n = f0.length;
+
+  const yForValue = (v: number) => padY + (1 - (v - minV) / range) * plotH;
+  const baselineY = yForValue(clamp(0, minV, maxV));
+
+  const overlayWords = (
+    words ??
+    analysis.words ??
+    analysis.segments ??
+    []
+  ).filter((w) => typeof w?.start === "number" && typeof w?.end === "number");
+
+  const fullEndTime = (n <= 1 ? 0 : n - 1) * analysis.time_step;
+  let windowStart = 0;
+  let windowEnd = fullEndTime;
+
+  if (overlayWords.length > 0) {
+    windowStart = Math.min(...overlayWords.map((w) => w.start));
+    windowEnd = Math.max(...overlayWords.map((w) => w.end));
+  } else {
+    let firstVoiced = -1;
+    let lastVoiced = -1;
+    for (let i = 0; i < n; i++) {
+      if (typeof f0[i] === "number") {
+        firstVoiced = i;
+        break;
+      }
+    }
+    for (let i = n - 1; i >= 0; i--) {
+      if (typeof f0[i] === "number") {
+        lastVoiced = i;
+        break;
+      }
+    }
+    if (firstVoiced >= 0 && lastVoiced >= firstVoiced) {
+      windowStart = firstVoiced * analysis.time_step;
+      windowEnd = lastVoiced * analysis.time_step;
+    }
+  }
+
+  const padTime = Math.max(analysis.time_step * 3, 0.05);
+  windowStart = clamp(windowStart - padTime, 0, fullEndTime);
+  windowEnd = clamp(windowEnd + padTime, 0, fullEndTime);
+  if (!(windowEnd > windowStart)) {
+    windowStart = 0;
+    windowEnd = fullEndTime;
+  }
+  const windowDur = Math.max(analysis.time_step, windowEnd - windowStart);
+
+  const xForTime = (t: number) => {
+    const tt = clamp(t, windowStart, windowEnd);
+    return padX + ((tt - windowStart) / windowDur) * plotW;
+  };
+
+  const parts: string[] = [];
+  let drawing = false;
+  for (let i = 0; i < n; i++) {
+    const t = i * analysis.time_step;
+    if (t < windowStart || t > windowEnd) {
+      drawing = false;
+      continue;
+    }
+    const v = f0[i];
+    if (typeof v !== "number") {
+      drawing = false;
+      continue;
+    }
+    const x = xForTime(t);
+    const y = yForValue(v);
+    if (!drawing) {
+      parts.push(`M ${x.toFixed(2)} ${y.toFixed(2)}`);
+      drawing = true;
+    } else {
+      parts.push(`L ${x.toFixed(2)} ${y.toFixed(2)}`);
+    }
+  }
+  const pathD = parts.join(" ");
+
+  const wordSvg = overlayWords
+    .map((w, idx) => {
+      const x0 = xForTime(w.start);
+      const x1 = xForTime(w.end);
+      const left = Math.min(x0, x1);
+      const width = Math.max(1, Math.abs(x1 - x0));
+      const text = escapeXml(String(w.text ?? ""));
+      const label = showLabels && w.label ? escapeXml(String(w.label)) : "";
+      return `
+<g key="w-${idx}">
+  <rect x="${left}" y="${padY}" width="${width}" height="${plotH}" fill="${token.colorFillTertiary}" opacity="0.8" />
+  <text x="${left + width / 2}" y="${padY + 14}" text-anchor="middle" fill="${token.colorText}" font-size="12">${text}${
+    label
+      ? `<tspan x="${left + width / 2}" dy="14" fill="${token.colorTextSecondary}" font-size="11">[${label}]</tspan>`
+      : ""
+  }</text>
+</g>`;
+    })
+    .join("\n");
+
+  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${renderWidthPx}" height="${H}">
+  <rect x="0" y="0" width="${W}" height="${H}" fill="${token.colorBgContainer}" />
+  <rect x="0.5" y="0.5" width="${W - 1}" height="${H - 1}" fill="none" stroke="${token.colorBorderSecondary}" />
+
+  <text x="${padX + plotW / 2}" y="${H - 4}" text-anchor="middle" fill="${token.colorTextSecondary}" font-size="18">Time (s)</text>
+  <text x="14" y="${padY + plotH / 2}" transform="rotate(-90 14 ${padY + plotH / 2})" text-anchor="middle" fill="${token.colorTextSecondary}" font-size="18">Pitch (f0 rel.)</text>
+
+  ${wordSvg}
+
+  <line x1="${padX}" x2="${padX + plotW}" y1="${baselineY}" y2="${baselineY}" stroke="${token.colorTextSecondary}" stroke-dasharray="4 3" />
+  <path d="${pathD}" fill="none" stroke="${token.colorPrimary}" stroke-width="2" />
+</svg>`;
+
+  return {
+    svg,
+    viewBoxW: W,
+    viewBoxH: H,
+    padX,
+    padY,
+    plotW,
+    plotH,
+    renderWidthPx,
+    renderHeightPx: H,
+  };
 }
 
 export function PitchAlignmentChart({

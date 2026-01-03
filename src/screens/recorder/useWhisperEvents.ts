@@ -138,11 +138,17 @@ export function useWhisperEvents({
           .join(" ")
           .trim();
 
+        // 履歴から開いた時や既に例文がある場合は、音声認識結果で上書きしない
         if (
           sourceKindRef.current === "uploaded" &&
           (!sentenceTextRef.current || sentenceTextRef.current.trim() === "")
         ) {
-          setDisplayText((prev) => prev || joined);
+          // sentenceTextが存在する場合は上書きしない（元の例文を尊重）
+          setDisplayText((prev) => {
+            // 既にdisplayTextがある場合は上書きしない
+            if (prev && prev.trim()) return prev;
+            return joined;
+          });
           try {
             sessionStorage.setItem("falkoe.recognizedText", joined);
           } catch {}

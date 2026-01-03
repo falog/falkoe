@@ -3,7 +3,7 @@ use crate::commands::linking::render_linking;
 use crate::commands::recordings::{
     get_uploaded_audio_info, list_recordings, move_recorded_audio, save_uploaded_audio,
 };
-use crate::commands::sentences::{find_audio_by_sentence, upsert_sentence_manifest_text};
+use crate::commands::sentences::{find_audio_by_sentence, list_sentence_history, upsert_sentence_manifest_text};
 use crate::commands::status::get_model_status;
 use crate::commands::whisper::run_whisper;
 use crate::commands::whisper::{run_whisper_model, run_whisper_uploaded};
@@ -42,6 +42,7 @@ pub fn run() {
             run_whisper_model,
             run_whisper_uploaded,
             crate::commands::pitch::analyze_pitch,
+            crate::commands::video::export_practice_video,
             list_recordings,
             get_model_status,
             move_recorded_audio,
@@ -51,6 +52,7 @@ pub fn run() {
             ensure_sentence_audio_cached,
             find_audio_by_sentence,
             upsert_sentence_manifest_text,
+            list_sentence_history,
             render_linking,
         ])
         .run(tauri::generate_context!())

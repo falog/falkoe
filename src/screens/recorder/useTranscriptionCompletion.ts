@@ -87,6 +87,8 @@ export function useTranscriptionCompletion({
     const hasDisplayText = Boolean(displayText?.trim());
     const recognizedText = (modelText ?? "").trim();
 
+    // 履歴から開いた時や既に例文がある場合は、音声認識結果で上書きしない
+    // sentenceTextがある場合は、それが元の例文なので尊重する
     if (!hasUserProvidedSentenceText && !hasDisplayText && recognizedText) {
       setDisplayText(recognizedText);
     }
