@@ -129,7 +129,7 @@ export default function DevelopersMistakesScreen({
         : (entry?.audio ?? null);
 
     if (!resourcePath) {
-      message.info(`音声がありません: ${tok}`);
+      message.info(`まだ音声がありません: ${tok}`);
       return;
     }
 
@@ -140,7 +140,8 @@ export default function DevelopersMistakesScreen({
       if (/user gesture|required/i.test(msg)) {
         message.info("最初に画面を1回クリックして音声を有効化してください");
       } else {
-        message.error(`再生に失敗: ${tok} (${msg})`);
+        //message.error(`再生に失敗: ${tok} (${msg})`);
+        message.info(`まだ音声がありません: ${tok}`);
       }
     }
   }
@@ -168,7 +169,8 @@ export default function DevelopersMistakesScreen({
           // try next candidate
           continue;
         }
-        message.error(`再生に失敗: ${tok} (${msg})`);
+        //message.error(`再生に失敗: ${tok} (${msg})`);
+        message.info(`音声がありません: ${tok}`);
         return;
       }
     }
@@ -202,12 +204,14 @@ export default function DevelopersMistakesScreen({
           // try next candidate
           continue;
         }
-        message.error(`再生に失敗: ${tok} (${msg})`);
+        //message.error(`再生に失敗: ${tok} (${msg})`);
+        message.info(`まだ音声がありません: ${tok}`);
         return;
       }
     }
 
-    message.info(`まだ音声がありません: ${tok} (${candidates.join(" / ")})`);
+    //message.info(`まだ音声がありません: ${tok} (${candidates.join(" / ")})`);
+    message.info("まだ音声がありません");
     void lastErr;
   }
 

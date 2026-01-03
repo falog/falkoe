@@ -65,12 +65,15 @@ export default function CommonMistakesScreen({
         ) {
           continue;
         }
-        message.error(`再生に失敗: ${tok} (${msg})`);
+        //message.error(`再生に失敗: ${tok} (${msg})`);
+        //message.info(`まだ音声がありません: ${tok} (${candidates.join(" / ")})`);
+        message.info(`まだ音声がありません: ${tok}`);
         return;
       }
     }
 
-    message.info(`まだ音声がありません: ${tok} (${candidates.join(" / ")})`);
+    //message.info(`まだ音声がありません: ${tok} (${candidates.join(" / ")})`);
+    message.info(`まだ音声がありません: ${tok}`);
     void lastErr;
   }
 
@@ -78,7 +81,7 @@ export default function CommonMistakesScreen({
     const entry = ipaIndex?.[tok];
     const resourcePath = entry?.audio ?? null;
     if (!resourcePath) {
-      message.info(`音声がありません: ${tok}`);
+      message.info(`まだ音声がありません: ${tok}`);
       return;
     }
 
