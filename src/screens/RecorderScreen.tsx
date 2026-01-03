@@ -310,6 +310,29 @@ const RecorderScreen = ({
     });
   };
 
+  const confirmCreateMissingReferenceAudio = (
+    kind: "model" | "uploaded"
+  ): Promise<boolean> => {
+    return new Promise((resolve) => {
+      const title =
+        kind === "model"
+          ? "model音声がありません"
+          : "アップロード音声がありません";
+      const content =
+        kind === "model"
+          ? "model音声がありませんので作成します。作成してから動画作成を続けますか？"
+          : "アップロード音声(wav)がありませんので作成します。作成してから動画作成を続けますか？";
+      Modal.confirm({
+        title,
+        content,
+        okText: "作成して続行",
+        cancelText: "キャンセル",
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+  };
+
   const renderSvgToPngFile = async (
     svgResult: PitchChartSvgResult,
     outPath: string
@@ -410,9 +433,39 @@ const RecorderScreen = ({
 
       // Reference segment (model/uploaded)
       if (!(await exists(refWav))) {
-        throw new Error(
-          "参照音声(wav)が見つかりません。先に模範/アップロード音声の認識を実行してください。"
-        );
+        if (sourceKind === "uploaded") {
+          const ok = await confirmCreateMissingReferenceAudio("uploaded");
+          if (!ok) return;
+          if (!uploadedAudioPath) {
+            message.error(
+              "アップロード音声の作成に必要なパスが見つかりません。"
+            );
+            return;
+          }
+          await invoke("run_whisper_uploaded", {
+            uploadedPath: uploadedAudioPath,
+            sentenceHash,
+            lang: sentence.lang,
+          });
+        } else {
+          const ok = await confirmCreateMissingReferenceAudio("model");
+          if (!ok) return;
+          if (!sentence.audioUrl) {
+            message.error("model音声のURLが見つかりません。");
+            return;
+          }
+          await invoke("run_whisper_model", {
+            url: sentence.audioUrl,
+            sentenceHash,
+            lang: sentence.lang,
+          });
+        }
+
+        if (!(await exists(refWav))) {
+          throw new Error(
+            "参照音声(wav)の作成に失敗しました。もう一度お試しください。"
+          );
+        }
       }
 
       const refTranscriptPicked = await pickFirstExisting([

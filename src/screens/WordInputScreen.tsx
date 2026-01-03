@@ -498,6 +498,7 @@ const WordInputScreen = ({
                           }
                         );
 
+                        // アップロード音声（手動入力）では、ユーザーが望むなら manifest.json の text を上書きできる
                         if (res.status === "conflict") {
                           const prev = (res.previousText ?? "").trim();
                           const ok = await confirmOverwriteManifestText(
