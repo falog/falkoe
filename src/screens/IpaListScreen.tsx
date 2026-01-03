@@ -10,6 +10,7 @@ import TopNav from "../components/TopNav";
 
 type Props = {
   onBack: () => void;
+  onOpenHistory: () => void;
   onOpenDevelopersMistakes: (focus?: "j" | "r" | "oo") => void;
   onOpenCommonMistakes: () => void;
 };
@@ -41,6 +42,7 @@ function titleForCategory(cat: "consonants" | "vowels" | "others"): string {
 
 export default function IpaListScreen({
   onBack,
+  onOpenHistory,
   onOpenDevelopersMistakes,
   onOpenCommonMistakes,
 }: Props) {
@@ -222,6 +224,7 @@ export default function IpaListScreen({
         <TopNav
           current="ipa"
           onBack={onBack}
+          onOpenHistory={onOpenHistory}
           onOpenIpaList={() => {
             // already here
           }}

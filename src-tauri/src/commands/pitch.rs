@@ -449,7 +449,7 @@ fn yin_f0(
     }
 
     // Silence gate (slightly relaxed to catch softer onsets)
-    if rms(frame) < 0.0015 {
+    if rms(frame) < 0.03 {
         return None;
     }
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { message } from "antd";
 import { guessAudioMimeFromPath, isHttpUrl } from "./audioUtils";
@@ -27,38 +27,109 @@ export function useHeaderAudioUrl(args: HeaderAudioArgs) {
     hasUploadedFile,
   } = args;
 
-  const [headerAudioUrl, setHeaderAudioUrl] = useState<string | null>(null);
-  const [isHeaderAudioLoading, setIsHeaderAudioLoading] = useState(false);
+  // Keyed state prevents a brief window where the previous sentence's audio URL
+  // is still visible (and clickable) after switching sentences.
+  const headerAudioKey = useMemo(() => {
+    return [
+      sourceKind,
+      sentenceAudioUrl,
+      sentenceHash,
+      uploadedAudioPath ?? "",
+      preferAssetProtocol ? "1" : "0",
+      hasUploadedFile ? "1" : "0",
+    ].join("|");
+  }, [
+    sourceKind,
+    sentenceAudioUrl,
+    sentenceHash,
+    uploadedAudioPath,
+    preferAssetProtocol,
+    hasUploadedFile,
+  ]);
+
+  type HeaderAudioOwner = "none" | "self" | "cache";
+  const [state, setState] = useState<{
+    key: string;
+    url: string | null;
+    loading: boolean;
+    owner: HeaderAudioOwner;
+  }>(() => ({ key: headerAudioKey, url: null, loading: false, owner: "none" }));
+
+  const headerAudioUrl = state.key === headerAudioKey ? state.url : null;
+  const isHeaderAudioLoading =
+    state.key === headerAudioKey ? state.loading : true;
 
   useEffect(() => {
     let cancelled = false;
 
+    // Immediately mark as loading for the new key.
+    setState((prev) => {
+      if (prev.key === headerAudioKey) {
+        return { ...prev, loading: true };
+      }
+      return { key: headerAudioKey, url: null, loading: true, owner: "none" };
+    });
+
     const init = async () => {
-      setIsHeaderAudioLoading(true);
       try {
         if (sourceKind === "uploaded") {
           if (hasUploadedFile) {
-            if (!cancelled) setHeaderAudioUrl(sentenceAudioUrl);
+            if (!cancelled) {
+              setState({
+                key: headerAudioKey,
+                url: sentenceAudioUrl,
+                loading: false,
+                owner: "none",
+              });
+            }
             return;
           }
 
           if (uploadedAudioPath) {
             if (preferAssetProtocol) {
-              if (!cancelled) setHeaderAudioUrl(toAssetUrl(uploadedAudioPath));
+              if (!cancelled) {
+                setState({
+                  key: headerAudioKey,
+                  url: toAssetUrl(uploadedAudioPath),
+                  loading: false,
+                  owner: "none",
+                });
+              }
               return;
             }
             const blobUrl = await ensureBlobAudioUrl(uploadedAudioPath);
-            if (!cancelled) setHeaderAudioUrl(blobUrl);
+            if (!cancelled) {
+              setState({
+                key: headerAudioKey,
+                url: blobUrl,
+                loading: false,
+                owner: "cache",
+              });
+            }
             return;
           }
 
-          if (!cancelled) setHeaderAudioUrl(null);
+          if (!cancelled) {
+            setState({
+              key: headerAudioKey,
+              url: null,
+              loading: false,
+              owner: "none",
+            });
+          }
           return;
         }
 
         if (sourceKind === "recorded") {
           const blobUrl = await ensureBlobAudioUrl(sentenceAudioUrl);
-          if (!cancelled) setHeaderAudioUrl(blobUrl);
+          if (!cancelled) {
+            setState({
+              key: headerAudioKey,
+              url: blobUrl,
+              loading: false,
+              owner: "cache",
+            });
+          }
           return;
         }
 
@@ -76,12 +147,26 @@ export function useHeaderAudioUrl(args: HeaderAudioArgs) {
               );
 
               if (preferAssetProtocol) {
-                if (!cancelled) setHeaderAudioUrl(toAssetUrl(cachedPath));
+                if (!cancelled) {
+                  setState({
+                    key: headerAudioKey,
+                    url: toAssetUrl(cachedPath),
+                    loading: false,
+                    owner: "none",
+                  });
+                }
                 return;
               }
 
               const blobUrl = await ensureBlobAudioUrl(cachedPath);
-              if (!cancelled) setHeaderAudioUrl(blobUrl);
+              if (!cancelled) {
+                setState({
+                  key: headerAudioKey,
+                  url: blobUrl,
+                  loading: false,
+                  owner: "cache",
+                });
+              }
               return;
             }
 
@@ -99,28 +184,52 @@ export function useHeaderAudioUrl(args: HeaderAudioArgs) {
             });
             const blobUrl = URL.createObjectURL(blob);
 
-            if (!cancelled) setHeaderAudioUrl(blobUrl);
+            if (!cancelled) {
+              setState({
+                key: headerAudioKey,
+                url: blobUrl,
+                loading: false,
+                owner: "self",
+              });
+            }
             return;
           } catch (fetchError) {
             console.warn(
               "[useHeaderAudioUrl] fetch_audio_base64 failed; fallback to direct URL",
               fetchError
             );
-            if (!cancelled) setHeaderAudioUrl(sentenceAudioUrl);
+            if (!cancelled) {
+              setState({
+                key: headerAudioKey,
+                url: sentenceAudioUrl,
+                loading: false,
+                owner: "none",
+              });
+            }
             return;
           }
         }
 
         const blobUrl = await ensureBlobAudioUrl(sentenceAudioUrl);
-        if (!cancelled) setHeaderAudioUrl(blobUrl);
+        if (!cancelled) {
+          setState({
+            key: headerAudioKey,
+            url: blobUrl,
+            loading: false,
+            owner: "cache",
+          });
+        }
       } catch (e) {
         console.error("[useHeaderAudioUrl] Failed:", e);
         if (!cancelled) {
           message.error("音声の読み込みに失敗しました: " + String(e));
-          setHeaderAudioUrl(null);
+          setState({
+            key: headerAudioKey,
+            url: null,
+            loading: false,
+            owner: "none",
+          });
         }
-      } finally {
-        if (!cancelled) setIsHeaderAudioLoading(false);
       }
     };
 
@@ -138,15 +247,18 @@ export function useHeaderAudioUrl(args: HeaderAudioArgs) {
     ensureBlobAudioUrl,
     toAssetUrl,
     hasUploadedFile,
+    headerAudioKey,
   ]);
 
   useEffect(() => {
     return () => {
-      if (headerAudioUrl?.startsWith("blob:")) {
-        URL.revokeObjectURL(headerAudioUrl);
+      // Only revoke blob URLs created by this hook (base64 fetch path).
+      // Blob URLs from the shared audio cache are managed by that cache.
+      if (state.owner === "self" && state.url?.startsWith("blob:")) {
+        URL.revokeObjectURL(state.url);
       }
     };
-  }, [headerAudioUrl]);
+  }, [state.owner, state.url]);
 
   return { headerAudioUrl, isHeaderAudioLoading };
 }

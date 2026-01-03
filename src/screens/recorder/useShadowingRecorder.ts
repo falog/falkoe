@@ -60,7 +60,7 @@ export function useShadowingRecorder({
 
     return startMicRecorderSilenceWatcher({
       silenceMs: 3000,
-      rmsThreshold: 0.001,
+      rmsThreshold: 0.03,
       pollIntervalMs: 50,
       onSilence: () => {
         if (!autoStopArmedRef.current) return false;

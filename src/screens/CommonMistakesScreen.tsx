@@ -15,6 +15,7 @@ import TopNav from "../components/TopNav";
 
 type Props = {
   onBack: () => void;
+  onOpenHistory: () => void;
   onOpenIpaList: () => void;
   onOpenDevelopersMistakes: () => void;
   onOpenCommonMistakes: () => void;
@@ -22,6 +23,7 @@ type Props = {
 
 export default function CommonMistakesScreen({
   onBack,
+  onOpenHistory,
   onOpenIpaList,
   onOpenDevelopersMistakes,
   onOpenCommonMistakes,
@@ -112,6 +114,7 @@ export default function CommonMistakesScreen({
       <TopNav
         current="common"
         onBack={onBack}
+        onOpenHistory={onOpenHistory}
         onOpenIpaList={onOpenIpaList}
         onOpenDevelopersMistakes={onOpenDevelopersMistakes}
         onOpenCommonMistakes={onOpenCommonMistakes}

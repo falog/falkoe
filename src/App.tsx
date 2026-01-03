@@ -89,6 +89,7 @@ const App = () => {
       {screen === "ipa" && (
         <IpaListScreen
           onBack={() => setScreen("word")}
+          onOpenHistory={() => setScreen("history")}
           onOpenDevelopersMistakes={(focus) => {
             setMistakeFocus(focus ?? null);
             setScreen("mistakes");
@@ -103,6 +104,7 @@ const App = () => {
             setMistakeFocus(null);
             setScreen("word");
           }}
+          onOpenHistory={() => setScreen("history")}
           onOpenIpaList={() => {
             setMistakeFocus(null);
             setScreen("ipa");
@@ -118,6 +120,7 @@ const App = () => {
       {screen === "common" && (
         <CommonMistakesScreen
           onBack={() => setScreen("word")}
+          onOpenHistory={() => setScreen("history")}
           onOpenIpaList={() => setScreen("ipa")}
           onOpenDevelopersMistakes={() => {
             setMistakeFocus(null);

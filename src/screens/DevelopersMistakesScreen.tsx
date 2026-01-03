@@ -18,6 +18,7 @@ import TopNav from "../components/TopNav";
 
 type Props = {
   onBack: () => void;
+  onOpenHistory: () => void;
   onOpenIpaList: () => void;
   onOpenCommonMistakes: () => void;
   initialFocus?: "j" | "r" | "oo";
@@ -25,6 +26,7 @@ type Props = {
 
 export default function DevelopersMistakesScreen({
   onBack,
+  onOpenHistory,
   onOpenIpaList,
   onOpenCommonMistakes,
   initialFocus,
@@ -239,6 +241,7 @@ export default function DevelopersMistakesScreen({
         <TopNav
           current="mistakes"
           onBack={onBack}
+          onOpenHistory={onOpenHistory}
           onOpenIpaList={onOpenIpaList}
           onOpenDevelopersMistakes={() => {
             // already here
