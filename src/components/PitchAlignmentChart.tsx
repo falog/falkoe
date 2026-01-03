@@ -6,6 +6,7 @@ type Props = {
   words?: Array<WordPitch | SegmentPitch> | null;
   height?: number;
   showLabels?: boolean;
+  playheadTime?: number | null;
 };
 
 function clamp(v: number, lo: number, hi: number) {
@@ -17,6 +18,7 @@ export function PitchAlignmentChart({
   words,
   height = 320,
   showLabels = true,
+  playheadTime = null,
 }: Props) {
   const { token } = theme.useToken();
 
@@ -100,6 +102,11 @@ export function PitchAlignmentChart({
     const tt = clamp(t, windowStart, windowEnd);
     return padX + ((tt - windowStart) / windowDur) * plotW;
   };
+
+  const playheadX =
+    typeof playheadTime === "number" && Number.isFinite(playheadTime)
+      ? xForTime(playheadTime)
+      : null;
 
   // Build a path that breaks on nulls (and outside the zoom window).
   const parts: string[] = [];
@@ -228,6 +235,19 @@ export function PitchAlignmentChart({
                   stroke={token.colorPrimary}
                   strokeWidth={2}
                 />
+
+                {/* playhead */}
+                {playheadX !== null && (
+                  <line
+                    x1={playheadX}
+                    x2={playheadX}
+                    y1={padY}
+                    y2={padY + plotH}
+                    stroke="rgba(233, 155, 38, 0.84)"
+                    strokeWidth={2}
+                    opacity={0.85}
+                  />
+                )}
               </svg>
             </div>
           ),

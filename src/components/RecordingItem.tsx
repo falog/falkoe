@@ -46,6 +46,10 @@ export default function RecordingItem({
   const [pitchError, setPitchError] = useState<string | null>(null);
   const pitchRequestedRef = useRef(false);
 
+  const [playheadTime, setPlayheadTime] = useState<number | null>(null);
+  const rafIdRef = useRef<number | null>(null);
+  const lastSetRef = useRef<number>(0);
+
   const handleRecognizeClick = () => {
     recognize?.(rec);
   };
@@ -107,6 +111,61 @@ export default function RecordingItem({
     ensureAudioUrl?.(rec, { forceBlob: true });
   };
 
+  useEffect(() => {
+    setPlayheadTime(null);
+    lastSetRef.current = 0;
+
+    const el = audioRef.current;
+    if (!el) return;
+
+    const stopRaf = () => {
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+    };
+
+    const tick = () => {
+      const cur = el.currentTime ?? 0;
+      // Throttle state updates to reduce render cost.
+      if (Math.abs(cur - lastSetRef.current) >= 0.03) {
+        lastSetRef.current = cur;
+        setPlayheadTime(cur);
+      }
+      if (!el.paused && !el.ended) {
+        rafIdRef.current = requestAnimationFrame(tick);
+      } else {
+        stopRaf();
+      }
+    };
+
+    const onPlay = () => {
+      stopRaf();
+      rafIdRef.current = requestAnimationFrame(tick);
+    };
+    const onPauseOrEnd = () => {
+      stopRaf();
+      setPlayheadTime(el.currentTime ?? 0);
+    };
+    const onSeek = () => {
+      lastSetRef.current = el.currentTime ?? 0;
+      setPlayheadTime(el.currentTime ?? 0);
+    };
+
+    el.addEventListener("play", onPlay);
+    el.addEventListener("pause", onPauseOrEnd);
+    el.addEventListener("ended", onPauseOrEnd);
+    el.addEventListener("seeked", onSeek);
+
+    return () => {
+      stopRaf();
+      el.removeEventListener("play", onPlay);
+      el.removeEventListener("pause", onPauseOrEnd);
+      el.removeEventListener("ended", onPauseOrEnd);
+      el.removeEventListener("seeked", onSeek);
+    };
+  }, [rec.path, audioUrl]);
+
   return (
     <div>
       <Flex align="center" justify="space-between">
@@ -158,7 +217,11 @@ export default function RecordingItem({
           )}
 
           {!pitchLoading && !pitchError && pitch && (
-            <PitchAlignmentChart analysis={pitch} showLabels={isJapanese} />
+            <PitchAlignmentChart
+              analysis={pitch}
+              showLabels={isJapanese}
+              playheadTime={playheadTime}
+            />
           )}
         </div>
       )}

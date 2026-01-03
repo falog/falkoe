@@ -1,4 +1,4 @@
-import { Space, Spin, Typography } from "antd";
+import { Button, Space, Spin, Typography } from "antd";
 import { invoke } from "@tauri-apps/api/core";
 import { documentDir, join } from "@tauri-apps/api/path";
 import { readTextFile } from "@tauri-apps/plugin-fs";
@@ -19,6 +19,7 @@ type Props = {
   modelText: string | null;
   sentenceHash: string;
   lang: string;
+  modelAudioUrl: string | null;
   linkingResult: RenderLinkingResult | null;
   linkingDisplayMode: DisplayMode;
   setLinkingDisplayMode: (mode: DisplayMode) => void;
@@ -32,6 +33,7 @@ export function ModelTranscriptSection({
   modelText,
   sentenceHash,
   lang,
+  modelAudioUrl,
   linkingResult,
   linkingDisplayMode,
   setLinkingDisplayMode,
@@ -54,13 +56,75 @@ export function ModelTranscriptSection({
   const [pitchError, setPitchError] = useState<string | null>(null);
   const pitchRequestedRef = useRef(false);
 
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playheadTime, setPlayheadTime] = useState<number | null>(null);
+  const rafIdRef = useRef<number | null>(null);
+  const lastSetRef = useRef<number>(0);
+
   useEffect(() => {
     pitchRequestedRef.current = false;
     setPitch(null);
     setAccentWords(null);
     setPitchLoading(false);
     setPitchError(null);
+    setIsPlaying(false);
+    setPlayheadTime(null);
+    lastSetRef.current = 0;
   }, [sentenceHash]);
+
+  useEffect(() => {
+    const el = audioRef.current;
+    if (!el) return;
+
+    const stopRaf = () => {
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+    };
+
+    const tick = () => {
+      const cur = el.currentTime ?? 0;
+      if (Math.abs(cur - lastSetRef.current) >= 0.03) {
+        lastSetRef.current = cur;
+        setPlayheadTime(cur);
+      }
+      if (!el.paused && !el.ended) {
+        rafIdRef.current = requestAnimationFrame(tick);
+      } else {
+        stopRaf();
+      }
+    };
+
+    const onPlay = () => {
+      setIsPlaying(true);
+      stopRaf();
+      rafIdRef.current = requestAnimationFrame(tick);
+    };
+    const onPauseOrEnd = () => {
+      setIsPlaying(false);
+      stopRaf();
+      setPlayheadTime(el.currentTime ?? 0);
+    };
+    const onSeek = () => {
+      lastSetRef.current = el.currentTime ?? 0;
+      setPlayheadTime(el.currentTime ?? 0);
+    };
+
+    el.addEventListener("play", onPlay);
+    el.addEventListener("pause", onPauseOrEnd);
+    el.addEventListener("ended", onPauseOrEnd);
+    el.addEventListener("seeked", onSeek);
+
+    return () => {
+      stopRaf();
+      el.removeEventListener("play", onPlay);
+      el.removeEventListener("pause", onPauseOrEnd);
+      el.removeEventListener("ended", onPauseOrEnd);
+      el.removeEventListener("seeked", onSeek);
+    };
+  }, [modelAudioUrl, pitch]);
 
   useEffect(() => {
     // Only run after we have a transcript for the model audio.
@@ -178,6 +242,16 @@ export function ModelTranscriptSection({
         )}
       </Typography.Paragraph>
 
+      {/* hidden audio element to drive playhead sync */}
+      {modelAudioUrl && (
+        <audio
+          ref={audioRef}
+          src={modelAudioUrl}
+          preload="metadata"
+          style={{ display: "none" }}
+        />
+      )}
+
       {modelText && (
         <div style={{ marginTop: 8 }}>
           {pitchLoading && (
@@ -197,13 +271,35 @@ export function ModelTranscriptSection({
 
           {!pitchLoading && !pitchError && pitch && (
             <div style={{ marginBottom: 15 }}>
-              <Typography.Text type="secondary">
-                Pitch extractor: {pitch.extractor ?? "(unknown)"}
-              </Typography.Text>
+              <Space align="center" size={10} style={{ marginBottom: 4 }}>
+                <Typography.Text type="secondary">
+                  Pitch extractor: {pitch.extractor ?? "(unknown)"}
+                </Typography.Text>
+                <Button
+                  size="small"
+                  disabled={!modelAudioUrl}
+                  onClick={async () => {
+                    const el = audioRef.current;
+                    if (!el) return;
+                    if (el.paused || el.ended) {
+                      try {
+                        await el.play();
+                      } catch {
+                        // ignore
+                      }
+                    } else {
+                      el.pause();
+                    }
+                  }}
+                >
+                  {isPlaying ? "停止" : "再生"}
+                </Button>
+              </Space>
               <PitchAlignmentChart
                 analysis={pitch}
                 words={isJapanese ? accentWords : undefined}
                 showLabels={isJapanese}
+                playheadTime={playheadTime}
               />
             </div>
           )}
