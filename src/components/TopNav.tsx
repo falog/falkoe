@@ -1,5 +1,4 @@
-import { Button, Space, Spin, Typography } from "antd";
-import { useBackgroundTranscription } from "../state/backgroundTranscription";
+import { Button, Space } from "antd";
 
 export type TopNavCurrent =
   | "word"
@@ -26,18 +25,9 @@ export default function TopNav({
   onOpenDevelopersMistakes,
   onOpenCommonMistakes,
 }: Props) {
-  const { activeCount } = useBackgroundTranscription();
-
   return (
     <Space wrap>
       {onBack && <Button onClick={onBack}>← 戻る</Button>}
-
-      {activeCount > 0 && (
-        <Space size={6}>
-          <Spin size="small" />
-          <Typography.Text type="secondary">文字起こし中…</Typography.Text>
-        </Space>
-      )}
 
       {onOpenHistory && (
         <Button disabled={current === "history"} onClick={onOpenHistory}>

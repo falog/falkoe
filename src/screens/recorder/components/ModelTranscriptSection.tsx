@@ -26,6 +26,7 @@ type Props = {
   ipaIndex: IpaIndex | null;
   status: ModelStatus;
   progress: number | null;
+  headerRight?: React.ReactNode;
 };
 
 export function ModelTranscriptSection({
@@ -40,6 +41,7 @@ export function ModelTranscriptSection({
   ipaIndex,
   status,
   progress,
+  headerRight,
 }: Props) {
   const langNorm = (lang ?? "").toLowerCase();
   const isJapanese =
@@ -232,16 +234,20 @@ export function ModelTranscriptSection({
         </Space>
       )}
 
-      <Typography.Paragraph>
-        <strong style={{ whiteSpace: "nowrap" }}>Model transcript:</strong>{" "}
-        {modelText ? (
-          stripWhisperSpecialTokens(modelText)
-        ) : (
-          <Typography.Text type="secondary">
-            音声認識されていません
-          </Typography.Text>
-        )}
-      </Typography.Paragraph>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+        <Typography.Paragraph style={{ flex: "1 1 auto", minWidth: 0 }}>
+          <strong style={{ whiteSpace: "nowrap" }}>Model transcript:</strong>{" "}
+          {modelText ? (
+            stripWhisperSpecialTokens(modelText)
+          ) : (
+            <Typography.Text type="secondary">
+              音声認識されていません
+            </Typography.Text>
+          )}
+        </Typography.Paragraph>
+
+        {headerRight && <div style={{ flex: "0 0 auto" }}>{headerRight}</div>}
+      </div>
 
       {/* hidden audio element to drive playhead sync */}
       {modelAudioUrl && (

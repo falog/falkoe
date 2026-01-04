@@ -60,7 +60,7 @@ export function buildPitchAlignmentChartSvg(
   const showLabels = opts.showLabels ?? true;
   const token = opts.token;
 
-  const renderWidthPx = 770;
+  const renderWidthPx = 750;
 
   const f0 = analysis.f0_rel;
   const voiced = f0.filter((v): v is number => typeof v === "number");
@@ -210,7 +210,7 @@ export function PitchAlignmentChart({
 
   // Render wider than the container to keep dense word overlays readable.
   // The wrapper enables horizontal scrolling when needed.
-  const renderWidthPx = 770;
+  const renderWidthPx = 750;
 
   const f0 = analysis.f0_rel;
   const voiced = f0.filter((v): v is number => typeof v === "number");

@@ -28,6 +28,10 @@ import { useSafeNavigation } from "./useSafeNavigation";
 import { useExportVideo } from "./useExportVideo";
 import { useRecognizeRecording } from "./useRecognizeRecording";
 import { useUpsertSentenceManifest } from "./useUpsertSentenceManifest";
+import {
+  extractSentenceHashFromSentenceWavPath,
+  useBackgroundTranscription,
+} from "../../state/backgroundTranscription";
 
 export function useRecorderScreenState(source: SpeechSource) {
   const { token } = theme.useToken();
@@ -68,6 +72,36 @@ export function useRecorderScreenState(source: SpeechSource) {
 
   const { status, progress }: { status: ModelStatus; progress: number | null } =
     useModelStatus();
+
+  const { jobs: backgroundJobs } = useBackgroundTranscription();
+  const backgroundActiveForSentence = Boolean(
+    sentenceHash &&
+    backgroundJobs.some((j) => {
+      if (j.key.startsWith(sentenceHash + ":")) return true;
+      const hash = extractSentenceHashFromSentenceWavPath(j.key);
+      return hash === sentenceHash;
+    })
+  );
+
+  const backgroundRecognizingForSentence: Record<string, boolean> = sentenceHash
+    ? Object.fromEntries(
+        backgroundJobs
+          .filter((j) => {
+            if (j.kind !== "recording") return false;
+            if (!j.key.endsWith(".wav")) return false;
+            const hash = extractSentenceHashFromSentenceWavPath(j.key);
+            return hash === sentenceHash;
+          })
+          .map((j) => [j.key, true] as const)
+      )
+    : {};
+
+  const effectiveRecognizing = {
+    ...recognizing,
+    ...backgroundRecognizingForSentence,
+  };
+
+  const effectiveIsTranscribing = isTranscribing || backgroundActiveForSentence;
 
   const [displayText, setDisplayText] = useState<string>(sentence.text);
   const [linkingDisplayMode, setLinkingDisplayMode] =
@@ -180,7 +214,7 @@ export function useRecorderScreenState(source: SpeechSource) {
     status,
     sentenceHash,
     lang: sentence.lang,
-    recognizing,
+    recognizing: effectiveRecognizing,
     setRecognizing,
     setIsTranscribing: (v) => setIsTranscribing(v),
   });
@@ -189,7 +223,7 @@ export function useRecorderScreenState(source: SpeechSource) {
     recordings,
     transcripts,
     setTranscripts,
-    recognizing,
+    recognizing: effectiveRecognizing,
   });
 
   const { showModelAreaTranscribing, autoRecognizingUploaded } =
@@ -198,9 +232,9 @@ export function useRecorderScreenState(source: SpeechSource) {
       sentenceText: sentence.text,
       displayText,
       modelText,
-      isTranscribing,
+      isTranscribing: effectiveIsTranscribing,
       waitingModel,
-      recognizing,
+      recognizing: effectiveRecognizing,
       transcripts,
       setRecognizing,
       setIsTranscribing: (v) => setIsTranscribing(v),
@@ -236,7 +270,7 @@ export function useRecorderScreenState(source: SpeechSource) {
     uploadedAudioPath,
     recordings,
     transcripts,
-    recognizing,
+    recognizing: effectiveRecognizing,
     modelText,
     waitingModel,
     displayText,

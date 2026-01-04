@@ -85,46 +85,46 @@ const RecorderScreen = ({
           }
           onOpenCommonMistakes={() => navigateSafely(onOpenCommonMistakes)}
         />
+        <Space orientation="vertical" style={{ width: "100%" }}>
+          <Row>
+            <Col flex="auto" style={{ minWidth: 0 }}>
+              <RecorderHeader
+                headerAudioUrl={headerAudioUrl}
+                isHeaderAudioLoading={isHeaderAudioLoading}
+                displayText={displayText}
+                sentenceText={sentence.text}
+                onRecognizeModel={recognizeModel}
+                waitingModel={waitingModel}
+                autoRecognizingUploaded={autoRecognizingUploaded}
+                modelRecognizeDisabled={modelRecognizeDisabled}
+                sourceKind={sourceKind}
+              />
+            </Col>
+          </Row>
 
-        <RecorderHeader
-          headerAudioUrl={headerAudioUrl}
-          isHeaderAudioLoading={isHeaderAudioLoading}
-          displayText={displayText}
-          sentenceText={sentence.text}
-          onRecognizeModel={recognizeModel}
-          waitingModel={waitingModel}
-          autoRecognizingUploaded={autoRecognizingUploaded}
-          modelRecognizeDisabled={modelRecognizeDisabled}
-          sourceKind={sourceKind}
-        />
-        <Row align="top" gutter={12} wrap={false}>
-          <Col flex="auto" style={{ minWidth: 0 }}>
-            <ModelTranscriptSection
-              isTranscribing={showModelAreaTranscribing}
-              modelText={modelText}
-              sentenceHash={sentenceHash}
-              lang={sentence.lang}
-              modelAudioUrl={headerAudioUrl}
-              linkingResult={linkingResult}
-              linkingDisplayMode={linkingDisplayMode}
-              setLinkingDisplayMode={setLinkingDisplayMode}
-              ipaIndex={ipaIndex}
-              status={status}
-              progress={progress}
-            />
-          </Col>
-
-          <Col style={{ flexShrink: 0 }}>
-            <Button
-              onClick={handleExportVideo}
-              loading={isExportingVideo}
-              disabled={isExportingVideo}
-            >
-              動画を作成（mp4）
-            </Button>
-          </Col>
-        </Row>
-
+          <ModelTranscriptSection
+            isTranscribing={showModelAreaTranscribing}
+            modelText={modelText}
+            sentenceHash={sentenceHash}
+            lang={sentence.lang}
+            modelAudioUrl={headerAudioUrl}
+            linkingResult={linkingResult}
+            linkingDisplayMode={linkingDisplayMode}
+            setLinkingDisplayMode={setLinkingDisplayMode}
+            ipaIndex={ipaIndex}
+            status={status}
+            progress={progress}
+            headerRight={
+              <Button
+                onClick={handleExportVideo}
+                loading={isExportingVideo}
+                disabled={isExportingVideo}
+              >
+                動画を作成（mp4）
+              </Button>
+            }
+          />
+        </Space>
         <RecordingControls
           isRecording={isRecording}
           status={status}
