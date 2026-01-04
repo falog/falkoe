@@ -7,9 +7,13 @@
 
 ## 📸 Screenshots
 
-![Falkoe Screenshot 01](docs/screenshots/Falkoe_Screenshot01.png)
+![Falkoe Screenshot 01](docs/screenshots/Falkoe_Screenshot_20260104_01.png)
 
-![Falkoe Screenshot 02](docs/screenshots/Falkoe_Screenshot02.png)
+![Falkoe Screenshot 02](docs/screenshots/Falkoe_Screenshot_20260104_02.png)
+
+![Falkoe Screenshot 03](docs/screenshots/Falkoe_Screenshot_20260104_03.png)
+
+![Falkoe Screenshot 04](docs/screenshots/Falkoe_Screenshot_20260104_04.png)
 
 ---
 
