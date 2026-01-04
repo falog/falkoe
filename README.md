@@ -239,6 +239,62 @@ Configuration is set in [src-tauri/tauri.conf.json](src-tauri/tauri.conf.json) w
 
 ---
 
+## 📦 Optional Tool (MeCab) / 任意ツール(MeCab)
+
+Falkoe は日本語のアクセント表示（`*.accent.json`）を自然な単語単位にするために、可能なら **MeCab** を使います。
+
+- **必須ではありません**: MeCab が無い環境でも動作します（従来の単語分割へフォールバック）。
+- **あると改善します**: Whisper の `words` が1文字単位になってしまうケース（例: `明` / `日`）を、`明日` のような自然な境界に再構成します。
+- **辞書が必要です**: MeCab 本体に加えて辞書（例: `ipadic`）が必要です。
+
+### 開発環境でのインストール例
+
+- Linux (Debian/Ubuntu):
+  - `sudo apt update`
+  - `sudo apt install -y mecab mecab-ipadic-utf8`
+  - ※環境によっては `mecab-ipadic` の場合もあります
+- macOS (Homebrew):
+  - `brew install mecab mecab-ipadic`
+- Windows (Chocolatey):
+  - `choco install -y mecab mecab-ipadic`
+
+### デバッグ（MeCab 経路が使われているか確認）
+
+`FALKOE_DEBUG_MECAB=1` を付けて起動すると、バックエンドログに MeCab の利用状況が出ます（例: `[mecab] alignment ok`, `[accent] mecab used: ...`）。
+
+- Linux/macOS (bash/zsh): `FALKOE_DEBUG_MECAB=1 pnpm tauri dev`
+- Linux/macOS (POSIX): `env FALKOE_DEBUG_MECAB=1 pnpm tauri dev`
+- Windows (PowerShell): `$env:FALKOE_DEBUG_MECAB=1; pnpm tauri dev`
+- Windows (cmd.exe): `set FALKOE_DEBUG_MECAB=1 && pnpm tauri dev`
+
+---
+
+Falkoe optionally uses **MeCab** to build natural word boundaries for Japanese accent overlay output (`*.accent.json`).
+
+- **Not required**: The app still works without MeCab (falls back to the default tokenization).
+- **Improves Japanese tokenization**: Helps avoid cases where Whisper `words` become character-by-character (e.g. `明` / `日`) and reconstructs them into natural units (e.g. `明日`).
+- **Dictionary required**: You need MeCab plus a dictionary (e.g. `ipadic`).
+
+### Install examples (development)
+
+- Linux (Debian/Ubuntu):
+  - `sudo apt-get update`
+  - `sudo apt-get install -y mecab mecab-ipadic-utf8`
+  - Note: some environments use `mecab-ipadic` instead
+- macOS (Homebrew): `brew install mecab mecab-ipadic`
+- Windows (Chocolatey): `choco install -y mecab mecab-ipadic`
+
+### Debug (verify MeCab path is used)
+
+Start with `FALKOE_DEBUG_MECAB=1` to see backend logs such as `[mecab] alignment ok` and `[accent] mecab used: ...`.
+
+- Linux/macOS (bash/zsh): `FALKOE_DEBUG_MECAB=1 pnpm tauri dev`
+- Linux/macOS (POSIX): `env FALKOE_DEBUG_MECAB=1 pnpm tauri dev`
+- Windows (PowerShell): `$env:FALKOE_DEBUG_MECAB=1; pnpm tauri dev`
+- Windows (cmd.exe): `set FALKOE_DEBUG_MECAB=1 && pnpm tauri dev`
+
+---
+
 ## 🚀 Getting Started / はじめ方
 
 ### 1. Download / ダウンロード

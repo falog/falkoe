@@ -51,6 +51,14 @@ function escapeXml(s: string) {
     .replace(/'/g, "&apos;");
 }
 
+function formatAccentLabel(label: unknown): string {
+  const s = String(label ?? "");
+  if (!s) return "";
+  // Keep UI label naming consistent with the reference Python plot.
+  if (s === "Nakadaka") return "Nakada";
+  return s;
+}
+
 export function buildPitchAlignmentChartSvg(
   opts: PitchChartSvgOptions
 ): PitchChartSvgResult {
@@ -159,7 +167,8 @@ export function buildPitchAlignmentChartSvg(
       const left = Math.min(x0, x1);
       const width = Math.max(1, Math.abs(x1 - x0));
       const text = escapeXml(String(w.text ?? ""));
-      const label = showLabels && w.label ? escapeXml(String(w.label)) : "";
+      const label =
+        showLabels && w.label ? escapeXml(formatAccentLabel(w.label)) : "";
       return `
 <g key="w-${idx}">
   <rect x="${left}" y="${padY}" width="${width}" height="${plotH}" fill="${token.colorFillTertiary}" opacity="0.8" />
@@ -396,7 +405,7 @@ export function PitchAlignmentChart({
                             fill={token.colorTextSecondary}
                             fontSize={11}
                           >
-                            [{w.label}]
+                            [{formatAccentLabel(w.label)}]
                           </tspan>
                         ) : null}
                       </text>

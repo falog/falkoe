@@ -9,6 +9,8 @@ mod ffmpeg;
 mod lang;
 #[path = "whisper/manifest.rs"]
 mod manifest;
+#[path = "whisper/mecab.rs"]
+mod mecab;
 #[path = "whisper/paths.rs"]
 mod paths;
 #[path = "whisper/run.rs"]

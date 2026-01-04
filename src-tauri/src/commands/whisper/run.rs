@@ -92,6 +92,7 @@ fn run_whisper_for_wav(app: &AppHandle, wav_path: &str, sentence_hash: &str, lan
                 words: Vec<AccentWordOut>,
             }
 
+            // Match the Python reference heuristics.
             fn estimate_accent_label_py(peak_pos: f32, pitch_range: f32) -> String {
                 if pitch_range < 0.8 {
                     return "Heiban".to_string();
@@ -140,6 +141,15 @@ fn run_whisper_for_wav(app: &AppHandle, wav_path: &str, sentence_hash: &str, lan
                 (peak_pos, pitch_range, slope)
             }
 
+            // Japanese tokenization helper input (avoid inserting spaces between segments).
+            let mecab_text_ja = transcript
+                .segments
+                .iter()
+                .map(|s| s.text.trim())
+                .filter(|t| !t.is_empty())
+                .collect::<Vec<_>>()
+                .join("");
+
             fn time_to_index_floor(t: f32, time_step: f32) -> usize {
                 ((t / time_step.max(0.0001)).floor() as i64).max(0) as usize
             }
@@ -162,197 +172,340 @@ fn run_whisper_for_wav(app: &AppHandle, wav_path: &str, sentence_hash: &str, lan
                 if t.is_empty() {
                     return false;
                 }
-                t.chars().all(|c| c.is_ascii_punctuation())
+
+                t.chars().all(|c| {
+                    c.is_ascii_punctuation()
+                        || matches!(
+                            c,
+                            '。' | '、' | '！' | '？' | '…' | '・' | '「' | '」' | '『' | '』' | '（'
+                                | '）' | '【' | '】' | '［' | '］' | '〔' | '〕' | '〈' | '〉' | '《'
+                                | '》' | '“' | '”' | '‘' | '’' | '：' | '；'
+                        )
+                })
             }
 
-            fn is_ja_particle(s: &str) -> bool {
-                // Minimal particle set to separate content words from particles.
-                // This is intentionally conservative and single-character.
+            fn is_ja_label_excluded_token(s: &str) -> bool {
+                // Tokens that should not be considered for lexical pitch accent labeling.
+                // We treat them as boundaries and omit them from the accent overlay.
+                //
+                // Particles (dependent): は, が, を, に, で, と, も, へ, から, まで, より
+                // Sentence-final / discourse: よ, ね, な, さ, ぞ, わ, か
+                // Copula / polite auxiliaries: だ, です, ます, でした, でしたら
                 matches!(
                     s.trim(),
-                    "が" | "は" | "を" | "に" | "で" | "と" | "も" | "へ" | "の" | "や" | "か" | "ね" | "よ" | "な"
+                    "は"
+                        | "が"
+                        | "を"
+                        | "に"
+                        | "で"
+                        | "と"
+                        | "も"
+                        | "へ"
+                        | "から"
+                        | "まで"
+                        | "より"
+                        | "よ"
+                        | "ね"
+                        | "な"
+                        | "さ"
+                        | "ぞ"
+                        | "わ"
+                        | "か"
+                        | "だ"
+                        | "です"
+                        | "ます"
+                        | "でした"
+                        | "でしたら"
                 )
             }
 
-            fn count_ja_mora_like(s: &str) -> usize {
-                // Approximate mora count from kana. This is intentionally simple:
-                // - counts hiragana/katakana base chars and prolonged sound mark 'ー'
-                // - ignores small kana that modify the previous mora (ゃゅょぁぃぅぇぉゎ + katakana variants)
-                let mut n = 0usize;
-                for ch in s.chars() {
-                    match ch {
-                        // small kana that don't form a mora by themselves
-                        'ゃ' | 'ゅ' | 'ょ' | 'ぁ' | 'ぃ' | 'ぅ' | 'ぇ' | 'ぉ' | 'ゎ'
-                        | 'ャ' | 'ュ' | 'ョ' | 'ァ' | 'ィ' | 'ゥ' | 'ェ' | 'ォ' | 'ヮ' => {
-                            continue;
+            fn split_trailing_tokens(s: &str) -> Vec<String> {
+                // Split a token into [content?, excluded-suffixes..., punct...] while keeping order.
+                // This helps cases like "暑いね。" -> ["暑い", "ね", "。"], "雨です" -> ["雨", "です"].
+                let mut rest = s.trim().to_string();
+                if rest.is_empty() {
+                    return Vec::new();
+                }
+
+                // 1) peel trailing punctuation chars
+                let mut trailing_punct: Vec<String> = Vec::new();
+                loop {
+                    let last = rest.chars().last();
+                    let Some(ch) = last else { break };
+                    let ch_s = ch.to_string();
+                    if is_punct_word(&ch_s) {
+                        rest.pop();
+                        trailing_punct.push(ch_s);
+                        continue;
+                    }
+                    break;
+                }
+
+                // 2) peel trailing excluded suffix tokens (longest-first)
+                // NOTE: we intentionally do NOT split "ます" from verbs (e.g. "行きます")
+                // because practical UX wants it as one word.
+                let suffixes = [
+                    "でしたら", "でした", "です", "から", "まで", "より", "よ", "ね", "な", "さ", "ぞ", "わ",
+                    "か", "は", "が", "を", "に", "で", "と", "も", "へ", "の", "や", "だ",
+                ];
+                let mut trailing_suffix: Vec<String> = Vec::new();
+                'outer: loop {
+                    for suf in suffixes {
+                        if rest == suf {
+                            // whole token is excluded
+                            rest.clear();
+                            trailing_suffix.push(suf.to_string());
+                            continue 'outer;
                         }
-                        // prolonged sound mark counts
-                        'ー' => {
-                            n += 1;
-                        }
-                        _ => {
-                            let is_hira = ('ぁ'..='ゖ').contains(&ch);
-                            let is_kata = ('ァ'..='ヺ').contains(&ch);
-                            if is_hira || is_kata {
-                                n += 1;
-                            }
+                        if rest.ends_with(suf) && rest.len() > suf.len() {
+                            let new_len = rest.len() - suf.len();
+                            rest.truncate(new_len);
+                            trailing_suffix.push(suf.to_string());
+                            continue 'outer;
                         }
                     }
+                    break;
                 }
-                n
+
+                let mut out: Vec<String> = Vec::new();
+                if !rest.trim().is_empty() {
+                    out.push(rest.trim().to_string());
+                }
+                // suffixes were collected from the end; restore original order
+                trailing_suffix.reverse();
+                out.extend(trailing_suffix);
+                trailing_punct.reverse();
+                out.extend(trailing_punct);
+                out
+            }
+
+            fn char_len(s: &str) -> usize {
+                s.chars().count().max(1)
+            }
+
+            fn emit_token_with_time(
+                pitch: &crate::commands::pitch::PitchAnalysis,
+                text: &str,
+                start: f32,
+                end: f32,
+            ) -> AccentWordOut {
+                let t = text.trim();
+                if t.is_empty() {
+                    return AccentWordOut {
+                        word: "".into(),
+                        start,
+                        end,
+                        text: "".into(),
+                        label: None,
+                        peak_pos: None,
+                        pitch_range: None,
+                        slope: None,
+                    };
+                }
+
+                // Excluded tokens and punctuation: keep, but label is null.
+                if is_punct_word(t) || is_ja_label_excluded_token(t) {
+                    return AccentWordOut {
+                        word: t.to_string(),
+                        start,
+                        end,
+                        text: t.to_string(),
+                        label: None,
+                        peak_pos: None,
+                        pitch_range: None,
+                        slope: None,
+                    };
+                }
+
+                // Content word: compute label/features from pitch segment.
+                let n = pitch.f0_rel.len();
+                let time_step = pitch.time_step.max(0.001);
+                let si0 = time_to_index_floor(start, time_step);
+                let ei0 = time_to_index_ceil(end, time_step);
+                let si = si0.min(n);
+                let ei = ei0.min(n);
+                let voiced = collect_voiced(&pitch.f0_rel, si, ei);
+                let (label, peak_pos, pitch_range, slope) = if voiced.len() >= 3 {
+                    let (pp, pr, sl) = segment_features_py(&voiced);
+                    (
+                        Some(estimate_accent_label_py(pp, pr)),
+                        Some(pp),
+                        Some(pr),
+                        Some(sl),
+                    )
+                } else {
+                    (None, None, None, None)
+                };
+
+                AccentWordOut {
+                    word: t.to_string(),
+                    start,
+                    end,
+                    text: t.to_string(),
+                    label,
+                    peak_pos,
+                    pitch_range,
+                    slope,
+                }
             }
 
             #[derive(Clone)]
-            struct MergedWord {
+            struct PendingContent {
                 text: String,
                 start: f32,
                 end: f32,
-                fallback_label: Option<String>,
-                fallback_peak_pos: Option<f32>,
-                fallback_pitch_range: Option<f32>,
-                fallback_slope: Option<f32>,
+            }
+
+            fn flush_content_word(pitch: &crate::commands::pitch::PitchAnalysis, pending: &mut Option<PendingContent>, out_words: &mut Vec<AccentWordOut>) {
+                let Some(w) = pending.take() else {
+                    return;
+                };
+
+                let n = pitch.f0_rel.len();
+                let time_step = pitch.time_step.max(0.001);
+                let si0 = time_to_index_floor(w.start, time_step);
+                let ei0 = time_to_index_ceil(w.end, time_step);
+                let si = si0.min(n);
+                let ei = ei0.min(n);
+                let voiced = collect_voiced(&pitch.f0_rel, si, ei);
+
+                let (label, peak_pos, pitch_range, slope) = if voiced.len() >= 3 {
+                    let (pp, pr, sl) = segment_features_py(&voiced);
+                    (
+                        Some(estimate_accent_label_py(pp, pr)),
+                        Some(pp),
+                        Some(pr),
+                        Some(sl),
+                    )
+                } else {
+                    (None, None, None, None)
+                };
+
+                out_words.push(AccentWordOut {
+                    word: w.text.clone(),
+                    start: w.start,
+                    end: w.end,
+                    text: w.text,
+                    label,
+                    peak_pos,
+                    pitch_range,
+                    slope,
+                });
             }
 
             let mut out_words: Vec<AccentWordOut> = Vec::new();
 
-            if let Some(words) = &pitch.words {
-                // JA: merge per-character "words" into more word-like units (content word vs particles)
-                // before estimating pitch-accent.
-                let mut merged: Vec<MergedWord> = Vec::new();
+            // Prefer transcript word boundaries when available (prevents "明日行きます" from
+            // merging into one). Fall back to pitch.words if needed.
+            if let Some(t_words) = transcript.words.as_ref() {
+                // Try MeCab first (if installed) to re-tokenize and align onto Whisper word times.
+                let mecab_wordlikes = t_words
+                    .iter()
+                    .map(|w| super::mecab::WordLike {
+                        start: w.start,
+                        end: w.end,
+                        text: w.text.clone(),
+                    })
+                    .collect::<Vec<_>>();
+
+                if let Some(mecab_tokens) =
+                    super::mecab::mecab_timed_tokens(&mecab_text_ja, &mecab_wordlikes)
+                {
+                    println!("[accent] mecab used: {} tokens", mecab_tokens.len());
+                    for t in mecab_tokens {
+                        let s = t.text.trim();
+                        if s.is_empty() {
+                            continue;
+                        }
+                        if t.is_excluded {
+                            out_words.push(AccentWordOut {
+                                word: s.to_string(),
+                                start: t.start,
+                                end: t.end,
+                                text: s.to_string(),
+                                label: None,
+                                peak_pos: None,
+                                pitch_range: None,
+                                slope: None,
+                            });
+                        } else {
+                            let out = emit_token_with_time(&pitch, s, t.start, t.end);
+                            if !out.word.is_empty() {
+                                out_words.push(out);
+                            }
+                        }
+                    }
+                } else {
+                    if std::env::var("FALKOE_DEBUG_MECAB").is_ok() {
+                        println!("[accent] mecab not used; fallback to whisper word boundaries");
+                    }
+                for w in t_words {
+                    let raw = w.text.trim();
+                    if raw.is_empty() {
+                        continue;
+                    }
+                    let parts = split_trailing_tokens(raw);
+                    if parts.is_empty() {
+                        continue;
+                    }
+                    let total = parts.iter().map(|p| char_len(p)).sum::<usize>() as f32;
+                    let mut cur = w.start;
+                    let dur = (w.end - w.start).max(0.0);
+                    for (i, p) in parts.iter().enumerate() {
+                        let frac = char_len(p) as f32 / total.max(1.0);
+                        let next = if i + 1 == parts.len() {
+                            w.end
+                        } else {
+                            cur + dur * frac
+                        };
+                        let out = emit_token_with_time(&pitch, p, cur, next);
+                        if !out.word.is_empty() {
+                            out_words.push(out);
+                        }
+                        cur = next;
+                    }
+                }
+                }
+            } else if let Some(words) = &pitch.words {
+                // Fallback: pitch.words can be per-character; merge contiguous content until a
+                // boundary (excluded token or punctuation).
+                let mut pending: Option<PendingContent> = None;
                 for w in words {
                     let t = w.text.trim();
                     if t.is_empty() {
                         continue;
                     }
 
-                    if is_punct_word(&w.text) {
-                        if let Some(last) = merged.last_mut() {
-                            last.text.push_str(&w.text);
-                            last.end = w.end;
-                        }
-                        continue;
-                    }
-
-                    if is_ja_particle(&w.text) {
-                        merged.push(MergedWord {
-                            text: w.text.clone(),
+                    if is_punct_word(t) || is_ja_label_excluded_token(t) {
+                        flush_content_word(&pitch, &mut pending, &mut out_words);
+                        out_words.push(AccentWordOut {
+                            word: t.to_string(),
                             start: w.start,
                             end: w.end,
-                            fallback_label: w.label.clone(),
-                            fallback_peak_pos: w.peak_pos,
-                            fallback_pitch_range: w.pitch_range,
-                            fallback_slope: w.slope,
+                            text: t.to_string(),
+                            label: None,
+                            peak_pos: None,
+                            pitch_range: None,
+                            slope: None,
                         });
                         continue;
                     }
 
-                    match merged.last_mut() {
-                        Some(last) if !is_ja_particle(&last.text) => {
-                            last.text.push_str(&w.text);
-                            last.end = w.end;
+                    match pending.as_mut() {
+                        Some(p) => {
+                            p.text.push_str(t);
+                            p.end = w.end;
                         }
-                        _ => {
-                            merged.push(MergedWord {
-                                text: w.text.clone(),
+                        None => {
+                            pending = Some(PendingContent {
+                                text: t.to_string(),
                                 start: w.start,
                                 end: w.end,
-                                fallback_label: w.label.clone(),
-                                fallback_peak_pos: w.peak_pos,
-                                fallback_pitch_range: w.pitch_range,
-                                fallback_slope: w.slope,
                             });
                         }
                     }
                 }
-                for mw in merged {
-                    let n = pitch.f0_rel.len();
-                    let time_step = pitch.time_step.max(0.001);
-
-                    let si0 = time_to_index_floor(mw.start, time_step);
-                    let ei0 = time_to_index_ceil(mw.end, time_step);
-                    let si = si0.min(n);
-                    let ei = ei0.min(n);
-
-                    let voiced = collect_voiced(&pitch.f0_rel, si, ei);
-                    let (mut label, mut peak_pos, pitch_range, slope) = if voiced.len() >= 5 {
-                        let (pp, pr, sl) = segment_features_py(&voiced);
-                        (
-                            Some(estimate_accent_label_py(pp, pr)),
-                            Some(pp),
-                            Some(pr),
-                            Some(sl),
-                        )
-                    } else {
-                        (
-                            mw.fallback_label.clone(),
-                            mw.fallback_peak_pos,
-                            mw.fallback_pitch_range,
-                            mw.fallback_slope,
-                        )
-                    };
-
-                    // If a content word spans multiple mora, detect an early accent nucleus by
-                    // looking at the first-mora window. This helps cases like "さくら" where
-                    // phrase-final rises can push the global maximum late.
-                    // IMPORTANT: only apply this override when the whole-word label is already
-                    // leaning Odaka (peak late). Otherwise it can incorrectly flip Nakadaka->Atamadaka.
-                    if voiced.len() >= 5
-                        && !is_ja_particle(&mw.text)
-                        && matches!(label.as_deref(), Some("Odaka"))
-                    {
-                        let mora_n = count_ja_mora_like(&mw.text);
-                        if mora_n >= 2 {
-                            let first_end_t = mw.start + (mw.end - mw.start).max(0.0) / mora_n as f32;
-                            let fsi0 = time_to_index_floor(mw.start, time_step);
-                            let fei0 = time_to_index_ceil(first_end_t, time_step);
-                            let fsi = fsi0.min(n);
-                            let fei = fei0.min(n);
-                            let first_voiced = collect_voiced(&pitch.f0_rel, fsi, fei);
-                            if first_voiced.len() >= 5 {
-                                let (pp1, pr1, _sl1) = segment_features_py(&first_voiced);
-                                let l1 = estimate_accent_label_py(pp1, pr1);
-                                if l1 == "Atamadaka" {
-                                    label = Some(l1);
-                                    // Keep peak_pos consistent with Atamadaka.
-                                    peak_pos = Some(0.0);
-                                }
-                            }
-                        }
-                    }
-
-                    out_words.push(AccentWordOut {
-                        word: mw.text.clone(),
-                        start: mw.start,
-                        end: mw.end,
-                        text: mw.text,
-                        label,
-                        peak_pos,
-                        pitch_range,
-                        slope,
-                    });
-                }
-            } else if let Some(words) = &pitch.words {
-                // Fallback: use whatever pitch analysis produced.
-                for w in words {
-                    if is_punct_word(&w.text) && !out_words.is_empty() {
-                        let last = out_words.last_mut().unwrap();
-                        last.word.push_str(&w.text);
-                        last.text.push_str(&w.text);
-                        last.end = w.end;
-                        continue;
-                    }
-
-                    out_words.push(AccentWordOut {
-                        word: w.word.clone(),
-                        start: w.start,
-                        end: w.end,
-                        text: w.text.clone(),
-                        label: w.label.clone(),
-                        peak_pos: w.peak_pos,
-                        pitch_range: w.pitch_range,
-                        slope: w.slope,
-                    });
-                }
+                flush_content_word(&pitch, &mut pending, &mut out_words);
             }
 
             let accent_path = Path::new(wav_path).with_extension("accent.json");

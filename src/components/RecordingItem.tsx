@@ -3,8 +3,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { readTextFile } from "@tauri-apps/plugin-fs";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Recording, Transcript } from "../types/recording";
-import type { PitchAnalysis } from "../types/pitch";
+import type { PitchAnalysis, WordPitch } from "../types/pitch";
 import { PitchAlignmentChart } from "./PitchAlignmentChart";
+
+type AccentOut = {
+  words: WordPitch[];
+};
 
 type Props = {
   rec: Recording;
@@ -42,6 +46,7 @@ export default function RecordingItem({
       .trim();
   const audioRef = useRef<HTMLAudioElement>(null);
   const [pitch, setPitch] = useState<PitchAnalysis | null>(null);
+  const [accentWords, setAccentWords] = useState<WordPitch[] | null>(null);
   const [pitchLoading, setPitchLoading] = useState(false);
   const [pitchError, setPitchError] = useState<string | null>(null);
   const pitchRequestedRef = useRef(false);
@@ -63,6 +68,14 @@ export default function RecordingItem({
     ensureAudioUrl?.(rec);
   };
 
+  useEffect(() => {
+    pitchRequestedRef.current = false;
+    setPitch(null);
+    setAccentWords(null);
+    setPitchLoading(false);
+    setPitchError(null);
+  }, [rec.path]);
+
   const ensurePitch = useCallback(async () => {
     if (pitchRequestedRef.current) return;
     pitchRequestedRef.current = true;
@@ -76,6 +89,18 @@ export default function RecordingItem({
         const cached = await readTextFile(pitchPath);
         const parsed = JSON.parse(cached) as PitchAnalysis;
         setPitch(parsed);
+
+        if (isJapanese) {
+          // Prefer accent overlay generated during transcription (Japanese only).
+          try {
+            const accentPath = rec.path.replace(/\.wav$/i, ".accent.json");
+            const accentCached = await readTextFile(accentPath);
+            const accentParsed = JSON.parse(accentCached) as AccentOut;
+            setAccentWords(accentParsed.words ?? null);
+          } catch {
+            // ignore; fall back to pitch.words/segments
+          }
+        }
         return;
       } catch {
         // ignore; fall back to live analysis
@@ -86,12 +111,24 @@ export default function RecordingItem({
         includeSegments: true,
       });
       setPitch(res);
+
+      if (isJapanese) {
+        // If available, load accent overlay generated during transcription (Japanese only).
+        try {
+          const accentPath = rec.path.replace(/\.wav$/i, ".accent.json");
+          const accentCached = await readTextFile(accentPath);
+          const accentParsed = JSON.parse(accentCached) as AccentOut;
+          setAccentWords(accentParsed.words ?? null);
+        } catch {
+          // ignore
+        }
+      }
     } catch (e) {
       setPitchError(String(e));
     } finally {
       setPitchLoading(false);
     }
-  }, [rec.path]);
+  }, [isJapanese, rec.path]);
 
   // Run pitch analysis as soon as a transcript exists so users don't need to play back first.
   useEffect(() => {
@@ -219,6 +256,7 @@ export default function RecordingItem({
           {!pitchLoading && !pitchError && pitch && (
             <PitchAlignmentChart
               analysis={pitch}
+              words={isJapanese ? (accentWords ?? undefined) : undefined}
               showLabels={isJapanese}
               playheadTime={playheadTime}
             />

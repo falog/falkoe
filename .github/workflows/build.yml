@@ -40,7 +40,9 @@ jobs:
             libasound2-dev \
             build-essential \
             ffmpeg \
-            praat
+            praat \
+            mecab \
+            mecab-ipadic-utf8
 
       - name: Install tools (Windows)
         if: matrix.os == 'windows-latest'
@@ -48,11 +50,20 @@ jobs:
         run: |
           choco install -y ffmpeg praat
 
+      - name: Install MeCab (Windows, optional)
+        if: matrix.os == 'windows-latest'
+        continue-on-error: true
+        shell: powershell
+        run: |
+          choco install -y mecab
+          choco install -y mecab-ipadic
+
       - name: Install tools (macOS)
         if: matrix.os == 'macos-14'
         run: |
           brew update
           brew install ffmpeg
+          brew install mecab mecab-ipadic
           brew install --cask praat
 
       - name: Bundle ffmpeg + praat into resources/bin
