@@ -113,7 +113,7 @@ jobs:
 
             echo "$ldd_out" \
               | awk '{print $3}' \
-              | grep -Ei '\\.dll$' \
+              | grep -Ei '\.dll$' \
               | grep -E '^(\/mingw64\/|\/ucrt64\/|\/clang64\/)' \
               | while read -r dll; do
                   if [ -f "$dll" ]; then
