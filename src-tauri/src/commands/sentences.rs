@@ -45,6 +45,7 @@ pub struct SentenceHistoryItem {
     pub last_recording_timestamp: Option<String>,
     pub last_recording_wav_path: Option<String>,
     pub model_wav_path: Option<String>,
+    pub tatoeba_mp3_path: Option<String>,
     pub uploaded_path: Option<String>,
 }
 
@@ -159,6 +160,11 @@ pub fn list_sentence_history(app: AppHandle) -> Result<Vec<SentenceHistoryItem>,
             .exists()
             .then(|| model_wav.to_string_lossy().to_string());
 
+        let tatoeba_mp3 = base.join("tatoeba").join("tatoeba.mp3");
+        let tatoeba_mp3_path = tatoeba_mp3
+            .exists()
+            .then(|| tatoeba_mp3.to_string_lossy().to_string());
+
         let uploaded_dir = base.join("uploaded");
         let uploaded_path = pick_uploaded_path(&uploaded_dir)
             .map(|p| p.to_string_lossy().to_string());
@@ -176,6 +182,7 @@ pub fn list_sentence_history(app: AppHandle) -> Result<Vec<SentenceHistoryItem>,
             last_recording_timestamp,
             last_recording_wav_path,
             model_wav_path,
+            tatoeba_mp3_path,
             uploaded_path,
         });
     }

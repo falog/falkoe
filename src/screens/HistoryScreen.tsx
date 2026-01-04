@@ -1,4 +1,4 @@
-import { Button, List, Space, Typography } from "antd";
+import { Button, Card, Space, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import TopNav from "../components/TopNav";
@@ -12,6 +12,7 @@ type HistoryItem = {
   lastRecordingTimestamp: string | null;
   lastRecordingWavPath: string | null;
   modelWavPath: string | null;
+  tatoebaMp3Path: string | null;
   uploadedPath: string | null;
 };
 
@@ -71,7 +72,8 @@ export default function HistoryScreen({
     }
 
     // Otherwise, open as recorded. Prefer model.wav, else the latest recorded take.
-    const headerPath = it.modelWavPath ?? it.lastRecordingWavPath;
+    const headerPath =
+      it.tatoebaMp3Path ?? it.modelWavPath ?? it.lastRecordingWavPath;
     if (headerPath) {
       onOpenFromHistory({
         kind: "recorded",
@@ -85,7 +87,7 @@ export default function HistoryScreen({
   };
 
   return (
-    <Space direction="vertical" style={{ width: "100%" }}>
+    <Space orientation="vertical" style={{ width: "100%" }}>
       <TopNav
         current="history"
         onBack={onBack}
@@ -99,14 +101,25 @@ export default function HistoryScreen({
         録音履歴
       </Typography.Title>
 
-      <List
-        loading={loading}
-        dataSource={items}
-        renderItem={(it) => (
-          <List.Item
-            actions={[
+      {loading && items.length === 0 && (
+        <Typography.Text type="secondary">読み込み中…</Typography.Text>
+      )}
+
+      <Space orientation="vertical" style={{ width: "100%" }}>
+        {items.map((it) => (
+          <Card
+            key={it.audioId}
+            size="small"
+            title={
+              <Space wrap>
+                <Typography.Text strong>
+                  {it.text?.trim() ? it.text : "(テキスト未保存)"}
+                </Typography.Text>
+                <Typography.Text type="secondary">[{it.lang}]</Typography.Text>
+              </Space>
+            }
+            extra={
               <Button
-                key="open"
                 type="primary"
                 onClick={() => openItem(it)}
                 disabled={
@@ -117,36 +130,22 @@ export default function HistoryScreen({
                 }
               >
                 開く
-              </Button>,
-            ]}
+              </Button>
+            }
           >
-            <List.Item.Meta
-              title={
-                <Space wrap>
-                  <Typography.Text strong>
-                    {it.text?.trim() ? it.text : "(テキスト未保存)"}
-                  </Typography.Text>
-                  <Typography.Text type="secondary">
-                    [{it.lang}]
-                  </Typography.Text>
-                </Space>
-              }
-              description={
-                <Space wrap>
-                  <Typography.Text type="secondary">
-                    Takes: {it.recordingsCount ?? 0}
-                  </Typography.Text>
-                  {it.lastRecordingTimestamp && (
-                    <Typography.Text type="secondary">
-                      Last: {it.lastRecordingTimestamp}
-                    </Typography.Text>
-                  )}
-                </Space>
-              }
-            />
-          </List.Item>
-        )}
-      />
+            <Space wrap>
+              <Typography.Text type="secondary">
+                Takes: {it.recordingsCount ?? 0}
+              </Typography.Text>
+              {it.lastRecordingTimestamp && (
+                <Typography.Text type="secondary">
+                  Last: {it.lastRecordingTimestamp}
+                </Typography.Text>
+              )}
+            </Space>
+          </Card>
+        ))}
+      </Space>
     </Space>
   );
 }

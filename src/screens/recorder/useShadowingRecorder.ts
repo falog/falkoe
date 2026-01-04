@@ -51,9 +51,6 @@ export function useShadowingRecorder({
   const silenceUnavailableNotifiedRef = useRef(false);
 
   const startAutoStopWatcher = useCallback(() => {
-    if (!isRecordingRef.current) {
-      return Promise.resolve(null);
-    }
     autoStopArmedRef.current = true;
     silenceWatcherRef.current?.stop();
     silenceWatcherRef.current = null;
@@ -69,12 +66,16 @@ export function useShadowingRecorder({
         return true;
       },
       onProgress: (remainingMs) => {
+        if (!autoStopArmedRef.current) return;
+        if (!isRecordingRef.current) return;
         // 音声終了時刻より後の更新のみ反映（古い更新は無視）
         if (Date.now() > lastSilenceEndTimeRef.current + 100) {
           setAutoStopRemainingMs(remainingMs);
         }
       },
       onSilenceEnd: () => {
+        if (!autoStopArmedRef.current) return;
+        if (!isRecordingRef.current) return;
         lastSilenceEndTimeRef.current = Date.now();
         setAutoStopRemainingMs(null);
       },
@@ -134,9 +135,20 @@ export function useShadowingRecorder({
           return;
         }
 
-        await startRecording();
-        isRecordingRef.current = true;
-        await startAutoStopWatcher();
+        // Start the silence watcher BEFORE awaiting anything.
+        // This helps keep initialization inside the user gesture.
+        const watcherPromise = startAutoStopWatcher();
+
+        try {
+          await startRecording();
+          isRecordingRef.current = true;
+          await watcherPromise;
+        } catch (e) {
+          autoStopArmedRef.current = false;
+          silenceWatcherRef.current?.stop();
+          silenceWatcherRef.current = null;
+          throw e;
+        }
         return;
       }
 

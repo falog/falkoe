@@ -28,6 +28,9 @@ const RecorderScreen = ({
 }: RecorderScreenProps) => {
   const audioUnlockTriedRef = useRef(false);
 
+  const mimicDisabledForSource =
+    source.kind === "recorded" && /[\\/]recorded[\\/]/.test(source.filePath);
+
   const {
     preferAssetProtocol,
     sourceKind,
@@ -127,7 +130,9 @@ const RecorderScreen = ({
           status={status}
           onMimic={() => shadowingRecorder.start({ mode: "mimic" })}
           mimicLoading={shadowingRecorder.isMimicLoading}
-          mimicDisabled={!headerAudioUrl || isHeaderAudioLoading}
+          mimicDisabled={
+            mimicDisabledForSource || !headerAudioUrl || isHeaderAudioLoading
+          }
           onStartRecording={() => shadowingRecorder.start()}
           onStopRecording={shadowingRecorder.stop}
           autoStopRemainingMs={shadowingRecorder.autoStopRemainingMs}
