@@ -1,4 +1,4 @@
-import { Button, Card, Space, Typography } from "antd";
+import { Button, Card, Empty, Space, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import TopNav from "../components/TopNav";
@@ -104,6 +104,8 @@ export default function HistoryScreen({
       {loading && items.length === 0 && (
         <Typography.Text type="secondary">読み込み中…</Typography.Text>
       )}
+
+      {!loading && items.length === 0 && <Empty description="No Data" />}
 
       <Space orientation="vertical" style={{ width: "100%" }}>
         {items.map((it) => (
