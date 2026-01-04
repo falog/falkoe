@@ -60,6 +60,21 @@ jobs:
             mingw-w64-x86_64-mecab
             mingw-w64-x86_64-mecab-naist-jdic
 
+      - name: Ensure MeCab installed (MSYS2)
+        if: matrix.os == 'windows-latest'
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+
+          pacman -S --noconfirm --needed mingw-w64-x86_64-mecab mingw-w64-x86_64-mecab-naist-jdic
+
+          echo "[info] mecab packages:" 
+          pacman -Q | grep -i mecab || true
+
+          echo "[info] mecab exe candidates:" 
+          ls -la /mingw64/bin/mecab.exe || true
+          ls -la /usr/bin/mecab.exe || true
+
       - name: Install tools (macOS)
         if: matrix.os == 'macos-14'
         run: |
