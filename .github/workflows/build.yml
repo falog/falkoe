@@ -77,10 +77,40 @@ jobs:
           New-Item -ItemType Directory -Force -Path 'src-tauri/resources/bin' | Out-Null
           New-Item -ItemType Directory -Force -Path 'src-tauri/resources/mecab/ipadic' | Out-Null
 
-          $mingwBin = 'C:\\msys64\\mingw64\\bin'
-          $mecabExe = Join-Path $mingwBin 'mecab.exe'
-          if (!(Test-Path $mecabExe)) {
-            throw "mecab.exe not found at $mecabExe"
+          # MSYS2 install root varies (C:\\msys64 is common but not guaranteed).
+          $candidateRoots = @(
+            $env:MSYS2_ROOT,
+            $env:MSYS2_LOCATION,
+            'C:\\msys64',
+            'D:\\msys64'
+          ) | Where-Object { $_ -and (Test-Path $_) }
+
+          $msysRoot = $candidateRoots | Select-Object -First 1
+          if (-not $msysRoot) {
+            throw "MSYS2 root not found. Tried env(MSYS2_ROOT/MSYS2_LOCATION) and common paths."
+          }
+
+          # Look for mecab.exe in typical MSYS2 toolchains.
+          $binCandidates = @(
+            (Join-Path $msysRoot 'mingw64\\bin'),
+            (Join-Path $msysRoot 'ucrt64\\bin'),
+            (Join-Path $msysRoot 'clang64\\bin'),
+            (Join-Path $msysRoot 'usr\\bin')
+          )
+
+          $toolBin = $null
+          $mecabExe = $null
+          foreach ($bin in $binCandidates) {
+            $candidate = Join-Path $bin 'mecab.exe'
+            if (Test-Path $candidate) {
+              $toolBin = $bin
+              $mecabExe = $candidate
+              break
+            }
+          }
+
+          if (-not $mecabExe) {
+            throw "mecab.exe not found under $msysRoot (searched: $($binCandidates -join ', '))"
           }
 
           Copy-Item $mecabExe 'src-tauri/resources/bin/mecab.exe' -Force
@@ -95,7 +125,7 @@ jobs:
             'libwinpthread-1.dll'
           )
           foreach ($dll in $dlls) {
-            $src = Join-Path $mingwBin $dll
+            $src = Join-Path $toolBin $dll
             if (Test-Path $src) {
               Copy-Item $src (Join-Path 'src-tauri/resources/bin' $dll) -Force
             } else {
@@ -104,10 +134,15 @@ jobs:
           }
 
           # Bundle dictionary (NAIST-JDIC) into resources/mecab/ipadic/
-          $dicDir = 'C:\\msys64\\mingw64\\lib\\mecab\\dic\\naist-jdic'
-          $dicrc = Join-Path $dicDir 'dicrc'
-          if (!(Test-Path $dicrc)) {
-            throw "dicrc not found at $dicrc"
+          $dicCandidates = @(
+            (Join-Path $msysRoot 'mingw64\\lib\\mecab\\dic\\naist-jdic'),
+            (Join-Path $msysRoot 'ucrt64\\lib\\mecab\\dic\\naist-jdic'),
+            (Join-Path $msysRoot 'clang64\\lib\\mecab\\dic\\naist-jdic'),
+            (Join-Path $msysRoot 'usr\\lib\\mecab\\dic\\naist-jdic')
+          )
+          $dicDir = $dicCandidates | Where-Object { Test-Path (Join-Path $_ 'dicrc') } | Select-Object -First 1
+          if (-not $dicDir) {
+            throw "MeCab dictionary (naist-jdic) not found under $msysRoot. Tried: $($dicCandidates -join ', ')"
           }
 
           Remove-Item -Recurse -Force 'src-tauri/resources/mecab/ipadic/*' -ErrorAction SilentlyContinue
