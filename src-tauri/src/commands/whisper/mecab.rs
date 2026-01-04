@@ -1,5 +1,7 @@
 use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use tauri::{AppHandle, Manager};
 
 #[derive(Debug, Clone)]
 pub struct WordLike {
@@ -32,9 +34,95 @@ fn debug_enabled() -> bool {
         .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
 }
 
+fn env_mecab_path() -> Option<PathBuf> {
+    std::env::var("FALKOE_MECAB_PATH")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+}
+
+fn env_mecab_dicdir() -> Option<PathBuf> {
+    std::env::var("FALKOE_MECAB_DICDIR")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+}
+
+fn resolve_bundled_tool(app: &AppHandle, base_name: &str) -> Option<PathBuf> {
+    let resource_dir = app.path().resource_dir().ok()?;
+    let exe_name = if cfg!(target_os = "windows") {
+        format!("{base_name}.exe")
+    } else {
+        base_name.to_string()
+    };
+
+    let candidates = [
+        resource_dir.join("bin").join(&exe_name),
+        resource_dir.join(&exe_name),
+    ];
+
+    candidates.into_iter().find(|p| p.exists())
+}
+
+fn resolve_bundled_dicdir(app: &AppHandle) -> Option<PathBuf> {
+    // We treat a directory as a dictionary dir if it contains a dicrc file.
+    let resource_dir = app.path().resource_dir().ok()?;
+    let candidates = [
+        resource_dir.join("mecab").join("ipadic"),
+        resource_dir.join("mecab").join("dic"),
+        resource_dir.join("mecab"),
+    ];
+    candidates
+        .into_iter()
+        .find(|p| p.join("dicrc").exists())
+}
+
+#[derive(Debug, Clone)]
+struct MecabRuntime {
+    cmd: PathBuf,
+    dicdir: Option<PathBuf>,
+}
+
 fn mecab_candidates() -> [&'static str; 3] {
     // Tauri packaged apps may not inherit a full PATH; try common locations.
     ["mecab", "/usr/bin/mecab", "/usr/local/bin/mecab"]
+}
+
+fn mecab_runtime_candidates(app: Option<&AppHandle>) -> Vec<MecabRuntime> {
+    let dicdir = env_mecab_dicdir()
+        .or_else(|| app.and_then(resolve_bundled_dicdir));
+
+    let mut out: Vec<MecabRuntime> = Vec::new();
+
+    // 1) Explicit override path (highest priority)
+    if let Some(p) = env_mecab_path() {
+        out.push(MecabRuntime {
+            cmd: p,
+            dicdir: dicdir.clone(),
+        });
+    }
+
+    // 2) Bundled binary under resource_dir (preferred for distribution builds)
+    if let Some(app) = app {
+        if let Some(p) = resolve_bundled_tool(app, "mecab") {
+            out.push(MecabRuntime {
+                cmd: p,
+                dicdir: dicdir.clone(),
+            });
+        }
+    }
+
+    // 3) System candidates
+    for cmd in mecab_candidates() {
+        out.push(MecabRuntime {
+            cmd: PathBuf::from(cmd),
+            dicdir: dicdir.clone(),
+        });
+    }
+
+    out
 }
 
 fn is_punct_char(c: char) -> bool {
@@ -93,29 +181,32 @@ fn should_exclude_by_surface(surface: &str) -> bool {
     )
 }
 
-fn run_mecab(text: &str) -> Option<Vec<MecabToken>> {
-    let mut child = None;
-    for cmd in mecab_candidates() {
-        match Command::new(cmd)
-            .arg("-O")
-            .arg("wakati")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-        {
-            Ok(c) => {
-                child = Some(c);
-                break;
-            }
-            Err(e) => {
-                if debug_enabled() {
-                    println!("[mecab] spawn failed for {cmd}: {e}");
-                }
-            }
-        }
+fn run_mecab(text: &str, rt: &MecabRuntime) -> Option<Vec<MecabToken>> {
+    // First, try POS mode (more accurate exclude decisions).
+    if let Some(tokens) = run_mecab_with_pos(text, rt) {
+        return Some(tokens);
     }
-    let mut child = child?;
+
+    // Fallback: wakati surfaces only.
+    let mut cmd = Command::new(&rt.cmd);
+    cmd.arg("-O").arg("wakati");
+    if let Some(dicdir) = &rt.dicdir {
+        cmd.arg("-d").arg(dicdir);
+    }
+    let mut child = match cmd
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            if debug_enabled() {
+                println!("[mecab] spawn failed for {:?}: {e}", rt.cmd);
+            }
+            return None;
+        }
+    };
 
     {
         let mut stdin = child.stdin.take()?;
@@ -128,12 +219,6 @@ fn run_mecab(text: &str) -> Option<Vec<MecabToken>> {
         return None;
     }
     let out = String::from_utf8(output.stdout).ok()?;
-
-    // wakati output loses POS. Try a second pass with default output for POS.
-    // If that fails, fall back to wakati surfaces only.
-    if let Some(tokens) = run_mecab_with_pos(text) {
-        return Some(tokens);
-    }
 
     let mut toks = Vec::new();
     for s in out.split_whitespace() {
@@ -149,27 +234,25 @@ fn run_mecab(text: &str) -> Option<Vec<MecabToken>> {
     Some(toks)
 }
 
-fn run_mecab_with_pos(text: &str) -> Option<Vec<MecabToken>> {
-    let mut child = None;
-    for cmd in mecab_candidates() {
-        match Command::new(cmd)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-        {
-            Ok(c) => {
-                child = Some(c);
-                break;
-            }
-            Err(e) => {
-                if debug_enabled() {
-                    println!("[mecab] spawn failed for {cmd}: {e}");
-                }
-            }
-        }
+fn run_mecab_with_pos(text: &str, rt: &MecabRuntime) -> Option<Vec<MecabToken>> {
+    let mut cmd = Command::new(&rt.cmd);
+    if let Some(dicdir) = &rt.dicdir {
+        cmd.arg("-d").arg(dicdir);
     }
-    let mut child = child?;
+    let mut child = match cmd
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            if debug_enabled() {
+                println!("[mecab] spawn failed for {:?}: {e}", rt.cmd);
+            }
+            return None;
+        }
+    };
 
     {
         let mut stdin = child.stdin.take()?;
@@ -230,7 +313,11 @@ fn normalize_for_alignment(s: &str) -> String {
         .collect()
 }
 
-pub fn mecab_timed_tokens(text: &str, whisper_words: &[WordLike]) -> Option<Vec<TimedToken>> {
+fn mecab_timed_tokens_inner(
+    app: Option<&AppHandle>,
+    text: &str,
+    whisper_words: &[WordLike],
+) -> Option<Vec<TimedToken>> {
     if debug_enabled() {
         println!("[mecab] mecab_timed_tokens called");
         println!("[mecab] text={:?}", text);
@@ -241,8 +328,18 @@ pub fn mecab_timed_tokens(text: &str, whisper_words: &[WordLike]) -> Option<Vec<
         return None;
     }
 
-    // 1) MeCab tokenize (if mecab missing, returns None)
-    let mecab_raw = match run_mecab(text) {
+    // 1) MeCab tokenize (try candidates in order)
+    let mut mecab_raw: Option<Vec<MecabToken>> = None;
+    for rt in mecab_runtime_candidates(app) {
+        if debug_enabled() {
+            println!("[mecab] trying cmd={:?} dicdir={:?}", rt.cmd, rt.dicdir);
+        }
+        if let Some(v) = run_mecab(text, &rt) {
+            mecab_raw = Some(v);
+            break;
+        }
+    }
+    let mecab_raw = match mecab_raw {
         Some(v) => v,
         None => {
             if debug_enabled() {
@@ -363,4 +460,16 @@ pub fn mecab_timed_tokens(text: &str, whisper_words: &[WordLike]) -> Option<Vec<
     }
 
     Some(out)
+}
+
+pub fn mecab_timed_tokens(text: &str, whisper_words: &[WordLike]) -> Option<Vec<TimedToken>> {
+    mecab_timed_tokens_inner(None, text, whisper_words)
+}
+
+pub fn mecab_timed_tokens_with_app(
+    app: &AppHandle,
+    text: &str,
+    whisper_words: &[WordLike],
+) -> Option<Vec<TimedToken>> {
+    mecab_timed_tokens_inner(Some(app), text, whisper_words)
 }

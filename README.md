@@ -247,6 +247,21 @@ Falkoe は日本語のアクセント表示（`*.accent.json`）を自然な単�
 - **あると改善します**: Whisper の `words` が1文字単位になってしまうケース（例: `明` / `日`）を、`明日` のような自然な境界に再構成します。
 - **辞書が必要です**: MeCab 本体に加えて辞書（例: `ipadic`）が必要です。
 
+### 同梱（配布ビルド）
+
+配布版では、Tauri の `resource_dir` 配下に MeCab と辞書を置くことで **システムへの別途インストール無し**で使えます。
+
+- Windows: `resources/bin/mecab.exe`
+- macOS / Linux: `resources/bin/mecab`
+- 辞書: `resources/mecab/ipadic/`（`dicrc` があるディレクトリ）
+
+設定は [src-tauri/tauri.conf.json](src-tauri/tauri.conf.json) の `bundle.resources` に `resources/mecab` を含めています。
+
+### 環境変数での上書き（任意）
+
+- `FALKOE_MECAB_PATH`: MeCab 実行ファイルのパスを固定したい場合
+- `FALKOE_MECAB_DICDIR`: 辞書ディレクトリ（`dicrc` のある場所）を指定したい場合
+
 ### 開発環境でのインストール例
 
 - Linux (Debian/Ubuntu):
@@ -274,6 +289,21 @@ Falkoe optionally uses **MeCab** to build natural word boundaries for Japanese a
 - **Not required**: The app still works without MeCab (falls back to the default tokenization).
 - **Improves Japanese tokenization**: Helps avoid cases where Whisper `words` become character-by-character (e.g. `明` / `日`) and reconstructs them into natural units (e.g. `明日`).
 - **Dictionary required**: You need MeCab plus a dictionary (e.g. `ipadic`).
+
+### Bundling (distribution builds)
+
+For distribution builds, you can place MeCab and its dictionary under Tauri's `resource_dir` so users don't need a separate system install.
+
+- Windows: `resources/bin/mecab.exe`
+- macOS / Linux: `resources/bin/mecab`
+- Dictionary: `resources/mecab/ipadic/` (directory containing `dicrc`)
+
+The app bundle is configured in [src-tauri/tauri.conf.json](src-tauri/tauri.conf.json) (`bundle.resources`) to include `resources/mecab`.
+
+### Environment overrides (optional)
+
+- `FALKOE_MECAB_PATH`: force a specific MeCab executable path
+- `FALKOE_MECAB_DICDIR`: force a specific dictionary directory (containing `dicrc`)
 
 ### Install examples (development)
 

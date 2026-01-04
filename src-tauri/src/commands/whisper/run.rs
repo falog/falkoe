@@ -409,7 +409,7 @@ fn run_whisper_for_wav(app: &AppHandle, wav_path: &str, sentence_hash: &str, lan
                     .collect::<Vec<_>>();
 
                 if let Some(mecab_tokens) =
-                    super::mecab::mecab_timed_tokens(&mecab_text_ja, &mecab_wordlikes)
+                    super::mecab::mecab_timed_tokens_with_app(app, &mecab_text_ja, &mecab_wordlikes)
                 {
                     println!("[accent] mecab used: {} tokens", mecab_tokens.len());
                     for t in mecab_tokens {

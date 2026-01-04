@@ -35,7 +35,8 @@
       "resources/ipa/index.json",
       "resources/ipa/audio",
       "resources/bin",
-      "resources/praat"
+      "resources/praat",
+      "resources/mecab"
     ],
     "linux": {
       "deb": {
