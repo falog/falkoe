@@ -106,12 +106,15 @@ jobs:
           # Copy DLL dependencies. Prefer ldd if present; otherwise fall back to copying DLLs next to mecab.exe.
           mecab_dir="$(dirname "$mecab_path")"
           if command -v ldd >/dev/null 2>&1; then
-            echo "[info] ldd mecab.exe:" 
-            ldd "$mecab_path" || true
+            # Note: under MSYS2, ldd may exit non-zero even when output is usable.
+            ldd_out="$(ldd "$mecab_path" 2>/dev/null || true)"
+            echo "[info] ldd mecab.exe:"
+            echo "$ldd_out"
 
-            ldd "$mecab_path" \
+            echo "$ldd_out" \
               | awk '{print $3}' \
-              | grep -E '\\.dll$' \
+              | grep -Ei '\\.dll$' \
+              | grep -E '^(\/mingw64\/|\/ucrt64\/|\/clang64\/)' \
               | while read -r dll; do
                   if [ -f "$dll" ]; then
                     cp -f "$dll" src-tauri/resources/bin/
@@ -123,12 +126,25 @@ jobs:
           fi
 
           # Bundle dictionary (NAIST-JDIC) into resources/mecab/ipadic/
-          dic_root="$(mecab-config --dicdir)"
-          dic_dir="$dic_root/naist-jdic"
+          dic_dir=""
+          if command -v mecab-config >/dev/null 2>&1; then
+            dic_root="$(mecab-config --dicdir)"
+            dic_dir="$dic_root/naist-jdic"
+          fi
+
+          if [ -z "$dic_dir" ] || [ ! -d "$dic_dir" ]; then
+            # Fallback: common locations under MSYS2 toolchains.
+            dic_dir="$(ls -d /mingw64/lib/mecab/dic/naist-jdic /mingw64/share/mecab/dic/naist-jdic 2>/dev/null | head -n 1 || true)"
+          fi
+
           if [ ! -f "$dic_dir/dicrc" ]; then
             echo "[error] dicrc not found at $dic_dir/dicrc"
-            echo "[info] dic_root=$dic_root"
-            ls -la "$dic_root" || true
+            if [ -n "${dic_root:-}" ]; then
+              echo "[info] dic_root=$dic_root"
+              ls -la "$dic_root" || true
+            fi
+            ls -la /mingw64/lib/mecab/dic 2>/dev/null || true
+            ls -la /mingw64/share/mecab/dic 2>/dev/null || true
             exit 1
           fi
 
