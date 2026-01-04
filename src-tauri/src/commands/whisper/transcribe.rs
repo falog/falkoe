@@ -137,12 +137,19 @@ pub fn transcribe(wav_path: &str, model_path: &Path, whisper_lang: Option<&str>)
     println!("after WhisperContext::new_with_params");
     let mut state = ctx.create_state()?;
 
-    let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+    // Match OpenAI whisper-python default behavior more closely:
+    // temperature=0 => beam search (beam_size=5).
+    // This tends to improve timestamps/segmentation on short utterances vs greedy.
+    let mut params = FullParams::new(SamplingStrategy::BeamSearch {
+        beam_size: 5,
+        patience: -1.0,
+    });
 
     println!("set_language {:?}", whisper_lang);
     println!("model_path = {:?}", model_path);
     params.set_language(whisper_lang);
     params.set_translate(false);
+    params.set_temperature(0.0);
 
     // Token-level timestamps.
     params.set_token_timestamps(true);
