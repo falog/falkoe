@@ -173,15 +173,32 @@ fn run_whisper_for_wav(app: &AppHandle, wav_path: &str, sentence_hash: &str, lan
                     return false;
                 }
 
-                t.chars().all(|c| {
-                    c.is_ascii_punctuation()
-                        || matches!(
-                            c,
-                            '。' | '、' | '！' | '？' | '…' | '・' | '「' | '」' | '『' | '』' | '（'
-                                | '）' | '【' | '】' | '［' | '］' | '〔' | '〕' | '〈' | '〉' | '《'
-                                | '》' | '“' | '”' | '‘' | '’' | '：' | '；'
-                        )
-                })
+                t.chars().all(is_punct_char)
+            }
+
+            fn is_punct_char(c: char) -> bool {
+                c.is_ascii_punctuation()
+                    || matches!(
+                        c,
+                        '。' | '、' | '！' | '？' | '…' | '・' | '「' | '」' | '『' | '』' | '（'
+                            | '）' | '【' | '】' | '［' | '］' | '〔' | '〕' | '〈' | '〉' | '《'
+                            | '》' | '“' | '”' | '‘' | '’' | '：' | '；'
+                    )
+            }
+
+            fn apply_polite_odaka_rule(text: &str, label: Option<String>) -> Option<String> {
+                let Some(l) = label else { return None };
+                if l != "Odaka" {
+                    return Some(l);
+                }
+
+                let trimmed = text.trim();
+                let core = trimmed.trim_end_matches(|c: char| c.is_whitespace() || is_punct_char(c));
+                if core.ends_with("ます") || core.ends_with("です") {
+                    return Some("Nakadaka".to_string());
+                }
+
+                Some(l)
             }
 
             fn is_ja_label_excluded_token(s: &str) -> bool {
@@ -328,7 +345,7 @@ fn run_whisper_for_wav(app: &AppHandle, wav_path: &str, sentence_hash: &str, lan
                 let (label, peak_pos, pitch_range, slope) = if voiced.len() >= 3 {
                     let (pp, pr, sl) = segment_features_py(&voiced);
                     (
-                        Some(estimate_accent_label_py(pp, pr)),
+                        apply_polite_odaka_rule(t, Some(estimate_accent_label_py(pp, pr))),
                         Some(pp),
                         Some(pr),
                         Some(sl),
@@ -372,7 +389,7 @@ fn run_whisper_for_wav(app: &AppHandle, wav_path: &str, sentence_hash: &str, lan
                 let (label, peak_pos, pitch_range, slope) = if voiced.len() >= 3 {
                     let (pp, pr, sl) = segment_features_py(&voiced);
                     (
-                        Some(estimate_accent_label_py(pp, pr)),
+                        apply_polite_odaka_rule(&w.text, Some(estimate_accent_label_py(pp, pr))),
                         Some(pp),
                         Some(pr),
                         Some(sl),

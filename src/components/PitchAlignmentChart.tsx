@@ -59,6 +59,31 @@ function formatAccentLabel(label: unknown): string {
   return s;
 }
 
+function normalizeWordForSuffixRule(text: unknown): string {
+  return (
+    String(text ?? "")
+      .trim()
+      .replace(/[\s\u3000]+$/g, "")
+      // strip common trailing punctuation
+      .replace(/[\s\u3000。、．，,\.！!？?」』）)】\]]+$/g, "")
+  );
+}
+
+function applyAccentHeuristicRules(text: unknown, label: unknown): unknown {
+  const s = String(label ?? "");
+  if (!s) return label;
+
+  // Heuristic: polite endings often carry sentence-level drop; avoid misreading it as word-level Odaka.
+  if (s === "Odaka") {
+    const t = normalizeWordForSuffixRule(text);
+    if (t.endsWith("ます") || t.endsWith("です")) {
+      return "Nakadaka";
+    }
+  }
+
+  return label;
+}
+
 export function buildPitchAlignmentChartSvg(
   opts: PitchChartSvgOptions
 ): PitchChartSvgResult {
@@ -167,8 +192,9 @@ export function buildPitchAlignmentChartSvg(
       const left = Math.min(x0, x1);
       const width = Math.max(1, Math.abs(x1 - x0));
       const text = escapeXml(String(w.text ?? ""));
+      const labelRaw = applyAccentHeuristicRules(w.text, w.label);
       const label =
-        showLabels && w.label ? escapeXml(formatAccentLabel(w.label)) : "";
+        showLabels && labelRaw ? escapeXml(formatAccentLabel(labelRaw)) : "";
       return `
 <g key="w-${idx}">
   <rect x="${left}" y="${padY}" width="${width}" height="${plotH}" fill="${token.colorFillTertiary}" opacity="0.8" />
@@ -380,6 +406,7 @@ export function PitchAlignmentChart({
                   const x1 = xForTime(w.end);
                   const left = Math.min(x0, x1);
                   const width = Math.max(1, Math.abs(x1 - x0));
+                  const labelRaw = applyAccentHeuristicRules(w.text, w.label);
                   return (
                     <g key={`${w.start}-${w.end}-${idx}`}>
                       <rect
@@ -398,14 +425,14 @@ export function PitchAlignmentChart({
                         fontSize={12}
                       >
                         {w.text}
-                        {showLabels && w.label ? (
+                        {showLabels && labelRaw ? (
                           <tspan
                             x={left + width / 2}
                             dy={14}
                             fill={token.colorTextSecondary}
                             fontSize={11}
                           >
-                            [{formatAccentLabel(w.label)}]
+                            [{formatAccentLabel(labelRaw)}]
                           </tspan>
                         ) : null}
                       </text>
