@@ -303,7 +303,27 @@ fn convert_uploaded_to_wav(app: &AppHandle, uploaded_path: &str, sentence_hash: 
         fs::create_dir_all(&base_dir)?;
 
         let wav_path = base_dir.join("uploaded.wav");
-        ffmpeg_convert_to_wav(app, Path::new(uploaded_path), &wav_path)?;
+        let input_path = Path::new(uploaded_path);
+
+        // If the uploaded path already points to our destination wav, do not try to
+        // re-convert in-place (ffmpeg errors: "Output ... same as Input ...").
+        let same_path = if wav_path.exists() {
+            match (input_path.canonicalize(), wav_path.canonicalize()) {
+                (Ok(a), Ok(b)) => a == b,
+                _ => input_path == wav_path.as_path(),
+            }
+        } else {
+            input_path == wav_path.as_path()
+        };
+
+        if same_path {
+            if wav_path.exists() {
+                return Ok(wav_path.to_string_lossy().to_string());
+            }
+            bail!("uploaded_path points to output wav but it does not exist: {}", uploaded_path);
+        }
+
+        ffmpeg_convert_to_wav(app, input_path, &wav_path)?;
         Ok(wav_path.to_string_lossy().to_string())
     })()
     .map_err(|e| e.to_string())
