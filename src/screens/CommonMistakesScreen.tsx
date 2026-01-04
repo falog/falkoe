@@ -19,6 +19,7 @@ type Props = {
   onOpenIpaList: () => void;
   onOpenDevelopersMistakes: () => void;
   onOpenCommonMistakes: () => void;
+  onOpenSettings: () => void;
 };
 
 export default function CommonMistakesScreen({
@@ -27,6 +28,7 @@ export default function CommonMistakesScreen({
   onOpenIpaList,
   onOpenDevelopersMistakes,
   onOpenCommonMistakes,
+  onOpenSettings,
 }: Props) {
   const [ipaIndex, setIpaIndex] = useState<IpaIndex | null>(null);
   const [loading, setLoading] = useState(true);
@@ -116,6 +118,7 @@ export default function CommonMistakesScreen({
         onBack={onBack}
         onOpenHistory={onOpenHistory}
         onOpenIpaList={onOpenIpaList}
+        onOpenSettings={onOpenSettings}
         onOpenDevelopersMistakes={onOpenDevelopersMistakes}
         onOpenCommonMistakes={onOpenCommonMistakes}
       />

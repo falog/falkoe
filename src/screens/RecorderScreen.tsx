@@ -14,6 +14,7 @@ type RecorderScreenProps = {
   onBack: () => void;
   onOpenHistory: () => void;
   onOpenIpaList: () => void;
+  onOpenSettings: () => void;
   onOpenDevelopersMistakes: () => void;
   onOpenCommonMistakes: () => void;
 };
@@ -23,6 +24,7 @@ const RecorderScreen = ({
   onBack,
   onOpenHistory,
   onOpenIpaList,
+  onOpenSettings,
   onOpenDevelopersMistakes,
   onOpenCommonMistakes,
 }: RecorderScreenProps) => {
@@ -80,6 +82,7 @@ const RecorderScreen = ({
           onBack={onBack ? () => navigateSafely(onBack) : undefined}
           onOpenHistory={() => navigateSafely(onOpenHistory)}
           onOpenIpaList={() => navigateSafely(onOpenIpaList)}
+          onOpenSettings={() => navigateSafely(onOpenSettings)}
           onOpenDevelopersMistakes={() =>
             navigateSafely(onOpenDevelopersMistakes)
           }

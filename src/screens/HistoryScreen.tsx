@@ -22,6 +22,7 @@ type Props = {
   onOpenDevelopersMistakes: () => void;
   onOpenCommonMistakes: () => void;
   onOpenHistory: () => void;
+  onOpenSettings: () => void;
   onOpenFromHistory: (source: SpeechSource) => void;
 };
 
@@ -31,6 +32,7 @@ export default function HistoryScreen({
   onOpenDevelopersMistakes,
   onOpenCommonMistakes,
   onOpenHistory,
+  onOpenSettings,
   onOpenFromHistory,
 }: Props) {
   const [items, setItems] = useState<HistoryItem[]>([]);
@@ -95,6 +97,7 @@ export default function HistoryScreen({
         onOpenDevelopersMistakes={onOpenDevelopersMistakes}
         onOpenCommonMistakes={onOpenCommonMistakes}
         onOpenHistory={onOpenHistory}
+        onOpenSettings={onOpenSettings}
       />
 
       <Typography.Title level={4} style={{ margin: 0 }}>

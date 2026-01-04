@@ -21,6 +21,7 @@ type Props = {
   onOpenHistory: () => void;
   onOpenIpaList: () => void;
   onOpenCommonMistakes: () => void;
+  onOpenSettings: () => void;
   initialFocus?: "j" | "r" | "oo";
 };
 
@@ -29,6 +30,7 @@ export default function DevelopersMistakesScreen({
   onOpenHistory,
   onOpenIpaList,
   onOpenCommonMistakes,
+  onOpenSettings,
   initialFocus,
 }: Props) {
   const [ipaIndex, setIpaIndex] = useState<IpaIndex | null>(null);
@@ -243,6 +245,7 @@ export default function DevelopersMistakesScreen({
           onBack={onBack}
           onOpenHistory={onOpenHistory}
           onOpenIpaList={onOpenIpaList}
+          onOpenSettings={onOpenSettings}
           onOpenDevelopersMistakes={() => {
             // already here
           }}

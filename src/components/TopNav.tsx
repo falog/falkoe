@@ -6,13 +6,15 @@ export type TopNavCurrent =
   | "history"
   | "ipa"
   | "mistakes"
-  | "common";
+  | "common"
+  | "settings";
 
 type Props = {
   current: TopNavCurrent;
   onBack?: () => void;
   onOpenHistory?: () => void;
   onOpenIpaList: () => void;
+  onOpenSettings: () => void;
   onOpenDevelopersMistakes: () => void;
   onOpenCommonMistakes: () => void;
 };
@@ -22,6 +24,7 @@ export default function TopNav({
   onBack,
   onOpenHistory,
   onOpenIpaList,
+  onOpenSettings,
   onOpenDevelopersMistakes,
   onOpenCommonMistakes,
 }: Props) {
@@ -46,6 +49,10 @@ export default function TopNav({
       </Button>
       <Button disabled={current === "common"} onClick={onOpenCommonMistakes}>
         よくある間違い
+      </Button>
+
+      <Button disabled={current === "settings"} onClick={onOpenSettings}>
+        設定
       </Button>
     </Space>
   );

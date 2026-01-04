@@ -43,7 +43,7 @@ fn main() -> Result<()> {
     }
 
     let model_path = falkoe_lib::find_existing_model_path_noapp().context(
-        "model not found. Set FALKOE_MODEL_PATH or download model via the app first.",
+        "model not found. Set FALKOE_MODEL_PATH (explicit path) or set FALKOE_MODEL_VARIANT (tiny|tiny-q8_0|tiny-q5_1|base|base-q8_0|base-q5_1|small|small-q8_0|small-q5_1|medium|medium-q8_0|medium-q5_0|large-v3|large-v3-q5_0|large-v3-turbo|large-v3-turbo-q5_0|large-v3-turbo-q8_0) and download the model via the app first.",
     )?;
 
     let whisper_lang = match lang.as_deref() {

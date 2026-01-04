@@ -47,6 +47,7 @@ type WordInputScreenProps = {
   onUseSpeech: (source: SpeechSource) => void;
   onOpenHistory: () => void;
   onOpenIpaList: () => void;
+  onOpenSettings: () => void;
   onOpenDevelopersMistakes: () => void;
   onOpenCommonMistakes: () => void;
 };
@@ -184,6 +185,7 @@ const WordInputScreen = ({
   onUseSpeech,
   onOpenHistory,
   onOpenIpaList,
+  onOpenSettings,
   onOpenDevelopersMistakes,
   onOpenCommonMistakes,
 }: WordInputScreenProps) => {
@@ -275,6 +277,7 @@ const WordInputScreen = ({
         current="word"
         onOpenHistory={onOpenHistory}
         onOpenIpaList={onOpenIpaList}
+        onOpenSettings={onOpenSettings}
         onOpenDevelopersMistakes={onOpenDevelopersMistakes}
         onOpenCommonMistakes={onOpenCommonMistakes}
       />

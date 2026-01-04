@@ -6,6 +6,7 @@ import HistoryScreen from "./screens/HistoryScreen";
 import IpaListScreen from "./screens/IpaListScreen.tsx";
 import DevelopersMistakesScreen from "./screens/DevelopersMistakesScreen.tsx";
 import CommonMistakesScreen from "./screens/CommonMistakesScreen.tsx";
+import SettingsScreen from "./screens/SettingsScreen";
 import { Sentence } from "./components/ExampleList";
 import type { SpeechSource } from "./types/speech";
 import type { MistakeFocus } from "./data/commonMistakes";
@@ -17,14 +18,34 @@ type FinalResultPayload = {
 
 const App = () => {
   const [screen, setScreen] = useState<
-    "word" | "record" | "history" | "ipa" | "mistakes" | "common"
+    "word" | "record" | "history" | "ipa" | "mistakes" | "common" | "settings"
   >("word");
+  const [screenBeforeSettings, setScreenBeforeSettings] =
+    useState<
+      Exclude<
+        | "word"
+        | "record"
+        | "history"
+        | "ipa"
+        | "mistakes"
+        | "common"
+        | "settings",
+        "settings"
+      >
+    >("word");
   const [mistakeFocus, setMistakeFocus] = useState<MistakeFocus | null>(null);
   const [lang, setLang] = useState("eng");
   const [word, setWord] = useState("");
   const [sentences, setSentences] = useState<Sentence[]>([]);
   const [wordcount, setWordcount] = useState("5-");
   const [source, setSource] = useState<SpeechSource | null>(null);
+
+  const openSettings = () => {
+    if (screen !== "settings") {
+      setScreenBeforeSettings(screen);
+    }
+    setScreen("settings");
+  };
 
   useEffect(() => {
     const unlistenPromise = listen<FinalResultPayload>(
@@ -56,6 +77,7 @@ const App = () => {
           onWordcount={setWordcount}
           onOpenIpaList={() => setScreen("ipa")}
           onOpenHistory={() => setScreen("history")}
+          onOpenSettings={openSettings}
           onOpenDevelopersMistakes={() => {
             setMistakeFocus(null);
             setScreen("mistakes");
@@ -81,6 +103,7 @@ const App = () => {
           onBack={() => setScreen("word")}
           onOpenIpaList={() => setScreen("ipa")}
           onOpenHistory={() => setScreen("history")}
+          onOpenSettings={openSettings}
           onOpenDevelopersMistakes={() => {
             setMistakeFocus(null);
             setScreen("mistakes");
@@ -96,6 +119,7 @@ const App = () => {
           onOpenHistory={() => {
             // already here
           }}
+          onOpenSettings={openSettings}
           onOpenDevelopersMistakes={() => {
             setMistakeFocus(null);
             setScreen("mistakes");
@@ -116,6 +140,7 @@ const App = () => {
             setMistakeFocus(focus ?? null);
             setScreen("mistakes");
           }}
+          onOpenSettings={openSettings}
           onOpenCommonMistakes={() => setScreen("common")}
         />
       )}
@@ -131,6 +156,7 @@ const App = () => {
             setMistakeFocus(null);
             setScreen("ipa");
           }}
+          onOpenSettings={openSettings}
           onOpenCommonMistakes={() => {
             setMistakeFocus(null);
             setScreen("common");
@@ -144,11 +170,28 @@ const App = () => {
           onBack={() => setScreen("word")}
           onOpenHistory={() => setScreen("history")}
           onOpenIpaList={() => setScreen("ipa")}
+          onOpenSettings={openSettings}
           onOpenDevelopersMistakes={() => {
             setMistakeFocus(null);
             setScreen("mistakes");
           }}
           onOpenCommonMistakes={() => {
+            // already here
+          }}
+        />
+      )}
+
+      {screen === "settings" && (
+        <SettingsScreen
+          onBack={() => setScreen(screenBeforeSettings)}
+          onOpenHistory={() => setScreen("history")}
+          onOpenIpaList={() => setScreen("ipa")}
+          onOpenDevelopersMistakes={() => {
+            setMistakeFocus(null);
+            setScreen("mistakes");
+          }}
+          onOpenCommonMistakes={() => setScreen("common")}
+          onOpenSettings={() => {
             // already here
           }}
         />

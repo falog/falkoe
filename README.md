@@ -325,6 +325,70 @@ Start with `FALKOE_DEBUG_MECAB=1` to see backend logs such as `[mecab] alignment
 
 ---
 
+## 🧠 Whisper Model / 音声認識モデル(Whisper)
+
+Falkoe の音声認識は Whisper（`whisper.cpp` 互換の `ggml-*.bin`）を使います。
+
+- 基本はアプリ内の「Settings」からモデルを選ぶのがおすすめです（設定は保存されます）。
+- **環境変数がある場合は環境変数が優先**されます（主に開発/検証用）。
+
+### 環境変数（任意）
+
+#### モデルの選択/上書き
+
+- `FALKOE_MODEL_VARIANT`: ダウンロードするモデルを指定します。
+  - 対応例: `tiny`, `tiny-q8_0`, `tiny-q5_1`, `base`, `base-q8_0`, `base-q5_1`, `small`, `small-q8_0`, `small-q5_1`, `medium`, `medium-q8_0`, `medium-q5_0`, `large-v3`, `large-v3-q5_0`, `large-v3-turbo`, `large-v3-turbo-q5_0`, `large-v3-turbo-q8_0`
+  - 例 (Linux/macOS): `FALKOE_MODEL_VARIANT=tiny-q8_0 pnpm tauri dev`
+- `FALKOE_MODEL_URL`: モデルのダウンロードURLを直接指定します（上級者向け）。
+- `FALKOE_MODEL_FILENAME`: 保存するファイル名を指定します（上級者向け）。
+
+> 注意: `FALKOE_MODEL_URL` / `FALKOE_MODEL_FILENAME` で独自モデルを指定する場合、ファイル名に `tiny` / `base` / `small` / `medium` / `large-v3` などが含まれないと、JA向けの DTW が安全のため自動的に無効化されることがあります。
+
+#### Whisper 実行パラメータ（速度/安定性調整）
+
+- `FALKOE_WHISPER_THREADS`: Whisper のスレッド数を固定します（未指定ならCPUコア数から自動）。
+  - 例: `FALKOE_WHISPER_THREADS=8`
+- `FALKOE_WHISPER_DTW`: DTW のON/OFFを上書きします。
+  - `0` = 無効、`1` = 強制有効（未指定なら原則 `ja` のときだけ有効）
+- `FALKOE_WHISPER_BEAM_SIZE`: Beam search を有効化します（`>1` の場合）。
+- `FALKOE_WHISPER_BEST_OF`: Greedy の `best_of` を指定します（`FALKOE_WHISPER_BEAM_SIZE=1` のとき有効）。
+
+### Windowsでの指定例
+
+- PowerShell:
+  - `$env:FALKOE_MODEL_VARIANT="tiny-q8_0"; pnpm tauri dev`
+  - `$env:FALKOE_WHISPER_THREADS=8; pnpm tauri dev`
+- cmd.exe:
+  - `set FALKOE_MODEL_VARIANT=tiny-q8_0 && pnpm tauri dev`
+  - `set FALKOE_WHISPER_THREADS=8 && pnpm tauri dev`
+
+---
+
+Falkoe uses Whisper models (`whisper.cpp`-compatible `ggml-*.bin`).
+
+- Recommended: select the model in the app Settings (persisted).
+- If environment variables are set, **they take precedence** (mainly for development/testing).
+
+### Environment variables (optional)
+
+#### Model selection / overrides
+
+- `FALKOE_MODEL_VARIANT`: choose which model to download.
+  - Examples: `tiny`, `tiny-q8_0`, `tiny-q5_1`, `base`, `base-q8_0`, `base-q5_1`, `small`, `small-q8_0`, `small-q5_1`, `medium`, `medium-q8_0`, `medium-q5_0`, `large-v3`, `large-v3-q5_0`, `large-v3-turbo`, `large-v3-turbo-q5_0`, `large-v3-turbo-q8_0`
+  - Example (Linux/macOS): `FALKOE_MODEL_VARIANT=tiny-q8_0 pnpm tauri dev`
+- `FALKOE_MODEL_URL`: override the model download URL (advanced).
+- `FALKOE_MODEL_FILENAME`: override the saved filename (advanced).
+
+> Note: if you override the URL/filename with a custom model and the filename does not contain `tiny` / `base` / `small` / `medium` / `large-v3` etc, DTW (used mainly for Japanese) may be auto-disabled for safety.
+
+#### Whisper runtime tuning
+
+- `FALKOE_WHISPER_THREADS`: set Whisper thread count (auto-detected if unset).
+- `FALKOE_WHISPER_DTW`: override DTW.
+  - `0` = disable, `1` = force enable (default: enabled mainly for `ja` only)
+- `FALKOE_WHISPER_BEAM_SIZE`: enable Beam search when `>1`.
+- `FALKOE_WHISPER_BEST_OF`: Greedy `best_of` (only when `FALKOE_WHISPER_BEAM_SIZE=1`).
+
 ## 🚀 Getting Started / はじめ方
 
 ### 1. Download / ダウンロード

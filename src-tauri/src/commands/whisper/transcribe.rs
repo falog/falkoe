@@ -17,6 +17,124 @@ use super::transcript::{
 use super::types::{PreviewResult, Segment, TokenTimestamp, Transcript, WordTimestamp};
 
 static TINY_CTX: OnceLock<Mutex<WhisperContext>> = OnceLock::new();
+static MAIN_CTX: OnceLock<Mutex<Option<CachedWhisperContext>>> = OnceLock::new();
+
+struct CachedWhisperContext {
+    key: String,
+    ctx: WhisperContext,
+}
+
+fn env_bool(key: &str) -> Option<bool> {
+    let value = std::env::var(key).ok()?;
+    let value = value.trim().to_ascii_lowercase();
+    match value.as_str() {
+        "1" | "true" | "yes" | "on" => Some(true),
+        "0" | "false" | "no" | "off" => Some(false),
+        _ => None,
+    }
+}
+
+fn env_usize(key: &str) -> Option<usize> {
+    let value = std::env::var(key).ok()?;
+    value.trim().parse::<usize>().ok()
+}
+
+fn whisper_n_threads() -> i32 {
+    // override example: FALKOE_WHISPER_THREADS=8
+    if let Some(n) = env_usize("FALKOE_WHISPER_THREADS") {
+        return (n.clamp(1, i32::MAX as usize)) as i32;
+    }
+
+    std::thread::available_parallelism()
+        .map(|n| (n.get().clamp(1, i32::MAX as usize)) as i32)
+        .unwrap_or(4)
+}
+
+fn should_enable_dtw(whisper_lang: Option<&str>) -> bool {
+    // override examples:
+    // - FALKOE_WHISPER_DTW=0 (disable)
+    // - FALKOE_WHISPER_DTW=1 (force enable)
+    if let Some(v) = env_bool("FALKOE_WHISPER_DTW") {
+        return v;
+    }
+
+    // DTW is expensive; keep it on by default only where we rely on it most.
+    matches!(whisper_lang, Some("ja"))
+}
+
+fn dtw_preset_for_model_path(model_path: &Path) -> Option<DtwModelPreset> {
+    let name = model_path
+        .file_name()
+        .map(|s| s.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+
+    if name.contains("tiny") {
+        // Includes ggml-tiny-q8_0.bin
+        return Some(DtwModelPreset::Tiny);
+    }
+    if name.contains("base") {
+        return Some(DtwModelPreset::Base);
+    }
+    if name.contains("small") {
+        return Some(DtwModelPreset::Small);
+    }
+
+    if name.contains("medium") {
+        return Some(DtwModelPreset::Medium);
+    }
+
+    if name.contains("large-v3-turbo") {
+        return Some(DtwModelPreset::LargeV3Turbo);
+    }
+
+    if name.contains("large-v3") {
+        return Some(DtwModelPreset::LargeV3);
+    }
+
+    if name.contains("large-v2") {
+        return Some(DtwModelPreset::LargeV2);
+    }
+
+    if name.contains("large-v1") {
+        return Some(DtwModelPreset::LargeV1);
+    }
+
+    if name.contains("large") {
+        // Default large -> v3
+        return Some(DtwModelPreset::LargeV3);
+    }
+
+    None
+}
+
+fn ctx_cache_key(model_path: &Path, dtw_preset: Option<DtwModelPreset>) -> String {
+    let p = model_path.to_string_lossy();
+    match dtw_preset {
+        Some(preset) => format!("{}|dtw=preset:{preset:?}", p),
+        None => format!("{}|dtw=off", p),
+    }
+}
+
+fn whisper_sampling_strategy() -> SamplingStrategy {
+    // Default: Greedy (faster). Opt-in BeamSearch via env.
+    // - FALKOE_WHISPER_BEAM_SIZE=5
+    // - FALKOE_WHISPER_BEST_OF=5
+    let beam_size: i32 = env_usize("FALKOE_WHISPER_BEAM_SIZE")
+        .unwrap_or(1)
+        .clamp(1, i32::MAX as usize) as i32;
+    if beam_size > 1 {
+        return SamplingStrategy::BeamSearch {
+            beam_size,
+            patience: 1.0,
+        };
+    }
+
+    SamplingStrategy::Greedy {
+        best_of: env_usize("FALKOE_WHISPER_BEST_OF")
+            .unwrap_or(1)
+            .clamp(1, i32::MAX as usize) as i32,
+    }
+}
 
 fn get_tiny_ctx(model_path: &str) -> Result<&'static Mutex<WhisperContext>> {
     Ok(TINY_CTX.get_or_init(|| {
@@ -56,6 +174,7 @@ fn fast_transcribe(app: &AppHandle, audio: &[f32]) -> Result<String> {
     let mut state = ctx.create_state()?;
 
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+    params.set_n_threads(whisper_n_threads());
     params.set_language(Some("en"));
     params.set_print_progress(false);
     params.set_translate(false);
@@ -126,27 +245,40 @@ fn transcribe_streaming(app: &AppHandle, wav_path: &str) -> Result<Vec<Segment>>
 pub fn transcribe(wav_path: &str, model_path: &Path, whisper_lang: Option<&str>) -> Result<Transcript> {
     let audio = load_wav_as_f32(wav_path)?;
 
-    println!("before WhisperContext::new_with_params");
     let mut ctx_params = WhisperContextParameters::default();
-    // Falkoe downloads ggml-small.bin, so use the Small preset.
-    ctx_params.dtw_parameters.mode = DtwMode::ModelPreset {
-        model_preset: DtwModelPreset::Small,
-    };
+    let mut dtw_preset: Option<DtwModelPreset> = None;
+    if should_enable_dtw(whisper_lang) {
+        if let Some(preset) = dtw_preset_for_model_path(model_path) {
+            dtw_preset = Some(preset.clone());
+            ctx_params.dtw_parameters.mode = DtwMode::ModelPreset {
+                model_preset: preset,
+            };
+        } else {
+            eprintln!(
+                "DTW enabled (ja), but model filename is unknown; DTW disabled to avoid init failure: {:?}",
+                model_path
+            );
+        }
+    }
 
-    let ctx = WhisperContext::new_with_params(model_path.to_str().unwrap(), ctx_params)?;
-    println!("after WhisperContext::new_with_params");
-    let mut state = ctx.create_state()?;
+    // Loading the Whisper model can be very expensive; cache the context for the
+    // currently selected model to speed up repeated transcriptions.
+    let key = ctx_cache_key(model_path, dtw_preset);
+    let ctx_mutex = MAIN_CTX.get_or_init(|| Mutex::new(None));
+    let mut cached = ctx_mutex.lock().unwrap();
+    let needs_reload = cached.as_ref().map(|c| c.key != key).unwrap_or(true);
+    if needs_reload {
+        let ctx = WhisperContext::new_with_params(model_path.to_str().unwrap(), ctx_params)?;
+        *cached = Some(CachedWhisperContext { key, ctx });
+    }
 
-    // Match OpenAI whisper-python default behavior more closely:
-    // temperature=0 => beam search (beam_size=5).
-    // This tends to improve timestamps/segmentation on short utterances vs greedy.
-    let mut params = FullParams::new(SamplingStrategy::BeamSearch {
-        beam_size: 5,
-        patience: -1.0,
-    });
+    // Keep the lock guard alive while the state exists.
+    let ctx_ref = &cached.as_ref().unwrap().ctx;
+    let mut state = ctx_ref.create_state()?;
 
-    println!("set_language {:?}", whisper_lang);
-    println!("model_path = {:?}", model_path);
+    let mut params = FullParams::new(whisper_sampling_strategy());
+    params.set_n_threads(whisper_n_threads());
+
     params.set_language(whisper_lang);
     params.set_translate(false);
     params.set_temperature(0.0);

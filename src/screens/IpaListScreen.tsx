@@ -13,6 +13,7 @@ type Props = {
   onOpenHistory: () => void;
   onOpenDevelopersMistakes: (focus?: "j" | "r" | "oo") => void;
   onOpenCommonMistakes: () => void;
+  onOpenSettings: () => void;
 };
 
 type GroupedEntry = {
@@ -45,6 +46,7 @@ export default function IpaListScreen({
   onOpenHistory,
   onOpenDevelopersMistakes,
   onOpenCommonMistakes,
+  onOpenSettings,
 }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -228,6 +230,7 @@ export default function IpaListScreen({
           onOpenIpaList={() => {
             // already here
           }}
+          onOpenSettings={onOpenSettings}
           onOpenDevelopersMistakes={() => onOpenDevelopersMistakes()}
           onOpenCommonMistakes={onOpenCommonMistakes}
         />

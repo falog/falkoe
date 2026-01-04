@@ -8,11 +8,191 @@ use tauri::{AppHandle, Emitter, Manager};
 
 static MODEL_STATUS: OnceLock<Mutex<String>> = OnceLock::new();
 
-const MODEL_URL: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin";
-pub const MODEL_FILENAME: &str = "ggml-small.bin";
+const MODEL_VARIANT_FILE: &str = "model-variant.txt";
+
+pub const DEFAULT_MODEL_VARIANT: &str = "small";
+pub const DEFAULT_MODEL_URL: &str =
+    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin";
+pub const DEFAULT_MODEL_FILENAME: &str = "ggml-small.bin";
 
 // Keep this in sync with src-tauri/tauri.conf.json "identifier".
 pub const APP_IDENTIFIER: &str = "net.falog.falkoe";
+
+#[derive(Clone, Debug)]
+struct ModelSpec {
+    variant: String,
+    url: String,
+    filename: String,
+}
+
+fn read_saved_model_variant_from_dir(dir: &PathBuf) -> Option<String> {
+    let path = dir.join(MODEL_VARIANT_FILE);
+    let text = fs::read_to_string(path).ok()?;
+    let v = text.trim();
+    if v.is_empty() {
+        None
+    } else {
+        Some(v.to_string())
+    }
+}
+
+fn model_spec_from_env_with_saved_variant(saved_variant: Option<String>) -> ModelSpec {
+    let variant = env::var("FALKOE_MODEL_VARIANT")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or(saved_variant)
+        .unwrap_or_else(|| DEFAULT_MODEL_VARIANT.to_string());
+
+    let (default_url, default_filename) = match variant.as_str() {
+        "small" => (DEFAULT_MODEL_URL, DEFAULT_MODEL_FILENAME),
+        "small-q8_0" | "ggml-small-q8_0.bin" => (
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q8_0.bin",
+            "ggml-small-q8_0.bin",
+        ),
+        "small-q5_1" | "ggml-small-q5_1.bin" => (
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin",
+            "ggml-small-q5_1.bin",
+        ),
+        "base" => (
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin",
+            "ggml-base.bin",
+        ),
+        "base-q8_0" | "ggml-base-q8_0.bin" => (
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q8_0.bin",
+            "ggml-base-q8_0.bin",
+        ),
+        "base-q5_1" | "ggml-base-q5_1.bin" => (
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin",
+            "ggml-base-q5_1.bin",
+        ),
+        "tiny" => (
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin",
+            "ggml-tiny.bin",
+        ),
+        // requested: https://huggingface.co/ggerganov/whisper.cpp/blob/main/ggml-tiny-q8_0.bin
+        // download URL:
+        "tiny-q8_0" | "tiny-q8_0.bin" | "ggml-tiny-q8_0.bin" => (
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q8_0.bin",
+            "ggml-tiny-q8_0.bin",
+        ),
+        "tiny-q5_1" | "ggml-tiny-q5_1.bin" => (
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin",
+            "ggml-tiny-q5_1.bin",
+        ),
+        "medium" => (
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin",
+            "ggml-medium.bin",
+        ),
+        "medium-q8_0" | "ggml-medium-q8_0.bin" => (
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium-q8_0.bin",
+            "ggml-medium-q8_0.bin",
+        ),
+        "medium-q5_0" | "ggml-medium-q5_0.bin" => (
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium-q5_0.bin",
+            "ggml-medium-q5_0.bin",
+        ),
+        // Prefer v3 for large
+        "large" | "large-v3" => (
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin",
+            "ggml-large-v3.bin",
+        ),
+        "large-v3-q5_0" | "ggml-large-v3-q5_0.bin" => (
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-q5_0.bin",
+            "ggml-large-v3-q5_0.bin",
+        ),
+        "large-v3-turbo" => (
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin",
+            "ggml-large-v3-turbo.bin",
+        ),
+        "large-v3-turbo-q5_0" | "ggml-large-v3-turbo-q5_0.bin" => (
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin",
+            "ggml-large-v3-turbo-q5_0.bin",
+        ),
+        "large-v3-turbo-q8_0" | "ggml-large-v3-turbo-q8_0.bin" => (
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q8_0.bin",
+            "ggml-large-v3-turbo-q8_0.bin",
+        ),
+        other => {
+            eprintln!(
+                "unknown FALKOE_MODEL_VARIANT={:?}; falling back to {}",
+                other, DEFAULT_MODEL_VARIANT
+            );
+            (DEFAULT_MODEL_URL, DEFAULT_MODEL_FILENAME)
+        }
+    };
+
+    // Optional override: allow custom model URL/filename.
+    let url = env::var("FALKOE_MODEL_URL").unwrap_or_else(|_| default_url.to_string());
+    let filename = env::var("FALKOE_MODEL_FILENAME").unwrap_or_else(|_| default_filename.to_string());
+
+    ModelSpec { variant, url, filename }
+}
+
+pub fn get_model_variant(app: &AppHandle) -> String {
+    let dir = app.path().app_data_dir().unwrap();
+    env::var("FALKOE_MODEL_VARIANT")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| read_saved_model_variant_from_dir(&dir))
+        .unwrap_or_else(|| DEFAULT_MODEL_VARIANT.to_string())
+}
+
+fn is_supported_variant(v: &str) -> bool {
+    matches!(
+        v,
+        "tiny"
+            | "tiny-q8_0"
+            | "tiny-q5_1"
+            | "base"
+            | "base-q8_0"
+            | "base-q5_1"
+            | "small"
+            | "small-q8_0"
+            | "small-q5_1"
+            | "medium"
+            | "medium-q8_0"
+            | "medium-q5_0"
+            | "large"
+            | "large-v3"
+            | "large-v3-q5_0"
+            | "large-v3-turbo"
+            | "large-v3-turbo-q5_0"
+            | "large-v3-turbo-q8_0"
+    )
+}
+
+pub fn set_model_variant(app: &AppHandle, variant: &str) -> anyhow::Result<()> {
+    let v = variant.trim();
+    if !is_supported_variant(v) {
+        anyhow::bail!(
+            "unsupported model variant: {v} (use tiny|tiny-q8_0|tiny-q5_1|base|base-q8_0|base-q5_1|small|small-q8_0|small-q5_1|medium|medium-q8_0|medium-q5_0|large-v3|large-v3-q5_0|large-v3-turbo|large-v3-turbo-q5_0|large-v3-turbo-q8_0)"
+        );
+    }
+
+    let dir = app.path().app_data_dir().unwrap();
+    fs::create_dir_all(&dir)?;
+    let path = dir.join(MODEL_VARIANT_FILE);
+    fs::write(path, format!("{}\n", v))?;
+    Ok(())
+}
+
+fn ok_marker_matches(spec: &ModelSpec, ok_text: &str) -> bool {
+    let mut variant_in_ok: Option<&str> = None;
+
+    for line in ok_text.lines() {
+        if let Some(v) = line.strip_prefix("variant=") {
+            variant_in_ok = Some(v.trim());
+            break;
+        }
+    }
+
+    match variant_in_ok {
+        Some(v) => v == spec.variant,
+        None => spec.variant == DEFAULT_MODEL_VARIANT,
+    }
+}
 
 /// Resolve the on-disk model path without requiring a Tauri `AppHandle`.
 ///
@@ -26,7 +206,9 @@ pub fn find_existing_model_path_noapp() -> Option<PathBuf> {
     }
 
     let dir = dirs::data_dir()?.join(APP_IDENTIFIER);
-    let model_path = dir.join(MODEL_FILENAME);
+    let saved_variant = read_saved_model_variant_from_dir(&dir);
+    let spec = model_spec_from_env_with_saved_variant(saved_variant);
+    let model_path = dir.join(spec.filename);
     model_path.is_file().then_some(model_path)
 }
 
@@ -51,7 +233,9 @@ pub fn get_model_status() -> String {
 
 pub fn ensure_model(app: &AppHandle) -> anyhow::Result<std::path::PathBuf> {
     let dir = app.path().app_data_dir().unwrap();
-    let model_path = dir.join(MODEL_FILENAME);
+    let saved_variant = read_saved_model_variant_from_dir(&dir);
+    let spec = model_spec_from_env_with_saved_variant(saved_variant);
+    let model_path = dir.join(&spec.filename);
     let ok_path = model_path.with_extension("bin.ok");
 
     // A previous download can leave a truncated file. We track successful
@@ -66,22 +250,29 @@ pub fn ensure_model(app: &AppHandle) -> anyhow::Result<std::path::PathBuf> {
                 let _ = fs::remove_file(&ok_path);
             } else {
                 // If we can get remote size, verify it too.
-                let client = reqwest::blocking::Client::new();
-                let remote_len = client
-                    .head(MODEL_URL)
+                let ok_text = fs::read_to_string(&ok_path).unwrap_or_default();
+                if !ok_marker_matches(&spec, &ok_text) {
+                    let _ = fs::remove_file(&model_path);
+                    let _ = fs::remove_file(&ok_path);
+                    // continue to download
+                } else {
+                    let client = reqwest::blocking::Client::new();
+                    let remote_len = client
+                    .head(&spec.url)
                     .send()
                     .ok()
                     .and_then(|r| r.content_length())
                     .unwrap_or(0);
 
-                if remote_len == 0 || local_len == remote_len {
-                    set_status(app, "ready");
-                    return Ok(model_path);
-                }
+                    if remote_len == 0 || local_len == remote_len {
+                        set_status(app, "ready");
+                        return Ok(model_path);
+                    }
 
-                // Remote length known and mismatch => redownload.
-                let _ = fs::remove_file(&model_path);
-                let _ = fs::remove_file(&ok_path);
+                    // Remote length known and mismatch => redownload.
+                    let _ = fs::remove_file(&model_path);
+                    let _ = fs::remove_file(&ok_path);
+                }
             }
         }
     }
@@ -94,7 +285,7 @@ pub fn ensure_model(app: &AppHandle) -> anyhow::Result<std::path::PathBuf> {
     // We're about to (re)download, so invalidate any previous marker.
     let _ = fs::remove_file(&ok_path);
 
-    let mut resp = reqwest::blocking::get(MODEL_URL)?;
+    let mut resp = reqwest::blocking::get(&spec.url)?;
     let total = resp.content_length().unwrap_or(0);
 
     let tmp_path = model_path.with_extension("bin.part");
@@ -126,6 +317,8 @@ pub fn ensure_model(app: &AppHandle) -> anyhow::Result<std::path::PathBuf> {
     // Mark download as complete.
     let mut ok = File::create(&ok_path)?;
     let local_len = fs::metadata(&model_path).map(|m| m.len()).unwrap_or(0);
+    let _ = writeln!(ok, "variant={}", spec.variant);
+    let _ = writeln!(ok, "url={}", spec.url);
     let _ = writeln!(ok, "bytes={}", local_len);
     ok.flush()?;
 
