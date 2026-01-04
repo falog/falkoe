@@ -85,91 +85,55 @@ jobs:
 
       - name: Bundle MeCab into resources (Windows only)
         if: matrix.os == 'windows-latest'
-        shell: powershell
+        shell: msys2 {0}
         run: |
-          $ErrorActionPreference = 'Stop'
+          set -euo pipefail
 
-          New-Item -ItemType Directory -Force -Path 'src-tauri/resources/bin' | Out-Null
-          New-Item -ItemType Directory -Force -Path 'src-tauri/resources/mecab/ipadic' | Out-Null
+          mkdir -p src-tauri/resources/bin
+          mkdir -p src-tauri/resources/mecab/ipadic
 
-          # MSYS2 install root varies (C:\\msys64 is common but not guaranteed).
-          $rootFromPacman = $null
-          $pacmanCmd = Get-Command pacman.exe -ErrorAction SilentlyContinue
-          if ($pacmanCmd -and $pacmanCmd.Source) {
-            # pacman.exe is typically at <msysRoot>\usr\bin\pacman.exe
-            $rootFromPacman = Split-Path (Split-Path $pacmanCmd.Source -Parent) -Parent
-          }
+          if ! command -v mecab >/dev/null 2>&1; then
+            echo "[error] mecab not found on PATH"
+            echo "[info] PATH=$PATH"
+            exit 1
+          fi
 
-          $candidateRoots = @(
-            $env:MSYS2_ROOT,
-            $env:MSYS2_LOCATION,
-            $rootFromPacman,
-            'C:\\msys64',
-            'D:\\msys64'
-          ) | Where-Object { $_ -and (Test-Path $_) }
+          mecab_path="$(command -v mecab)"
+          echo "[info] mecab path: $mecab_path"
 
-          $msysRoot = $candidateRoots | Select-Object -First 1
-          if (-not $msysRoot) {
-            throw "MSYS2 root not found. Tried env(MSYS2_ROOT/MSYS2_LOCATION) and common paths."
-          }
+          cp -f "$mecab_path" src-tauri/resources/bin/mecab.exe
 
-          # Look for mecab.exe in typical MSYS2 toolchains.
-          $binCandidates = @(
-            (Join-Path $msysRoot 'mingw64\\bin'),
-            (Join-Path $msysRoot 'ucrt64\\bin'),
-            (Join-Path $msysRoot 'clang64\\bin'),
-            (Join-Path $msysRoot 'usr\\bin')
-          )
+          # Copy DLL dependencies. Prefer ldd if present; otherwise fall back to copying DLLs next to mecab.exe.
+          mecab_dir="$(dirname "$mecab_path")"
+          if command -v ldd >/dev/null 2>&1; then
+            echo "[info] ldd mecab.exe:" 
+            ldd "$mecab_path" || true
 
-          $toolBin = $null
-          $mecabExe = $null
-          foreach ($bin in $binCandidates) {
-            $candidate = Join-Path $bin 'mecab.exe'
-            if (Test-Path $candidate) {
-              $toolBin = $bin
-              $mecabExe = $candidate
-              break
-            }
-          }
-
-          if (-not $mecabExe) {
-            throw "mecab.exe not found under $msysRoot (searched: $($binCandidates -join ', '))"
-          }
-
-          Copy-Item $mecabExe 'src-tauri/resources/bin/mecab.exe' -Force
-
-          # Copy a minimal set of runtime DLLs next to mecab.exe.
-          # mecab.exe loads DLLs from its own directory first.
-          $dlls = @(
-            'libmecab-2.dll',
-            'libiconv-2.dll',
-            'libgcc_s_seh-1.dll',
-            'libstdc++-6.dll',
-            'libwinpthread-1.dll'
-          )
-          foreach ($dll in $dlls) {
-            $src = Join-Path $toolBin $dll
-            if (Test-Path $src) {
-              Copy-Item $src (Join-Path 'src-tauri/resources/bin' $dll) -Force
-            } else {
-              Write-Host "[warn] missing dll: $src"
-            }
-          }
+            ldd "$mecab_path" \
+              | awk '{print $3}' \
+              | grep -E '\\.dll$' \
+              | while read -r dll; do
+                  if [ -f "$dll" ]; then
+                    cp -f "$dll" src-tauri/resources/bin/
+                  fi
+                done
+          else
+            echo "[warn] ldd not available; copying dlls from $mecab_dir"
+            cp -f "$mecab_dir"/*.dll src-tauri/resources/bin/ || true
+          fi
 
           # Bundle dictionary (NAIST-JDIC) into resources/mecab/ipadic/
-          $dicCandidates = @(
-            (Join-Path $msysRoot 'mingw64\\lib\\mecab\\dic\\naist-jdic'),
-            (Join-Path $msysRoot 'ucrt64\\lib\\mecab\\dic\\naist-jdic'),
-            (Join-Path $msysRoot 'clang64\\lib\\mecab\\dic\\naist-jdic'),
-            (Join-Path $msysRoot 'usr\\lib\\mecab\\dic\\naist-jdic')
-          )
-          $dicDir = $dicCandidates | Where-Object { Test-Path (Join-Path $_ 'dicrc') } | Select-Object -First 1
-          if (-not $dicDir) {
-            throw "MeCab dictionary (naist-jdic) not found under $msysRoot. Tried: $($dicCandidates -join ', ')"
-          }
+          dic_root="$(mecab-config --dicdir)"
+          dic_dir="$dic_root/naist-jdic"
+          if [ ! -f "$dic_dir/dicrc" ]; then
+            echo "[error] dicrc not found at $dic_dir/dicrc"
+            echo "[info] dic_root=$dic_root"
+            ls -la "$dic_root" || true
+            exit 1
+          fi
 
-          Remove-Item -Recurse -Force 'src-tauri/resources/mecab/ipadic/*' -ErrorAction SilentlyContinue
-          Copy-Item -Recurse -Force (Join-Path $dicDir '*') 'src-tauri/resources/mecab/ipadic/'
+          rm -rf src-tauri/resources/mecab/ipadic/*
+          cp -R "$dic_dir"/* src-tauri/resources/mecab/ipadic/
 
       - name: Bundle ffmpeg + praat into resources/bin
         shell: bash
