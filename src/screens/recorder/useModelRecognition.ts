@@ -91,7 +91,8 @@ export function useModelRecognition({
   const disabled =
     (sourceKind === "uploaded" && !uploadedAudioPath) ||
     (sourceKind !== "uploaded" && !sentenceAudioUrl) ||
-    waitingModel;
+    waitingModel ||
+    Boolean(modelText?.trim());
 
   return {
     recognizeModel,

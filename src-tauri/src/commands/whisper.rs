@@ -156,6 +156,27 @@ fn run_whisper_for_wav(
     let transcript = transcribe(wav_path, &model_path, whisper_language(lang))?;
     save_transcript_json(wav_path, &transcript)?;
 
+    let full_text = transcript
+        .segments
+        .iter()
+        .map(|s| s.text.trim())
+        .filter(|t| !t.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    // Persist manifest early so the UI/History doesn't depend on pitch.
+    save_sentence_manifest_json(app, sentence_hash, lang, &full_text, wav_path)?;
+
+    // Emit final transcript early; pitch analysis can take longer or fail.
+    let final_result = FinalResult {
+        status: "final".into(),
+        wav_path: wav_path.to_string(),
+        segments: transcript.segments.clone(),
+        score: 0.0,
+    };
+
+    app.emit("transcript-final", final_result)?;
+
     // Run pitch analysis and persist it next to the transcript.
     // Japanese-only: also write accent.json (Heiban/Odaka/Nakadaka/Atamadaka labels).
     let is_ja = whisper_language(lang) == Some("ja");
@@ -379,25 +400,6 @@ fn run_whisper_for_wav(
             }
         }
     }
-
-    let full_text = transcript
-        .segments
-        .iter()
-        .map(|s| s.text.trim())
-        .filter(|t| !t.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ");
-
-    save_sentence_manifest_json(app, sentence_hash, lang, &full_text, wav_path)?;
-
-    let final_result = FinalResult {
-        status: "final".into(),
-        wav_path: wav_path.to_string(),
-        segments: transcript.segments.clone(),
-        score: 0.0,
-    };
-
-    app.emit("transcript-final", final_result)?;
 
     Ok(())
 }

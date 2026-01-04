@@ -3,6 +3,7 @@ use hound;
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
+    fs::OpenOptions,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -238,7 +239,8 @@ fn resolve_bundled_tool(app: &AppHandle, base_name: &str) -> Option<PathBuf> {
         resource_dir.join("resources").join(&exe_name),
     ];
 
-    candidates.into_iter().find(|p| p.exists())
+    // Important: avoid picking up directories (e.g. resources/praat is a folder of scripts).
+    candidates.into_iter().find(|p| p.is_file())
 }
 
 fn resolve_praat_cmd_candidates(app: &AppHandle) -> Vec<PathBuf> {
@@ -308,14 +310,63 @@ fn extract_f0_with_praat(
         bail!("praat script not found: {}", script.display());
     }
 
-    let out_path = std::env::temp_dir().join(format!(
-        "falkoe_praat_pitch_{}_{}.tsv",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis()
-    ));
+    // Keep Praat artifacts under app-owned storage (avoid /tmp).
+    // app_cache_dir is preferred; fall back to app_data_dir.
+    let base_dir = app
+        .path()
+        .app_cache_dir()
+        .or_else(|_| app.path().app_data_dir())?;
+
+    let tmp_dir = base_dir.join("praat_tmp");
+    fs::create_dir_all(&tmp_dir)?;
+
+    // Pick an output TSV path that is guaranteed to be a file path (not a directory).
+    // We also reserve it via create_new to avoid races.
+    let mut out_path: Option<PathBuf> = None;
+    for attempt in 0..64 {
+        let candidate = tmp_dir.join(format!(
+            "pitch_{}_{}_{}.tsv",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis(),
+            attempt
+        ));
+
+        if candidate.exists() {
+            // If something already exists at candidate, try to remove it.
+            // If removal fails (permissions/in-use), just pick another name.
+            let removed = if candidate.is_dir() {
+                fs::remove_dir_all(&candidate).is_ok()
+            } else {
+                fs::remove_file(&candidate).is_ok()
+            };
+            if !removed {
+                continue;
+            }
+        }
+
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&candidate)
+        {
+            Ok(_f) => {
+                // Close immediately; Praat will delete/append as needed.
+                out_path = Some(candidate);
+                break;
+            }
+            Err(_) => continue,
+        }
+    }
+
+    let out_path = out_path.ok_or_else(|| {
+        anyhow::anyhow!(
+            "failed to allocate a temp TSV output path under {}",
+            tmp_dir.display()
+        )
+    })?;
 
     let script_s = script
         .to_str()
@@ -335,7 +386,7 @@ fn extract_f0_with_praat(
     let mut errors: Vec<String> = Vec::new();
     let mut ok = false;
     for praat in resolve_praat_cmd_candidates(app) {
-        let output = Command::new(&praat)
+        let mut child = match Command::new(&praat)
             .args([
                 "--run",
                 &script_s,
@@ -345,31 +396,64 @@ fn extract_f0_with_praat(
                 &format!("{pitch_floor}"),
                 &format!("{pitch_ceiling}"),
             ])
-            .output();
-
-        match output {
-            Ok(out) if out.status.success() => {
-                ok = true;
-                break;
-            }
-            Ok(out) => {
-                let stderr = String::from_utf8_lossy(&out.stderr);
-                let stdout = String::from_utf8_lossy(&out.stdout);
-                errors.push(format!(
-                    "- cmd={:?}\n  status={}\n  stdout={}\n  stderr={}",
-                    praat,
-                    out.status,
-                    stdout.trim(),
-                    stderr.trim()
-                ));
-            }
+            .spawn()
+        {
+            Ok(c) => c,
             Err(e) => {
                 errors.push(format!("- cmd={:?}\n  error={}", praat, e));
+                continue;
             }
+        };
+
+        // Guard against GUI/hanging praat builds: timeout and fall back to YIN.
+        let timeout = std::time::Duration::from_secs(10);
+        let start = std::time::Instant::now();
+        let mut timed_out = false;
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    if status.success() {
+                        ok = true;
+                    } else {
+                        errors.push(format!("- cmd={:?}\n  status={}", praat, status));
+                    }
+                    break;
+                }
+                Ok(None) => {
+                    if start.elapsed() >= timeout {
+                        timed_out = true;
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+                Err(e) => {
+                    errors.push(format!("- cmd={:?}\n  error={}", praat, e));
+                    break;
+                }
+            }
+        }
+
+        if timed_out {
+            let _ = child.kill();
+            let _ = child.wait();
+            errors.push(format!("- cmd={:?}\n  error=timeout", praat));
+        }
+
+        if ok {
+            break;
         }
     }
 
     if !ok {
+        // Best-effort cleanup of the reserved output path.
+        if out_path.exists() {
+            if out_path.is_dir() {
+                let _ = fs::remove_dir_all(&out_path);
+            } else {
+                let _ = fs::remove_file(&out_path);
+            }
+        }
+
         let combined = if errors.is_empty() {
             "(no candidates tried)".to_string()
         } else {

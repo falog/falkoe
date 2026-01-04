@@ -39,6 +39,10 @@ export async function startMicRecorderSilenceWatcher({
   // Calibrate noise floor briefly so "silence" still works with constant noise
   // and different mic gains.
   const warmupMs = 300;
+  // If the user starts speaking immediately after pressing record, we might
+  // accidentally calibrate the "noise floor" to their voice. Allow a bit more
+  // time to capture at least one quieter frame; otherwise fall back safely.
+  const maxWarmupMs = 1500;
   let warmedUpFor = 0;
   // Use the minimum RMS during warmup as a proxy for noise floor.
   // Using an average can become too large if the user starts speaking during warmup,
@@ -70,16 +74,30 @@ export async function startMicRecorderSilenceWatcher({
 
     lastTs = now;
 
-    if (adaptiveThreshold == null && warmedUpFor < warmupMs) {
+    if (adaptiveThreshold == null) {
       warmedUpFor += dt;
       if (rms < baselineMin) baselineMin = rms;
-      return;
-    }
 
-    if (adaptiveThreshold == null) {
+      if (warmedUpFor < warmupMs) {
+        return;
+      }
+
       const baseline = Number.isFinite(baselineMin) ? baselineMin : 0;
+
+      // If the minimum RMS during warmup is already quite high, we likely never
+      // observed a quiet frame (e.g., the user spoke immediately). In that case,
+      // don't raise the threshold, because it would cause false "silence".
+      const baselineSeemsTooHigh = baseline > rmsThreshold * 2;
+
+      if (baselineSeemsTooHigh && warmedUpFor < maxWarmupMs) {
+        // Keep warming a bit longer, hoping to catch a quieter moment.
+        return;
+      }
+
       // Slightly above noise floor, but never below the provided absolute threshold.
-      adaptiveThreshold = Math.max(rmsThreshold, baseline * 1.3);
+      adaptiveThreshold = baselineSeemsTooHigh
+        ? rmsThreshold
+        : Math.max(rmsThreshold, baseline * 1.3);
     }
 
     if (rms < adaptiveThreshold) {

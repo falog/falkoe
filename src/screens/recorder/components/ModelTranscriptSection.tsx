@@ -50,6 +50,8 @@ export function ModelTranscriptSection({
       .replace(/\[_[^\]]+\]/g, "")
       .replace(/\s+/g, " ")
       .trim();
+
+  const hasModelText = Boolean(modelText?.trim());
   const [pitch, setPitch] = useState<PitchAnalysis | null>(null);
   const [accentWords, setAccentWords] = useState<WordPitch[] | null>(null);
   const [pitchLoading, setPitchLoading] = useState(false);
@@ -128,7 +130,7 @@ export function ModelTranscriptSection({
 
   useEffect(() => {
     // Only run after we have a transcript for the model audio.
-    if (!modelText?.trim()) return;
+    if (!hasModelText) return;
     if (pitchRequestedRef.current) return;
     pitchRequestedRef.current = true;
 
@@ -219,7 +221,7 @@ export function ModelTranscriptSection({
     return () => {
       cancelled = true;
     };
-  }, [isJapanese, modelText, sentenceHash]);
+  }, [hasModelText, isJapanese, sentenceHash]);
 
   return (
     <>
