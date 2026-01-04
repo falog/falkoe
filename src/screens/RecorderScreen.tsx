@@ -108,6 +108,7 @@ const RecorderScreen = ({
             sentenceHash={sentenceHash}
             lang={sentence.lang}
             modelAudioUrl={headerAudioUrl}
+            sourceKind={sourceKind}
             linkingResult={linkingResult}
             linkingDisplayMode={linkingDisplayMode}
             setLinkingDisplayMode={setLinkingDisplayMode}

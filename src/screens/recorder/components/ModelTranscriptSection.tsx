@@ -9,6 +9,7 @@ import LinkingStressArea from "../LinkingStressArea";
 import type { ModelStatus } from "../../../types/model";
 import type { PitchAnalysis, WordPitch } from "../../../types/pitch";
 import { PitchAlignmentChart } from "../../../components/PitchAlignmentChart";
+import type { SourceKind } from "../../../types/speech";
 
 type AccentOut = {
   words: WordPitch[];
@@ -20,6 +21,7 @@ type Props = {
   sentenceHash: string;
   lang: string;
   modelAudioUrl: string | null;
+  sourceKind: SourceKind;
   linkingResult: RenderLinkingResult | null;
   linkingDisplayMode: DisplayMode;
   setLinkingDisplayMode: (mode: DisplayMode) => void;
@@ -35,6 +37,7 @@ export function ModelTranscriptSection({
   sentenceHash,
   lang,
   modelAudioUrl,
+  sourceKind,
   linkingResult,
   linkingDisplayMode,
   setLinkingDisplayMode,
@@ -75,7 +78,7 @@ export function ModelTranscriptSection({
     setIsPlaying(false);
     setPlayheadTime(null);
     lastSetRef.current = 0;
-  }, [sentenceHash]);
+  }, [sentenceHash, sourceKind]);
 
   useEffect(() => {
     const el = audioRef.current;
@@ -142,13 +145,19 @@ export function ModelTranscriptSection({
       setPitchError(null);
       try {
         const dir = await documentDir();
+
+        // Uploaded sources store wav/pitch next to uploaded/uploaded.*.
+        // Other sources (tatoeba/recorded) use model/model.* as the reference audio cache.
+        const cacheSubdir = sourceKind === "uploaded" ? "uploaded" : "model";
+        const cacheStem = sourceKind === "uploaded" ? "uploaded" : "model";
+
         const wavPath = await join(
           dir,
           "falkoe",
           "sentences",
           sentenceHash,
-          "model",
-          "model.wav"
+          cacheSubdir,
+          `${cacheStem}.wav`
         );
 
         // Prefer cached pitch analysis if present.
@@ -158,8 +167,8 @@ export function ModelTranscriptSection({
             "falkoe",
             "sentences",
             sentenceHash,
-            "model",
-            "model.pitch.json"
+            cacheSubdir,
+            `${cacheStem}.pitch.json`
           );
           const cached = await readTextFile(pitchPath);
           const parsed = JSON.parse(cached) as PitchAnalysis;
@@ -173,8 +182,8 @@ export function ModelTranscriptSection({
                 "falkoe",
                 "sentences",
                 sentenceHash,
-                "model",
-                "model.accent.json"
+                cacheSubdir,
+                `${cacheStem}.accent.json`
               );
               const accentCached = await readTextFile(accentPath);
               const accentParsed = JSON.parse(accentCached) as AccentOut;
@@ -203,8 +212,8 @@ export function ModelTranscriptSection({
               "falkoe",
               "sentences",
               sentenceHash,
-              "model",
-              "model.accent.json"
+              cacheSubdir,
+              `${cacheStem}.accent.json`
             );
             const accentCached = await readTextFile(accentPath);
             const accentParsed = JSON.parse(accentCached) as AccentOut;
@@ -223,7 +232,7 @@ export function ModelTranscriptSection({
     return () => {
       cancelled = true;
     };
-  }, [hasModelText, isJapanese, sentenceHash]);
+  }, [hasModelText, isJapanese, sentenceHash, sourceKind]);
 
   return (
     <>
