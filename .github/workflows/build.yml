@@ -50,11 +50,15 @@ jobs:
         run: |
           choco install -y ffmpeg praat
 
-      - name: Install MeCab (Windows)
+      - name: Setup MSYS2 (Windows)
         if: matrix.os == 'windows-latest'
-        shell: powershell
-        run: |
-          choco install -y mecab mecab-ipadic
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-mecab
+            mingw-w64-x86_64-mecab-naist-jdic
 
       - name: Install tools (macOS)
         if: matrix.os == 'macos-14'
@@ -64,104 +68,50 @@ jobs:
           brew install mecab mecab-ipadic
           brew install --cask praat
 
-      - name: Bundle MeCab into resources (binary + dictionary)
-        shell: bash
+      - name: Bundle MeCab into resources (Windows only)
+        if: matrix.os == 'windows-latest'
+        shell: powershell
         run: |
-          set -euo pipefail
-          mkdir -p src-tauri/resources/bin
-          mkdir -p src-tauri/resources/mecab/ipadic
+          $ErrorActionPreference = 'Stop'
 
-          if [[ "$RUNNER_OS" == "Linux" || "$RUNNER_OS" == "macOS" ]]; then
-            # Bundle mecab binary
-            if command -v mecab >/dev/null 2>&1; then
-              cp "$(command -v mecab)" "src-tauri/resources/bin/mecab"
-              chmod +x "src-tauri/resources/bin/mecab" || true
-            fi
+          New-Item -ItemType Directory -Force -Path 'src-tauri/resources/bin' | Out-Null
+          New-Item -ItemType Directory -Force -Path 'src-tauri/resources/mecab/ipadic' | Out-Null
 
-            # Bundle dictionary (directory containing dicrc)
-            DICDIR_BASE=""
-            if command -v mecab-config >/dev/null 2>&1; then
-              DICDIR_BASE="$(mecab-config --dicdir 2>/dev/null || true)"
-            fi
+          $mingwBin = 'C:\\msys64\\mingw64\\bin'
+          $mecabExe = Join-Path $mingwBin 'mecab.exe'
+          if (!(Test-Path $mecabExe)) {
+            throw "mecab.exe not found at $mecabExe"
+          }
 
-            SRC_DIC=""
-            if [[ -n "$DICDIR_BASE" ]]; then
-              if [[ -f "$DICDIR_BASE/ipadic-utf8/dicrc" ]]; then
-                SRC_DIC="$DICDIR_BASE/ipadic-utf8"
-              elif [[ -f "$DICDIR_BASE/ipadic/dicrc" ]]; then
-                SRC_DIC="$DICDIR_BASE/ipadic"
-              fi
-            fi
+          Copy-Item $mecabExe 'src-tauri/resources/bin/mecab.exe' -Force
 
-            # Fallback: search common locations
-            if [[ -z "$SRC_DIC" ]]; then
-              for C in \
-                /var/lib/mecab/dic/ipadic-utf8 \
-                /usr/lib/mecab/dic/ipadic \
-                /usr/lib/x86_64-linux-gnu/mecab/dic/ipadic \
-                /usr/local/lib/mecab/dic/ipadic \
-                "/opt/homebrew/lib/mecab/dic/ipadic" \
-                "/usr/local/lib/mecab/dic/ipadic"; do
-                if [[ -f "$C/dicrc" ]]; then
-                  SRC_DIC="$C"
-                  break
-                fi
-              done
-            fi
+          # Copy a minimal set of runtime DLLs next to mecab.exe.
+          # mecab.exe loads DLLs from its own directory first.
+          $dlls = @(
+            'libmecab-2.dll',
+            'libiconv-2.dll',
+            'libgcc_s_seh-1.dll',
+            'libstdc++-6.dll',
+            'libwinpthread-1.dll'
+          )
+          foreach ($dll in $dlls) {
+            $src = Join-Path $mingwBin $dll
+            if (Test-Path $src) {
+              Copy-Item $src (Join-Path 'src-tauri/resources/bin' $dll) -Force
+            } else {
+              Write-Host "[warn] missing dll: $src"
+            }
+          }
 
-            if [[ -n "$SRC_DIC" ]]; then
-              rm -rf src-tauri/resources/mecab/ipadic/*
-              cp -R "$SRC_DIC"/* src-tauri/resources/mecab/ipadic/
-            else
-              echo "[warn] mecab dictionary not found; skipping dictionary bundling"
-            fi
-          elif [[ "$RUNNER_OS" == "Windows" ]]; then
-            # Use PowerShell to locate real mecab.exe and dictionary dir.
-            powershell -NoProfile -Command "
-              \$ErrorActionPreference = 'Stop';
-              New-Item -ItemType Directory -Force -Path 'src-tauri/resources/bin' | Out-Null;
-              New-Item -ItemType Directory -Force -Path 'src-tauri/resources/mecab/ipadic' | Out-Null;
+          # Bundle dictionary (NAIST-JDIC) into resources/mecab/ipadic/
+          $dicDir = 'C:\\msys64\\mingw64\\lib\\mecab\\dic\\naist-jdic'
+          $dicrc = Join-Path $dicDir 'dicrc'
+          if (!(Test-Path $dicrc)) {
+            throw "dicrc not found at $dicrc"
+          }
 
-              function Find-File([string[]]\$Roots, [string]\$Name) {
-                foreach (\$r in \$Roots) {
-                  if (-not (Test-Path \$r)) { continue }
-                  \$hit = Get-ChildItem -Path \$r -Recurse -Filter \$Name -ErrorAction SilentlyContinue | Select-Object -First 1;
-                  if (\$hit) { return \$hit.FullName }
-                }
-                return \$null
-              }
-
-              # mecab.exe (prefer real binary, not the Chocolatey shim)
-              \$mecabCmd = (Get-Command mecab -ErrorAction SilentlyContinue);
-              \$mecabExe = \$null;
-              if (\$mecabCmd -and (Test-Path \$mecabCmd.Source)) {
-                \$mecabExe = \$mecabCmd.Source;
-              }
-              if (\$mecabExe -and (\$mecabExe -like '*\\chocolatey\\bin\\mecab.exe')) {
-                \$mecabExe = \$null;
-              }
-              if (-not \$mecabExe) {
-                \$mecabExe = Find-File @('C:\\Program Files\\MeCab', 'C:\\ProgramData\\chocolatey\\lib') 'mecab.exe'
-              }
-              if (\$mecabExe) {
-                Copy-Item \"\$mecabExe\" 'src-tauri/resources/bin/mecab.exe' -Force;
-                Write-Host \"[mecab] bundled exe: \$mecabExe\";
-              } else {
-                Write-Host '[warn] mecab.exe not found; skipping mecab bundling';
-              }
-
-              # Dictionary dir (directory containing dicrc; prefer ipadic)
-              \$dicrc = Find-File @('C:\\Program Files\\MeCab', 'C:\\ProgramData\\chocolatey\\lib') 'dicrc';
-              if (\$dicrc) {
-                \$dicDir = Split-Path \$dicrc -Parent;
-                Remove-Item -Recurse -Force 'src-tauri/resources/mecab/ipadic/*' -ErrorAction SilentlyContinue;
-                Copy-Item -Recurse -Force (Join-Path \$dicDir '*') 'src-tauri/resources/mecab/ipadic/';
-                Write-Host \"[mecab] bundled dicdir: \$dicDir\";
-              } else {
-                Write-Host '[warn] mecab dicrc not found; skipping dictionary bundling';
-              }
-            "
-          fi
+          Remove-Item -Recurse -Force 'src-tauri/resources/mecab/ipadic/*' -ErrorAction SilentlyContinue
+          Copy-Item -Recurse -Force (Join-Path $dicDir '*') 'src-tauri/resources/mecab/ipadic/'
 
       - name: Bundle ffmpeg + praat into resources/bin
         shell: bash
