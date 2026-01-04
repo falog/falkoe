@@ -466,11 +466,17 @@ fn download_and_convert_to_wav(
         let mp3_path = base_dir.join("model.mp3");
         let wav_path = base_dir.join("model.wav");
 
-        let resp = reqwest::blocking::get(url)?;
-        let bytes = resp.bytes()?;
-        fs::write(&mp3_path, &bytes)?;
-
-        ffmpeg_convert_to_wav(app, &mp3_path, &wav_path)?;
+        // For tatoeba/model URLs we download to model.mp3 first.
+        // But when opening from history (recorded source), the "url" can be a local file path.
+        // In that case, convert the local file directly.
+        if url.starts_with("http://") || url.starts_with("https://") {
+            let resp = reqwest::blocking::get(url)?;
+            let bytes = resp.bytes()?;
+            fs::write(&mp3_path, &bytes)?;
+            ffmpeg_convert_to_wav(app, &mp3_path, &wav_path)?;
+        } else {
+            ffmpeg_convert_to_wav(app, Path::new(url), &wav_path)?;
+        }
 
         Ok(wav_path.to_string_lossy().to_string())
     })()

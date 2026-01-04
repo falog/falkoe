@@ -295,6 +295,42 @@ const RecorderScreen = ({
     return null;
   };
 
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  const waitForFile = async (path: string, timeoutMs: number) => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      try {
+        if (await exists(path)) return true;
+      } catch {
+        // ignore
+      }
+      await sleep(200);
+    }
+    return false;
+  };
+
+  const waitForJsonFile = async <T,>(
+    path: string,
+    timeoutMs: number
+  ): Promise<T | null> => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      try {
+        if (!(await exists(path))) {
+          await sleep(200);
+          continue;
+        }
+        const txt = await readTextFile(path);
+        return JSON.parse(txt) as T;
+      } catch {
+        // file may be mid-write; retry
+        await sleep(200);
+      }
+    }
+    return null;
+  };
+
   const confirmExportWithMissingTranscripts = (
     missingCount: number
   ): Promise<boolean> => {
@@ -431,62 +467,73 @@ const RecorderScreen = ({
         sourceKind === "uploaded" ? "uploaded.pitch.json" : "model.pitch.json"
       );
 
-      // Reference segment (model/uploaded)
-      if (!(await exists(refWav))) {
+      const ensureReferenceAnalyzed = async () => {
+        // Simulate pressing the "模範音声を音声認識する" button:
+        // reuse the same handler so UI state (spinner etc.) behaves consistently.
+        // Note: the actual whisper work happens in background; we wait on output files below.
+
         if (sourceKind === "uploaded") {
-          const ok = await confirmCreateMissingReferenceAudio("uploaded");
-          if (!ok) return;
           if (!uploadedAudioPath) {
-            message.error(
+            throw new Error(
               "アップロード音声の作成に必要なパスが見つかりません。"
             );
-            return;
           }
-          await invoke("run_whisper_uploaded", {
-            uploadedPath: uploadedAudioPath,
-            sentenceHash,
-            lang: sentence.lang,
-          });
         } else {
-          const ok = await confirmCreateMissingReferenceAudio("model");
-          if (!ok) return;
           if (!sentence.audioUrl) {
-            message.error("model音声のURLが見つかりません。");
-            return;
+            throw new Error("model音声のURLが見つかりません。");
           }
-          await invoke("run_whisper_model", {
-            url: sentence.audioUrl,
-            sentenceHash,
-            lang: sentence.lang,
-          });
         }
 
-        if (!(await exists(refWav))) {
+        const wavExists = await exists(refWav);
+        const transcriptCandidateExists = await exists(refTranscript);
+        const pitchCandidateExists = await exists(refPitch);
+
+        const transcriptOk = transcriptCandidateExists
+          ? Boolean(await waitForJsonFile<any>(refTranscript, 1500))
+          : false;
+        const pitchOk = pitchCandidateExists
+          ? Boolean(await waitForJsonFile<any>(refPitch, 1500))
+          : false;
+
+        const shouldRun = !wavExists || !pitchOk || !transcriptOk;
+        if (shouldRun) {
+          await recognizeModel();
+        }
+
+        // Wait for required artifacts. Pitch is required for chart generation.
+        const wavReady = await waitForFile(refWav, 120_000);
+        const pitchJson = await waitForJsonFile<any>(refPitch, 120_000);
+        if (!wavReady || !pitchJson) {
           throw new Error(
-            "参照音声(wav)の作成に失敗しました。もう一度お試しください。"
+            "参照音声の解析が完了しませんでした（音声認識/ピッチ解析）。もう一度お試しください。"
           );
         }
+
+        // Transcript is optional (subtitles are optional in the video pipeline).
+        const transcriptJson = await waitForJsonFile<any>(refTranscript, 5000);
+
+        return { transcriptJson, pitchJson };
+      };
+
+      // Reference segment (model/uploaded)
+      if (!(await exists(refWav))) {
+        const ok = await confirmCreateMissingReferenceAudio(
+          sourceKind === "uploaded" ? "uploaded" : "model"
+        );
+        if (!ok) return;
       }
 
-      const refTranscriptPicked = await pickFirstExisting([
+      const { pitchJson: refPitchAnalysis } = await ensureReferenceAnalyzed();
+
+      const refTranscriptPicked0 = await pickFirstExisting([
         refTranscript,
         refTranscriptAlt,
       ]);
-
-      let refPitchAnalysis: any;
-      try {
-        refPitchAnalysis = JSON.parse(await readTextFile(refPitch));
-      } catch {
-        // Generate pitch on demand so the reference segment is always included.
-        refPitchAnalysis = await invoke("analyze_pitch", {
-          wavPath: refWav,
-          includeSegments: true,
-        });
-        await writeFile(
-          refPitch,
-          new TextEncoder().encode(JSON.stringify(refPitchAnalysis, null, 2))
-        );
-      }
+      const refTranscriptPicked = refTranscriptPicked0
+        ? (await waitForJsonFile<any>(refTranscriptPicked0, 1500))
+          ? refTranscriptPicked0
+          : null
+        : null;
 
       const refSvgRes = buildPitchAlignmentChartSvg({
         analysis: refPitchAnalysis,
@@ -563,7 +610,12 @@ const RecorderScreen = ({
         segments.push({
           label: `Take ${i + 1}`,
           wavPath: rec.path,
-          transcriptJsonPath: rec.path.replace(/\.wav$/i, ".json"),
+          transcriptJsonPath: (await waitForJsonFile<any>(
+            rec.path.replace(/\.wav$/i, ".json"),
+            1500
+          ))
+            ? rec.path.replace(/\.wav$/i, ".json")
+            : null,
           pitchJsonPath: pitchPath,
           chartPngPath: outPng,
           chartWidthPx: svgRes.renderWidthPx,

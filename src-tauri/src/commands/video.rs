@@ -140,9 +140,9 @@ fn srt_ts(t: f32) -> String {
 }
 
 fn escape_filter_path(p: &Path) -> String {
-    // Use forward slashes and escape ':' for filter args.
+    // Use forward slashes and escape ':' and single quotes for filter args.
     let s = p.to_string_lossy().replace('\\', "/");
-    s.replace(':', "\\:")
+    s.replace(':', "\\:").replace('\'', "\\'")
 }
 
 fn sanitize_base_name(s: &str) -> String {
@@ -151,7 +151,7 @@ fn sanitize_base_name(s: &str) -> String {
         if ch.is_control() {
             continue;
         }
-        let repl = matches!(ch, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|');
+        let repl = matches!(ch, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | '\'');
         out.push(if repl { '_' } else { ch });
     }
     let out = out.trim().trim_end_matches(['.', ' ']).to_string();
