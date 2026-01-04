@@ -3,6 +3,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { message } from "antd";
 import type { Recording } from "../../types/recording";
 import type { ModelStatus } from "../../types/model";
+import {
+  cancelBackgroundTranscription,
+  startBackgroundTranscription,
+} from "../../state/backgroundTranscription";
 
 export function useRecognizeRecording(params: {
   status: ModelStatus;
@@ -30,6 +34,7 @@ export function useRecognizeRecording(params: {
 
       setRecognizing((prev) => ({ ...prev, [rec.path]: true }));
       setIsTranscribing(true);
+      startBackgroundTranscription({ key: rec.path, kind: "recording" });
       try {
         await invoke("run_whisper", {
           path: rec.path,
@@ -37,6 +42,7 @@ export function useRecognizeRecording(params: {
           lang,
         });
       } catch (e) {
+        cancelBackgroundTranscription(rec.path);
         setRecognizing((prev) => {
           const next = { ...prev };
           delete next[rec.path];

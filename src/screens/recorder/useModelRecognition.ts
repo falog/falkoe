@@ -4,6 +4,10 @@ import type { Dispatch, SetStateAction } from "react";
 import { confirmOverwriteExisting } from "./uiUtils";
 import { loadModelTranscript, loadUploadedTranscript } from "./transcriptUtils";
 import type { SourceKind } from "../../types/speech";
+import {
+  cancelBackgroundTranscription,
+  startBackgroundTranscription,
+} from "../../state/backgroundTranscription";
 
 type Params = {
   sourceKind: SourceKind;
@@ -63,16 +67,32 @@ export function useModelRecognition({
     setIsTranscribing(true);
 
     if (sourceKind === "uploaded" && uploadedAudioPath) {
+      const key = `${sentenceHash}:uploaded`;
+      startBackgroundTranscription({ key, kind: "uploaded" });
       invoke("run_whisper_uploaded", {
         uploadedPath: uploadedAudioPath,
         sentenceHash,
         lang,
+      }).catch((e) => {
+        cancelBackgroundTranscription(key);
+        setWaitingModel(false);
+        setIsTranscribing(false);
+        // eslint-disable-next-line no-console
+        console.error(e);
       });
     } else {
+      const key = `${sentenceHash}:model`;
+      startBackgroundTranscription({ key, kind: "model" });
       invoke("run_whisper_model", {
         url: sentenceAudioUrl,
         sentenceHash,
         lang,
+      }).catch((e) => {
+        cancelBackgroundTranscription(key);
+        setWaitingModel(false);
+        setIsTranscribing(false);
+        // eslint-disable-next-line no-console
+        console.error(e);
       });
     }
   }, [

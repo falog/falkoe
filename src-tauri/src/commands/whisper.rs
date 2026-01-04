@@ -1,5 +1,42 @@
 #![allow(dead_code)]
 
+mod audio;
+mod ffmpeg;
+mod lang;
+mod manifest;
+mod paths;
+mod run;
+mod transcribe;
+mod transcript;
+mod types;
+
+pub use audio::load_wav_as_f32;
+pub use manifest::SentenceManifest;
+pub use run::{run_whisper, run_whisper_model, run_whisper_uploaded};
+pub use transcribe::{transcribe, transcribe_preview};
+pub use types::{
+    FinalResult, PartialSegment, PreviewResult, Segment, TokenTimestamp, Transcript, WordTimestamp,
+};
+
+// The following functions and structs are part of the public API
+#[derive(serde::Serialize, Clone)]
+pub struct PreviewResult {
+    pub status: String, // "preview"
+    pub text: String,
+    pub score: f32,
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct FinalResult {
+    pub status: String,
+    pub wav_path: String,
+    pub segments: Vec<Segment>,
+    pub score: f32,
+}
+
+// Additional structs and functions can be added here as needed.
+#![allow(dead_code)]
+
 use crate::model::{ensure_model, hash_sentence};
 
 use anyhow::{bail, Result};

@@ -5,4 +5,5 @@ pub mod recordings;
 pub mod sentences;
 pub mod status;
 pub mod video;
+#[path = "whisper_facade.rs"]
 pub mod whisper;

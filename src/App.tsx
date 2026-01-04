@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import WordInputScreen from "./screens/WordInputScreen";
 import RecorderScreen from "./screens/RecorderScreen";
 import HistoryScreen from "./screens/HistoryScreen";
@@ -8,6 +9,11 @@ import CommonMistakesScreen from "./screens/CommonMistakesScreen.tsx";
 import { Sentence } from "./components/ExampleList";
 import type { SpeechSource } from "./types/speech";
 import type { MistakeFocus } from "./data/commonMistakes";
+import { finishBackgroundTranscriptionByWavPath } from "./state/backgroundTranscription";
+
+type FinalResultPayload = {
+  wav_path: string;
+};
 
 const App = () => {
   const [screen, setScreen] = useState<
@@ -19,6 +25,22 @@ const App = () => {
   const [sentences, setSentences] = useState<Sentence[]>([]);
   const [wordcount, setWordcount] = useState("5-");
   const [source, setSource] = useState<SpeechSource | null>(null);
+
+  useEffect(() => {
+    const unlistenPromise = listen<FinalResultPayload>(
+      "transcript-final",
+      (e) => {
+        const wavPath = e.payload?.wav_path;
+        if (typeof wavPath === "string" && wavPath) {
+          finishBackgroundTranscriptionByWavPath(wavPath);
+        }
+      }
+    );
+
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, []);
 
   return (
     <>

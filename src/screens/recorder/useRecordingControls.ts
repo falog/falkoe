@@ -4,6 +4,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { startRecording, stopRecording } from "tauri-plugin-mic-recorder-api";
 import type { Dispatch, SetStateAction } from "react";
 import type { Transcript } from "../../types/recording";
+import {
+  cancelBackgroundTranscription,
+  startBackgroundTranscription,
+} from "../../state/backgroundTranscription";
 
 type Params = {
   sentenceHash: string;
@@ -82,6 +86,7 @@ export function useRecordingControls({
       [movedPath]: null,
     }));
     setIsTranscribingRef.current(true);
+    startBackgroundTranscription({ key: movedPath, kind: "recording" });
 
     try {
       await invoke("run_whisper", {
@@ -90,6 +95,7 @@ export function useRecordingControls({
         lang: langRef.current,
       });
     } catch {
+      cancelBackgroundTranscription(movedPath);
       setRecognizingRef.current((prev) => {
         if (!prev[movedPath]) return prev;
         const next = { ...prev };

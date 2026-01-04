@@ -3,6 +3,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { loadUploadedTranscript } from "./transcriptUtils";
 import type { SourceKind } from "../../types/speech";
 import type { ModelStatus } from "../../types/model";
+import {
+  cancelBackgroundTranscription,
+  startBackgroundTranscription,
+} from "../../state/backgroundTranscription";
 
 type Args = {
   enabled?: boolean;
@@ -77,10 +81,16 @@ export function useAutoTranscribeUploaded({
 
       autoStartedRef.current = true;
 
+      const key = `${sentenceHash}:uploaded`;
+      startBackgroundTranscription({ key, kind: "uploaded" });
       invoke("run_whisper_uploaded", {
         uploadedPath: uploadedAudioPath,
         sentenceHash,
         lang,
+      }).catch((e) => {
+        cancelBackgroundTranscription(key);
+        // eslint-disable-next-line no-console
+        console.error(e);
       });
 
       setIsTranscribing(true);
