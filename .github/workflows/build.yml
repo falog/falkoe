@@ -78,9 +78,17 @@ jobs:
           New-Item -ItemType Directory -Force -Path 'src-tauri/resources/mecab/ipadic' | Out-Null
 
           # MSYS2 install root varies (C:\\msys64 is common but not guaranteed).
+          $rootFromPacman = $null
+          $pacmanCmd = Get-Command pacman.exe -ErrorAction SilentlyContinue
+          if ($pacmanCmd -and $pacmanCmd.Source) {
+            # pacman.exe is typically at <msysRoot>\usr\bin\pacman.exe
+            $rootFromPacman = Split-Path (Split-Path $pacmanCmd.Source -Parent) -Parent
+          }
+
           $candidateRoots = @(
             $env:MSYS2_ROOT,
             $env:MSYS2_LOCATION,
+            $rootFromPacman,
             'C:\\msys64',
             'D:\\msys64'
           ) | Where-Object { $_ -and (Test-Path $_) }
