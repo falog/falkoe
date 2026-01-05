@@ -143,9 +143,9 @@ jobs:
           $ffmpegDir = $ffmpegExe.Directory.FullName
 
           # Verify license-related build flags
-          $buildconf = & $ffmpegExe.FullName -buildconf
-          if ($buildconf -notmatch '--enable-gpl') { throw 'Bundled ffmpeg is not a GPL build (--enable-gpl missing)' }
-          if ($buildconf -match '--enable-nonfree') { throw 'Bundled ffmpeg is nonfree (--enable-nonfree present); abort' }
+          $ver = (& $ffmpegExe.FullName -version 2>&1 | Out-String)
+          if ($ver -notmatch '--enable-gpl') { throw 'Bundled ffmpeg is not a GPL build (--enable-gpl missing)' }
+          if ($ver -match '--enable-nonfree') { throw 'Bundled ffmpeg is nonfree (--enable-nonfree present); abort' }
 
           Copy-Item -Force $ffmpegExe.FullName 'src-tauri/resources/bin/ffmpeg.exe'
           Get-ChildItem -Path $ffmpegDir -Filter '*.dll' -File -ErrorAction SilentlyContinue |
