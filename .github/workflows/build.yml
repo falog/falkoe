@@ -269,13 +269,16 @@ jobs:
             exit 1
           fi
 
-          cp -R "$dic_dir"/* src-tauri/resources/mecab/ipadic/
+          # シンボリックリンクを解決して実ファイルをコピー
+          cp -RL "$dic_dir"/* src-tauri/resources/mecab/ipadic/
 
-          # rewrite.defが存在しない場合は空ファイルを作成
-          if [[ ! -f "src-tauri/resources/mecab/ipadic/rewrite.def" ]]; then
-            echo "[warn] rewrite.def not found, creating empty file"
-            touch src-tauri/resources/mecab/ipadic/rewrite.def
-          fi
+          # 必須ファイルの確認
+          for file in dicrc sys.dic unk.dic; do
+            if [[ ! -f "src-tauri/resources/mecab/ipadic/$file" ]]; then
+              echo "[error] failed to copy $file"
+              exit 1
+            fi
+          done
 
           echo "[info] bundled ipadic from $dic_dir"
 
@@ -333,14 +336,17 @@ jobs:
             exit 1
           fi
 
+          # シンボリックリンクを解決して実ファイルをコピー
           rm -rf src-tauri/resources/mecab/ipadic/*
-          cp -R "$dic_dir"/* src-tauri/resources/mecab/ipadic/
+          cp -RL "$dic_dir"/* src-tauri/resources/mecab/ipadic/
 
-          # rewrite.defが存在しない場合は空ファイルを作成
-          if [[ ! -f "src-tauri/resources/mecab/ipadic/rewrite.def" ]]; then
-            echo "[warn] rewrite.def not found, creating empty file"
-            touch src-tauri/resources/mecab/ipadic/rewrite.def
-          fi
+          # 必須ファイルの確認
+          for file in dicrc sys.dic unk.dic; do
+            if [[ ! -f "src-tauri/resources/mecab/ipadic/$file" ]]; then
+              echo "[error] failed to copy $file"
+              exit 1
+            fi
+          done
 
           echo "[info] bundled naist-jdic from $dic_dir"
 
@@ -391,19 +397,23 @@ jobs:
             fi
           done
 
-          # クリーンコピー
+          # クリーンコピー（シンボリックリンクを解決して実ファイルをコピー）
           rm -rf src-tauri/resources/mecab/ipadic/*
-          cp -R "$dic_dir"/* src-tauri/resources/mecab/ipadic/
 
-          # rewrite.defが存在しない場合は空ファイルを作成
-          if [[ ! -f "src-tauri/resources/mecab/ipadic/rewrite.def" ]]; then
-            echo "[warn] rewrite.def not found, creating empty file"
-            touch src-tauri/resources/mecab/ipadic/rewrite.def
-          fi
+          # -Lオプションでシンボリックリンクを辿って実ファイルをコピー
+          cp -RL "$dic_dir"/* src-tauri/resources/mecab/ipadic/
 
           # コピー結果の確認
           echo "[info] bundled files:"
           ls -la src-tauri/resources/mecab/ipadic/ || true
+
+          # 必須ファイルの最終確認
+          for file in dicrc sys.dic unk.dic; do
+            if [[ ! -f "src-tauri/resources/mecab/ipadic/$file" ]]; then
+              echo "[error] failed to copy $file"
+              exit 1
+            fi
+          done
 
           echo "[info] bundled ipadic from $dic_dir"
 
