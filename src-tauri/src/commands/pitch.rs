@@ -8,6 +8,7 @@ mod paths;
 mod praat;
 mod types;
 mod wav;
+mod world;
 mod yin;
 
 pub use types::PitchAnalysis;
@@ -16,6 +17,7 @@ use analysis::build_segments_words;
 use features::normalize_log2;
 use praat::extract_f0_with_praat;
 use wav::{read_wav_mono_f32, read_wav_sample_rate};
+use world::extract_f0_with_world;
 use yin::extract_f0_with_yin;
 
 #[tauri::command]
@@ -37,8 +39,8 @@ pub fn analyze_pitch(
         // Sample rate is used for display; Praat extraction doesn't require loading all samples.
         let sample_rate = read_wav_sample_rate(wav_path)?;
 
-        // Prefer Praat when bundled (or available on PATH). If it fails for any reason,
-        // fall back to the built-in YIN implementation.
+        // Prefer Praat when available (optional). If it fails, try external WORLD helper (optional),
+        // then fall back to the built-in YIN implementation.
         let (extractor, f0_hz) = match extract_f0_with_praat(
             &app,
             wav_path,
@@ -47,10 +49,26 @@ pub fn analyze_pitch(
             pitch_ceiling,
         ) {
             Ok(v) => (Some("praat".to_string()), v),
-            Err(e) => {
-                eprintln!("[pitch] Praat extraction failed; falling back to YIN: {}", e);
-                let (samples, sr) = read_wav_mono_f32(wav_path)?;
-                (Some("yin".to_string()), extract_f0_with_yin(&samples, sr, time_step, pitch_floor, pitch_ceiling)?)
+            Err(e_praat) => {
+                eprintln!(
+                    "[pitch] Praat extraction failed; trying WORLD helper: {}",
+                    e_praat
+                );
+                match extract_f0_with_world(&app, wav_path, time_step, pitch_floor, pitch_ceiling)
+                {
+                    Ok(v) => (Some("world".to_string()), v),
+                    Err(e_world) => {
+                        eprintln!(
+                            "[pitch] WORLD extraction failed; falling back to YIN: {}",
+                            e_world
+                        );
+                        let (samples, sr) = read_wav_mono_f32(wav_path)?;
+                        (
+                            Some("yin".to_string()),
+                            extract_f0_with_yin(&samples, sr, time_step, pitch_floor, pitch_ceiling)?,
+                        )
+                    }
+                }
             }
         };
 

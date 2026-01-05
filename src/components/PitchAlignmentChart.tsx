@@ -123,28 +123,55 @@ export function buildPitchAlignmentChartSvg(
   let windowStart = 0;
   let windowEnd = fullEndTime;
 
-  if (overlayWords.length > 0) {
-    windowStart = Math.min(...overlayWords.map((w) => w.start));
-    windowEnd = Math.max(...overlayWords.map((w) => w.end));
-  } else {
-    let firstVoiced = -1;
-    let lastVoiced = -1;
-    for (let i = 0; i < n; i++) {
-      if (typeof f0[i] === "number") {
-        firstVoiced = i;
-        break;
-      }
+  // Prefer a window that includes both transcript span (if present) and
+  // the actual voiced pitch span. This prevents long recordings where
+  // transcription stops early from showing only the first part of the pitch.
+  let firstVoiced = -1;
+  let lastVoiced = -1;
+  for (let i = 0; i < n; i++) {
+    if (typeof f0[i] === "number") {
+      firstVoiced = i;
+      break;
     }
-    for (let i = n - 1; i >= 0; i--) {
-      if (typeof f0[i] === "number") {
-        lastVoiced = i;
-        break;
-      }
+  }
+  for (let i = n - 1; i >= 0; i--) {
+    if (typeof f0[i] === "number") {
+      lastVoiced = i;
+      break;
     }
-    if (firstVoiced >= 0 && lastVoiced >= firstVoiced) {
-      windowStart = firstVoiced * analysis.time_step;
-      windowEnd = lastVoiced * analysis.time_step;
-    }
+  }
+  const voicedStart =
+    firstVoiced >= 0 ? firstVoiced * analysis.time_step : null;
+  const voicedEnd =
+    lastVoiced >= 0 && lastVoiced >= firstVoiced
+      ? lastVoiced * analysis.time_step
+      : null;
+
+  const wordStart =
+    overlayWords.length > 0
+      ? Math.min(...overlayWords.map((w) => w.start))
+      : null;
+  const wordEnd =
+    overlayWords.length > 0
+      ? Math.max(...overlayWords.map((w) => w.end))
+      : null;
+
+  const candidatesStart = [wordStart, voicedStart].filter(
+    (v): v is number => typeof v === "number" && Number.isFinite(v)
+  );
+  const candidatesEnd = [wordEnd, voicedEnd].filter(
+    (v): v is number => typeof v === "number" && Number.isFinite(v)
+  );
+
+  if (candidatesStart.length > 0 && candidatesEnd.length > 0) {
+    windowStart = Math.min(...candidatesStart);
+    windowEnd = Math.max(...candidatesEnd);
+  } else if (wordStart !== null && wordEnd !== null) {
+    windowStart = wordStart;
+    windowEnd = wordEnd;
+  } else if (voicedStart !== null && voicedEnd !== null) {
+    windowStart = voicedStart;
+    windowEnd = voicedEnd;
   }
 
   const padTime = Math.max(analysis.time_step * 3, 0.05);
@@ -286,28 +313,52 @@ export function PitchAlignmentChart({
   let windowStart = 0;
   let windowEnd = fullEndTime;
 
-  if (overlayWords.length > 0) {
-    windowStart = Math.min(...overlayWords.map((w) => w.start));
-    windowEnd = Math.max(...overlayWords.map((w) => w.end));
-  } else {
-    let firstVoiced = -1;
-    let lastVoiced = -1;
-    for (let i = 0; i < n; i++) {
-      if (typeof f0[i] === "number") {
-        firstVoiced = i;
-        break;
-      }
+  let firstVoiced = -1;
+  let lastVoiced = -1;
+  for (let i = 0; i < n; i++) {
+    if (typeof f0[i] === "number") {
+      firstVoiced = i;
+      break;
     }
-    for (let i = n - 1; i >= 0; i--) {
-      if (typeof f0[i] === "number") {
-        lastVoiced = i;
-        break;
-      }
+  }
+  for (let i = n - 1; i >= 0; i--) {
+    if (typeof f0[i] === "number") {
+      lastVoiced = i;
+      break;
     }
-    if (firstVoiced >= 0 && lastVoiced >= firstVoiced) {
-      windowStart = firstVoiced * analysis.time_step;
-      windowEnd = lastVoiced * analysis.time_step;
-    }
+  }
+  const voicedStart =
+    firstVoiced >= 0 ? firstVoiced * analysis.time_step : null;
+  const voicedEnd =
+    lastVoiced >= 0 && lastVoiced >= firstVoiced
+      ? lastVoiced * analysis.time_step
+      : null;
+
+  const wordStart =
+    overlayWords.length > 0
+      ? Math.min(...overlayWords.map((w) => w.start))
+      : null;
+  const wordEnd =
+    overlayWords.length > 0
+      ? Math.max(...overlayWords.map((w) => w.end))
+      : null;
+
+  const candidatesStart = [wordStart, voicedStart].filter(
+    (v): v is number => typeof v === "number" && Number.isFinite(v)
+  );
+  const candidatesEnd = [wordEnd, voicedEnd].filter(
+    (v): v is number => typeof v === "number" && Number.isFinite(v)
+  );
+
+  if (candidatesStart.length > 0 && candidatesEnd.length > 0) {
+    windowStart = Math.min(...candidatesStart);
+    windowEnd = Math.max(...candidatesEnd);
+  } else if (wordStart !== null && wordEnd !== null) {
+    windowStart = wordStart;
+    windowEnd = wordEnd;
+  } else if (voicedStart !== null && voicedEnd !== null) {
+    windowStart = voicedStart;
+    windowEnd = voicedEnd;
   }
 
   const padTime = Math.max(analysis.time_step * 3, 0.05);

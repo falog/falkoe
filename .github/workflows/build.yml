@@ -43,7 +43,6 @@ jobs:
             libasound2-dev \
             build-essential \
             ffmpeg \
-            praat \
             mecab \
             mecab-ipadic-utf8
 
@@ -51,7 +50,7 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: powershell
         run: |
-          choco install -y ffmpeg praat
+          choco install -y ffmpeg
 
       - name: Setup MSYS2 (Windows)
         if: matrix.os == 'windows-latest'
@@ -80,7 +79,6 @@ jobs:
           brew update
           brew install ffmpeg
           brew install mecab mecab-ipadic
-          brew install --cask praat
 
       # ========================================
       # バンドル処理: ffmpeg
@@ -93,19 +91,32 @@ jobs:
           set -euo pipefail
           mkdir -p src-tauri/resources/bin
 
-          curl -fsSL -o /tmp/ffmpeg.tar.xz \
-            "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
-          tar -C /tmp -xf /tmp/ffmpeg.tar.xz
+          asset="ffmpeg-n8.0-latest-linux64-gpl-8.0.tar.xz"
+          url="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/${asset}"
+          tmpdir="$(mktemp -d)"
 
-          ffdir="$(find /tmp -maxdepth 1 -type d -name 'ffmpeg-*-amd64-static' | head -n 1)"
-          if [[ -z "$ffdir" || ! -f "$ffdir/ffmpeg" ]]; then
-            echo "[error] static ffmpeg download/extract failed"
+          curl -fsSL -o "$tmpdir/ffmpeg.tar.xz" "$url"
+          tar -C "$tmpdir" -xf "$tmpdir/ffmpeg.tar.xz"
+
+          ffdir="$(find "$tmpdir" -maxdepth 1 -type d -name 'ffmpeg-*' | head -n 1)"
+          if [[ -z "$ffdir" || ! -f "$ffdir/bin/ffmpeg" ]]; then
+            echo "[error] ffmpeg download/extract failed"
             exit 1
           fi
 
-          cp -f "$ffdir/ffmpeg" src-tauri/resources/bin/ffmpeg
+          cp -f "$ffdir/bin/ffmpeg" src-tauri/resources/bin/ffmpeg
           chmod +x src-tauri/resources/bin/ffmpeg
           echo "[info] bundled: $(src-tauri/resources/bin/ffmpeg -version | head -n1)"
+
+          conf="$(src-tauri/resources/bin/ffmpeg -buildconf 2>/dev/null || true)"
+          if ! grep -q -- '--enable-gpl' <<<"$conf"; then
+            echo "[error] bundled ffmpeg is not a GPL build (--enable-gpl missing)"
+            exit 1
+          fi
+          if grep -q -- '--enable-nonfree' <<<"$conf"; then
+            echo "[error] bundled ffmpeg is nonfree (--enable-nonfree present); abort"
+            exit 1
+          fi
 
       - name: Bundle ffmpeg (Windows)
         if: matrix.os == 'windows-latest'
@@ -114,34 +125,33 @@ jobs:
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force -Path 'src-tauri/resources/bin' | Out-Null
 
-          $choco = $env:ChocolateyInstall
-          if (-not $choco) { throw 'ChocolateyInstall not set' }
+          $asset = 'ffmpeg-n8.0-latest-win64-gpl-shared-8.0.zip'
+          $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/$asset"
+          $tmp = Join-Path $env:RUNNER_TEMP 'ffmpeg'
+          $zip = Join-Path $tmp $asset
+          $out = Join-Path $tmp 'out'
 
-          function Find-FirstFile([string]$root, [string]$pattern) {
-            Get-ChildItem -Path $root -Recurse -File -Filter $pattern -ErrorAction SilentlyContinue |
-              Select-Object -First 1
-          }
+          New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+          if (Test-Path $out) { Remove-Item -Recurse -Force $out }
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
 
-          # ffmpeg
-          $ffmpegDir = Join-Path $choco 'lib\ffmpeg\tools\ffmpeg\bin'
-          if (-not (Test-Path $ffmpegDir)) {
-            $ffmpegExe = Find-FirstFile (Join-Path $choco 'lib') 'ffmpeg.exe'
-            if (-not $ffmpegExe) { throw 'ffmpeg.exe not found' }
-            $ffmpegDir = $ffmpegExe.Directory.FullName
-          }
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath $out -Force
 
-          $ffmpegExePath = Join-Path $ffmpegDir 'ffmpeg.exe'
-          if (-not (Test-Path $ffmpegExePath)) {
-            throw "ffmpeg.exe not found at $ffmpegExePath"
-          }
+          $ffmpegExe = Get-ChildItem -Path $out -Recurse -File -Filter 'ffmpeg.exe' | Select-Object -First 1
+          if (-not $ffmpegExe) { throw 'ffmpeg.exe not found in extracted archive' }
+          $ffmpegDir = $ffmpegExe.Directory.FullName
 
-          Copy-Item -Force $ffmpegExePath 'src-tauri/resources/bin/ffmpeg.exe'
+          # Verify license-related build flags
+          $buildconf = & $ffmpegExe.FullName -buildconf
+          if ($buildconf -notmatch '--enable-gpl') { throw 'Bundled ffmpeg is not a GPL build (--enable-gpl missing)' }
+          if ($buildconf -match '--enable-nonfree') { throw 'Bundled ffmpeg is nonfree (--enable-nonfree present); abort' }
 
-          # Copy DLLs if present
+          Copy-Item -Force $ffmpegExe.FullName 'src-tauri/resources/bin/ffmpeg.exe'
           Get-ChildItem -Path $ffmpegDir -Filter '*.dll' -File -ErrorAction SilentlyContinue |
             ForEach-Object { Copy-Item -Force $_.FullName 'src-tauri/resources/bin/' }
 
-          Write-Host "[info] bundled ffmpeg.exe"
+          Write-Host "[info] bundled ffmpeg.exe (GPL build)"
 
       - name: Bundle ffmpeg (macOS)
         if: matrix.os == 'macos-14'
@@ -162,76 +172,63 @@ jobs:
           chmod +x src-tauri/resources/bin/ffmpeg
           echo "[info] bundled: $(src-tauri/resources/bin/ffmpeg -version | head -n1)"
 
-      # ========================================
-      # バンドル処理: Praat
-      # ========================================
+          conf="$(src-tauri/resources/bin/ffmpeg -buildconf 2>/dev/null || true)"
+          if ! grep -q -- '--enable-gpl' <<<"$conf"; then
+            echo "[error] bundled ffmpeg is not a GPL build (--enable-gpl missing)"
+            exit 1
+          fi
+          if grep -q -- '--enable-nonfree' <<<"$conf"; then
+            echo "[error] bundled ffmpeg is nonfree (--enable-nonfree present); abort"
+            exit 1
+          fi
 
-      - name: Bundle Praat (Linux)
+      # ========================================
+      # バンドル処理: WORLD helper (optional)
+      # ========================================
+      - name: Build + bundle WORLD helper (Linux)
         if: matrix.os == 'ubuntu-latest'
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p src-tauri/resources/bin
+          pushd src-tauri >/dev/null
+          cargo build --release --bin world_pitch
+          popd >/dev/null
+          cp -f src-tauri/target/release/world_pitch src-tauri/resources/bin/world_pitch
+          chmod +x src-tauri/resources/bin/world_pitch
+          echo "[info] bundled WORLD helper: world_pitch"
 
-          if command -v praat >/dev/null 2>&1; then
-            cp -f "$(command -v praat)" src-tauri/resources/bin/praat
-            chmod +x src-tauri/resources/bin/praat
-            echo "[info] bundled praat"
-          else
-            echo "[warn] praat not found; pitch will fallback to YIN"
-          fi
-
-      - name: Bundle Praat (Windows)
-        if: matrix.os == 'windows-latest'
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          New-Item -ItemType Directory -Force -Path 'src-tauri/resources/bin' | Out-Null
-
-          $choco = $env:ChocolateyInstall
-          if (-not $choco) { throw 'ChocolateyInstall not set' }
-
-          function Find-FirstFile([string]$root, [string]$pattern) {
-            Get-ChildItem -Path $root -Recurse -File -Filter $pattern -ErrorAction SilentlyContinue |
-              Select-Object -First 1
-          }
-
-          $praatRoot = Join-Path $choco 'lib'
-          $praatExe = Find-FirstFile $praatRoot 'praat.exe'
-          if ($praatExe) {
-            Copy-Item -Force $praatExe.FullName 'src-tauri/resources/bin/praat.exe'
-            Write-Host "[info] bundled praat.exe"
-          } else {
-            Write-Host '[warn] praat.exe not found; pitch will fallback to YIN'
-          }
-
-          $praatCon = Find-FirstFile $praatRoot 'praatcon.exe'
-          if ($praatCon) {
-            Copy-Item -Force $praatCon.FullName 'src-tauri/resources/bin/praatcon.exe'
-            Write-Host "[info] bundled praatcon.exe"
-          }
-
-      - name: Bundle Praat (macOS)
+      - name: Build + bundle WORLD helper (macOS)
         if: matrix.os == 'macos-14'
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p src-tauri/resources/bin
+          pushd src-tauri >/dev/null
+          cargo build --release --bin world_pitch
+          popd >/dev/null
+          cp -f src-tauri/target/release/world_pitch src-tauri/resources/bin/world_pitch
+          chmod +x src-tauri/resources/bin/world_pitch
+          echo "[info] bundled WORLD helper: world_pitch"
 
-          praat_app="/Applications/Praat.app"
-          praat_bin="$praat_app/Contents/MacOS/Praat"
+      - name: Build + bundle WORLD helper (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path 'src-tauri/resources/bin' | Out-Null
+          pushd src-tauri
+          cargo build --release --bin world_pitch
+          popd
+          Copy-Item -Force 'src-tauri/target/release/world_pitch.exe' 'src-tauri/resources/bin/world_pitch.exe'
+          Write-Host "[info] bundled WORLD helper: world_pitch.exe"
 
-          if [[ -f "$praat_bin" ]]; then
-            cp -f "$praat_bin" src-tauri/resources/bin/praat
-            chmod +x src-tauri/resources/bin/praat
-            echo "[info] bundled praat from .app"
-          elif command -v praat >/dev/null 2>&1; then
-            cp -f "$(command -v praat)" src-tauri/resources/bin/praat
-            chmod +x src-tauri/resources/bin/praat
-            echo "[info] bundled praat from PATH"
-          else
-            echo "[warn] praat not found; pitch will fallback to YIN"
-          fi
+      # ========================================
+      # Praat
+      # ========================================
+      # Note: Praat is intentionally NOT bundled in CI/release artifacts due to
+      # redistribution/license concerns. Falkoe will fall back to built-in YIN
+      # when Praat is not available.
 
       # ========================================
       # バンドル処理: MeCab

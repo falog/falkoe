@@ -3,8 +3,13 @@ name = "Falkoe"
 version = "0.2.13"
 description = "Falkoe Voice-powered language learning app"
 authors = ["fal"]
+license = "GPL-3.0-or-later"
 edition = "2021"
 default-run = "Falkoe"
+
+[[bin]]
+name = "world_pitch"
+path = "src/bin/world_pitch.rs"
 
 [lib]
 name = "falkoe_lib"

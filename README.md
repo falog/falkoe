@@ -163,7 +163,7 @@ Tauri の `resource_dir` から次のパスを探します（見つからなけ�
 
 設定は [src-tauri/tauri.conf.json](src-tauri/tauri.conf.json) の `bundle.resources` に `resources/bin` を含めています。
 
-> 注意: `ffmpeg` の再配布はライセンス条件(LGPL/GPLなど)の確認が必要です。配布形態に合わせて適切なビルド/ライセンス表記を行ってください。
+> 注意: Falkoe はGPLv3+で配布しています。配布版では `ffmpeg` も **GPLビルドを同梱**する想定です。バイナリを再配布する場合は、GPLの条件（対応するソースの提供等）を満たしてください。
 
 #### 🪟 Windows注意: 「shim版 ffmpeg.exe」を同梱しない
 
@@ -198,7 +198,7 @@ The app searches for `ffmpeg` in the following paths from Tauri's `resource_dir`
 
 Configuration is set in [src-tauri/tauri.conf.json](src-tauri/tauri.conf.json) with `resources/bin` included in `bundle.resources`.
 
-> Note: Redistribution of `ffmpeg` requires compliance with license terms (LGPL/GPL, etc.). Please ensure proper build configuration and license attribution for your distribution.
+> Note: Falkoe is distributed under GPLv3+ and release builds are intended to bundle a **GPL build** of `ffmpeg`. If you redistribute binaries, ensure you meet GPL obligations (including providing corresponding source).
 
 ---
 
@@ -206,9 +206,34 @@ Configuration is set in [src-tauri/tauri.conf.json](src-tauri/tauri.conf.json) w
 
 Falkoe のピッチ抽出は、可能なら **Praat** を使います（より安定したF0抽出のため）。
 
-- **配布版(推奨)**: アプリに `praat` / `praatcon` を同梱できます。
+- **任意**: Praat がシステムにインストールされていれば利用されます。
 - **同梱なし**: システムの `praat` が PATH に入っていれば使われます。
 - **Praatが使えない場合**: 内蔵の簡易YIN実装にフォールバックします（動作は継続します）。
+
+> 注意: 現在のリリース配布物では、再配布/ライセンス面の都合で Praat を同梱しない方針にしています（必要なら各自でインストールしてください）。
+
+---
+
+## 📦 Optional Tool (WORLD helper) / 任意ツール(WORLD)
+
+Praatを同梱しない場合でも、より安定したF0抽出をしたいときは **WORLD系の外部ヘルパー**を同梱できます。
+
+- **必須ではありません**: 無い場合は内蔵YINへフォールバックします。
+- **同梱場所**:
+  - Windows: `resources/bin/world_pitch.exe`
+  - macOS / Linux: `resources/bin/world_pitch`
+
+### 期待するヘルパー仕様（現状の実装）
+
+アプリは次の形式でヘルパーを呼び出します:
+
+`world_pitch <wav_path> <out_tsv_path> <time_step> <pitch_floor> <pitch_ceiling>`
+
+ヘルパーは `out_tsv_path` にTSV（タブ区切り）で出力します:
+
+`time<TAB>f0_hz` （ヘッダなしでOK、f0が無いフレームは0/空/NaNなどでも可）
+
+> 注意: WORLD自体やヘルパー実装のライセンスは別途確認してください（配布物に同梱する場合は再配布になります）。
 
 ### 同梱パス
 
@@ -667,7 +692,7 @@ Please feel free to:
 
 ## 📄 License / ライセンス
 
-This project is licensed under the MIT License.
+This project is licensed under the GNU General Public License v3.0 (or later).
 
 See [LICENSE](LICENSE) file for details.
 
