@@ -165,6 +165,23 @@ Tauri の `resource_dir` から次のパスを探します（見つからなけ�
 
 > 注意: `ffmpeg` の再配布はライセンス条件(LGPL/GPLなど)の確認が必要です。配布形態に合わせて適切なビルド/ライセンス表記を行ってください。
 
+#### 🪟 Windows注意: 「shim版 ffmpeg.exe」を同梱しない
+
+Windowsで `choco` / `scoop` 等で入れた `ffmpeg.exe` は、実体の場所を探すための **shim(呼び出し用exe)** の場合があります。
+
+以下のようなエラーが出る場合、shimを同梱してしまっています：
+
+```
+Cannot find file at '..\lib\ffmpeg\tools\ffmpeg\bin\ffmpeg.exe' ...
+```
+
+この場合は、**本物のffmpegビルド**（単体で動く `ffmpeg.exe`）を同梱してください。
+
+- 推奨: 公式/配布サイトのzipを展開して `bin/ffmpeg.exe` をコピー
+- もし `bin/*.dll` が付属しているビルドなら、`ffmpeg.exe` と同じ `resources/bin/` に **DLLも一緒に置く**（DLL不足で起動失敗するため）
+
+最終確認: `resources/bin/ffmpeg.exe -version` がそのフォルダ内で単体実行できること
+
 ---
 
 Falkoe uses `ffmpeg` for audio conversion (e.g., mp3 → wav).

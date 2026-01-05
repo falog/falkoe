@@ -141,11 +141,15 @@ fn resolve_bundled_tool(app: &AppHandle, base_name: &str) -> Option<PathBuf> {
     };
 
     let candidates = [
+        // bundle layout
         resource_dir.join("bin").join(&exe_name),
         resource_dir.join(&exe_name),
+        // dev layout (resources synced under target/*/resources)
+        resource_dir.join("resources").join("bin").join(&exe_name),
+        resource_dir.join("resources").join(&exe_name),
     ];
 
-    candidates.into_iter().find(|p| p.exists())
+    candidates.into_iter().find(|p| p.is_file())
 }
 
 fn ffmpeg_convert_to_wav(app: &AppHandle, input: &Path, output_wav: &Path) -> Result<()> {

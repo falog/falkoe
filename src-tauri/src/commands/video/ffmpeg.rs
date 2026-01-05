@@ -1,6 +1,7 @@
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::io::ErrorKind;
 use tauri::{AppHandle, Manager};
 
 fn resolve_bundled_tool(app: &AppHandle, base_name: &str) -> Option<PathBuf> {
@@ -12,11 +13,15 @@ fn resolve_bundled_tool(app: &AppHandle, base_name: &str) -> Option<PathBuf> {
     };
 
     let candidates = [
+        // bundle layout
         resource_dir.join("bin").join(&exe_name),
         resource_dir.join(&exe_name),
+        // dev layout (resources synced under target/*/resources)
+        resource_dir.join("resources").join("bin").join(&exe_name),
+        resource_dir.join("resources").join(&exe_name),
     ];
 
-    candidates.into_iter().find(|p| p.exists())
+    candidates.into_iter().find(|p| p.is_file())
 }
 
 pub(crate) fn run_ffmpeg(app: &AppHandle, args: &[String]) -> Result<()> {
@@ -29,10 +34,25 @@ pub(crate) fn run_ffmpeg(app: &AppHandle, args: &[String]) -> Result<()> {
     full_args.push("error".into());
     full_args.extend_from_slice(args);
 
-    let out = Command::new(&cmd)
-        .args(&full_args)
-        .output()
-        .with_context(|| format!("failed to spawn ffmpeg: {:?}", cmd))?;
+    let out = match Command::new(&cmd).args(&full_args).output() {
+        Ok(o) => o,
+        Err(e) => {
+            if e.kind() == ErrorKind::NotFound {
+                bail!(
+                    "ffmpeg not found. To bundle it, place it at resources/bin/ffmpeg.exe (Windows) or resources/bin/ffmpeg (macOS/Linux), or install ffmpeg and ensure it is on PATH. (cmd={:?})",
+                    cmd
+                );
+            }
+            #[cfg(target_os = "windows")]
+            if e.raw_os_error() == Some(126) {
+                bail!(
+                    "failed to start ffmpeg (Windows error 126: missing module). This usually means ffmpeg.exe depends on DLLs that are not next to it. Bundle ffmpeg.exe AND any required *.dll files in resources/bin, or use a static ffmpeg build. (cmd={:?})",
+                    cmd
+                );
+            }
+            return Err(e).with_context(|| format!("failed to spawn ffmpeg: {:?}", cmd));
+        }
+    };
     if !out.status.success() {
         let cmdline = {
             let mut s = cmd.to_string_lossy().to_string();

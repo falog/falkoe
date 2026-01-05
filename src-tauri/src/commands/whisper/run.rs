@@ -9,7 +9,6 @@ use super::ffmpeg::ffmpeg_convert_to_wav;
 use super::lang::whisper_language;
 use super::manifest::save_sentence_manifest_json;
 use super::paths::sentence_audio_dir;
-use super::transcribe_impl::transcribe;
 use super::transcript::save_transcript_json;
 use super::types::{FinalResult, Segment};
 
@@ -19,7 +18,7 @@ fn run_whisper_for_wav(app: &AppHandle, wav_path: &str, sentence_hash: &str, lan
 
     let model_path = ensure_model(app)?;
 
-    let transcript = transcribe(wav_path, &model_path, whisper_language(lang))?;
+    let transcript = super::transcribe(wav_path, &model_path, whisper_language(lang))?;
     save_transcript_json(wav_path, &transcript)?;
 
     let full_text = transcript

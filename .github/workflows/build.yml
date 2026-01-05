@@ -20,13 +20,16 @@ jobs:
         os:
           - ubuntu-latest
           - windows-latest
-          - macos-14 # ← 追加（Apple Silicon）
+          - macos-14
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ---- Linux deps (Tauri) ----
+      # ========================================
+      # 依存関係インストール
+      # ========================================
+
       - name: Install Linux dependencies
         if: matrix.os == 'ubuntu-latest'
         run: |
@@ -60,20 +63,16 @@ jobs:
             mingw-w64-x86_64-mecab
             mingw-w64-x86_64-mecab-naist-jdic
 
-      - name: Ensure MeCab installed (MSYS2)
+      - name: Verify MeCab installation (Windows)
         if: matrix.os == 'windows-latest'
         shell: msys2 {0}
         run: |
           set -euo pipefail
-
           pacman -S --noconfirm --needed mingw-w64-x86_64-mecab mingw-w64-x86_64-mecab-naist-jdic
-
           echo "[info] mecab packages:" 
           pacman -Q | grep -i mecab || true
-
-          echo "[info] mecab exe candidates:" 
-          ls -la /mingw64/bin/mecab.exe || true
-          ls -la /usr/bin/mecab.exe || true
+          echo "[info] mecab location:" 
+          command -v mecab || true
 
       - name: Install tools (macOS)
         if: matrix.os == 'macos-14'
@@ -83,66 +82,245 @@ jobs:
           brew install mecab mecab-ipadic
           brew install --cask praat
 
-      - name: Bundle MeCab into resources (Windows only)
+      # ========================================
+      # バンドル処理: ffmpeg
+      # ========================================
+
+      - name: Bundle ffmpeg (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p src-tauri/resources/bin
+
+          curl -fsSL -o /tmp/ffmpeg.tar.xz \
+            "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
+          tar -C /tmp -xf /tmp/ffmpeg.tar.xz
+
+          ffdir="$(find /tmp -maxdepth 1 -type d -name 'ffmpeg-*-amd64-static' | head -n 1)"
+          if [[ -z "$ffdir" || ! -f "$ffdir/ffmpeg" ]]; then
+            echo "[error] static ffmpeg download/extract failed"
+            exit 1
+          fi
+
+          cp -f "$ffdir/ffmpeg" src-tauri/resources/bin/ffmpeg
+          chmod +x src-tauri/resources/bin/ffmpeg
+          echo "[info] bundled: $(src-tauri/resources/bin/ffmpeg -version | head -n1)"
+
+      - name: Bundle ffmpeg (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path 'src-tauri/resources/bin' | Out-Null
+
+          $choco = $env:ChocolateyInstall
+          if (-not $choco) { throw 'ChocolateyInstall not set' }
+
+          function Find-FirstFile([string]$root, [string]$pattern) {
+            Get-ChildItem -Path $root -Recurse -File -Filter $pattern -ErrorAction SilentlyContinue |
+              Select-Object -First 1
+          }
+
+          # ffmpeg
+          $ffmpegDir = Join-Path $choco 'lib\ffmpeg\tools\ffmpeg\bin'
+          if (-not (Test-Path $ffmpegDir)) {
+            $ffmpegExe = Find-FirstFile (Join-Path $choco 'lib') 'ffmpeg.exe'
+            if (-not $ffmpegExe) { throw 'ffmpeg.exe not found' }
+            $ffmpegDir = $ffmpegExe.Directory.FullName
+          }
+
+          $ffmpegExePath = Join-Path $ffmpegDir 'ffmpeg.exe'
+          if (-not (Test-Path $ffmpegExePath)) {
+            throw "ffmpeg.exe not found at $ffmpegExePath"
+          }
+
+          Copy-Item -Force $ffmpegExePath 'src-tauri/resources/bin/ffmpeg.exe'
+
+          # Copy DLLs if present
+          Get-ChildItem -Path $ffmpegDir -Filter '*.dll' -File -ErrorAction SilentlyContinue |
+            ForEach-Object { Copy-Item -Force $_.FullName 'src-tauri/resources/bin/' }
+
+          Write-Host "[info] bundled ffmpeg.exe"
+
+      - name: Bundle ffmpeg (macOS)
+        if: matrix.os == 'macos-14'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p src-tauri/resources/bin
+
+          curl -fsSL -o /tmp/ffmpeg.zip "https://evermeet.cx/ffmpeg/getrelease/zip"
+          unzip -q -o /tmp/ffmpeg.zip -d /tmp/ffmpeg
+
+          if [[ ! -f /tmp/ffmpeg/ffmpeg ]]; then
+            echo "[error] ffmpeg unzip failed"
+            exit 1
+          fi
+
+          cp -f /tmp/ffmpeg/ffmpeg src-tauri/resources/bin/ffmpeg
+          chmod +x src-tauri/resources/bin/ffmpeg
+          echo "[info] bundled: $(src-tauri/resources/bin/ffmpeg -version | head -n1)"
+
+      # ========================================
+      # バンドル処理: Praat
+      # ========================================
+
+      - name: Bundle Praat (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p src-tauri/resources/bin
+
+          if command -v praat >/dev/null 2>&1; then
+            cp -f "$(command -v praat)" src-tauri/resources/bin/praat
+            chmod +x src-tauri/resources/bin/praat
+            echo "[info] bundled praat"
+          else
+            echo "[warn] praat not found; pitch will fallback to YIN"
+          fi
+
+      - name: Bundle Praat (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path 'src-tauri/resources/bin' | Out-Null
+
+          $choco = $env:ChocolateyInstall
+          if (-not $choco) { throw 'ChocolateyInstall not set' }
+
+          function Find-FirstFile([string]$root, [string]$pattern) {
+            Get-ChildItem -Path $root -Recurse -File -Filter $pattern -ErrorAction SilentlyContinue |
+              Select-Object -First 1
+          }
+
+          $praatRoot = Join-Path $choco 'lib'
+          $praatExe = Find-FirstFile $praatRoot 'praat.exe'
+          if ($praatExe) {
+            Copy-Item -Force $praatExe.FullName 'src-tauri/resources/bin/praat.exe'
+            Write-Host "[info] bundled praat.exe"
+          } else {
+            Write-Host '[warn] praat.exe not found; pitch will fallback to YIN'
+          }
+
+          $praatCon = Find-FirstFile $praatRoot 'praatcon.exe'
+          if ($praatCon) {
+            Copy-Item -Force $praatCon.FullName 'src-tauri/resources/bin/praatcon.exe'
+            Write-Host "[info] bundled praatcon.exe"
+          }
+
+      - name: Bundle Praat (macOS)
+        if: matrix.os == 'macos-14'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p src-tauri/resources/bin
+
+          praat_app="/Applications/Praat.app"
+          praat_bin="$praat_app/Contents/MacOS/Praat"
+
+          if [[ -f "$praat_bin" ]]; then
+            cp -f "$praat_bin" src-tauri/resources/bin/praat
+            chmod +x src-tauri/resources/bin/praat
+            echo "[info] bundled praat from .app"
+          elif command -v praat >/dev/null 2>&1; then
+            cp -f "$(command -v praat)" src-tauri/resources/bin/praat
+            chmod +x src-tauri/resources/bin/praat
+            echo "[info] bundled praat from PATH"
+          else
+            echo "[warn] praat not found; pitch will fallback to YIN"
+          fi
+
+      # ========================================
+      # バンドル処理: MeCab
+      # ========================================
+
+      - name: Bundle MeCab (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p src-tauri/resources/bin
+          mkdir -p src-tauri/resources/mecab/ipadic
+
+          # mecab実行ファイル
+          if ! command -v mecab >/dev/null 2>&1; then
+            echo "[error] mecab not found"
+            exit 1
+          fi
+
+          cp -f "$(command -v mecab)" src-tauri/resources/bin/mecab
+          chmod +x src-tauri/resources/bin/mecab
+          echo "[info] bundled mecab binary"
+
+          # 辞書ファイル
+          dic_dir=""
+          for candidate in /var/lib/mecab/dic/ipadic /usr/share/mecab/dic/ipadic; do
+            if [[ -d "$candidate" && -f "$candidate/dicrc" ]]; then
+              dic_dir="$candidate"
+              break
+            fi
+          done
+
+          if [[ -z "$dic_dir" ]]; then
+            echo "[error] ipadic not found"
+            exit 1
+          fi
+
+          cp -R "$dic_dir"/* src-tauri/resources/mecab/ipadic/
+          echo "[info] bundled ipadic from $dic_dir"
+
+      - name: Bundle MeCab (Windows)
         if: matrix.os == 'windows-latest'
         shell: msys2 {0}
         run: |
           set -euo pipefail
-
           mkdir -p src-tauri/resources/bin
           mkdir -p src-tauri/resources/mecab/ipadic
 
+          # mecab実行ファイル
           if ! command -v mecab >/dev/null 2>&1; then
             echo "[error] mecab not found on PATH"
-            echo "[info] PATH=$PATH"
             exit 1
           fi
 
           mecab_path="$(command -v mecab)"
           echo "[info] mecab path: $mecab_path"
-
           cp -f "$mecab_path" src-tauri/resources/bin/mecab.exe
 
-          # Copy DLL dependencies. Prefer ldd if present; otherwise fall back to copying DLLs next to mecab.exe.
+          # DLL依存関係
           mecab_dir="$(dirname "$mecab_path")"
-          if command -v ldd >/dev/null 2>&1; then
-            # Note: under MSYS2, ldd may exit non-zero even when output is usable.
-            ldd_out="$(ldd "$mecab_path" 2>/dev/null || true)"
-            echo "[info] ldd mecab.exe:"
-            echo "$ldd_out"
+          echo "[info] copying DLLs from $mecab_dir"
 
-            echo "$ldd_out" \
-              | awk '{print $3}' \
-              | grep -Ei '\.dll$' \
-              | grep -E '^(\/mingw64\/|\/ucrt64\/|\/clang64\/)' \
-              | while read -r dll; do
-                  if [ -f "$dll" ]; then
-                    cp -f "$dll" src-tauri/resources/bin/
-                  fi
-                done
-          else
-            echo "[warn] ldd not available; copying dlls from $mecab_dir"
-            cp -f "$mecab_dir"/*.dll src-tauri/resources/bin/ || true
-          fi
+          # 必要なDLLを直接コピー（lddよりも確実）
+          cp -f "$mecab_dir"/libmecab*.dll src-tauri/resources/bin/ 2>/dev/null || true
+          cp -f "$mecab_dir"/libgcc_s_seh*.dll src-tauri/resources/bin/ 2>/dev/null || true
+          cp -f "$mecab_dir"/libstdc++*.dll src-tauri/resources/bin/ 2>/dev/null || true
+          cp -f "$mecab_dir"/libwinpthread*.dll src-tauri/resources/bin/ 2>/dev/null || true
 
-          # Bundle dictionary (NAIST-JDIC) into resources/mecab/ipadic/
+          echo "[info] bundled mecab.exe and DLLs"
+
+          # 辞書ファイル（NAIST-JDIC）
           dic_dir=""
           if command -v mecab-config >/dev/null 2>&1; then
             dic_root="$(mecab-config --dicdir)"
             dic_dir="$dic_root/naist-jdic"
           fi
 
-          if [ -z "$dic_dir" ] || [ ! -d "$dic_dir" ]; then
-            # Fallback: common locations under MSYS2 toolchains.
-            dic_dir="$(ls -d /mingw64/lib/mecab/dic/naist-jdic /mingw64/share/mecab/dic/naist-jdic 2>/dev/null | head -n 1 || true)"
+          if [[ -z "$dic_dir" || ! -d "$dic_dir" ]]; then
+            for candidate in /mingw64/lib/mecab/dic/naist-jdic /mingw64/share/mecab/dic/naist-jdic; do
+              if [[ -d "$candidate" ]]; then
+                dic_dir="$candidate"
+                break
+              fi
+            done
           fi
 
-          if [ ! -f "$dic_dir/dicrc" ]; then
-            echo "[error] dicrc not found at $dic_dir/dicrc"
-            if [ -n "${dic_root:-}" ]; then
-              echo "[info] dic_root=$dic_root"
-              ls -la "$dic_root" || true
-            fi
+          if [[ ! -f "$dic_dir/dicrc" ]]; then
+            echo "[error] naist-jdic not found"
+            echo "[info] searched locations:"
             ls -la /mingw64/lib/mecab/dic 2>/dev/null || true
             ls -la /mingw64/share/mecab/dic 2>/dev/null || true
             exit 1
@@ -150,43 +328,45 @@ jobs:
 
           rm -rf src-tauri/resources/mecab/ipadic/*
           cp -R "$dic_dir"/* src-tauri/resources/mecab/ipadic/
+          echo "[info] bundled naist-jdic from $dic_dir"
 
-      - name: Bundle ffmpeg + praat into resources/bin
+      - name: Bundle MeCab (macOS)
+        if: matrix.os == 'macos-14'
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p src-tauri/resources/bin
+          mkdir -p src-tauri/resources/mecab/ipadic
 
-          if [[ "$RUNNER_OS" == "Linux" ]]; then
-            cp "$(command -v ffmpeg)" src-tauri/resources/bin/ffmpeg
-            if command -v praatcon >/dev/null 2>&1; then
-              cp "$(command -v praatcon)" src-tauri/resources/bin/praatcon
-            fi
-            cp "$(command -v praat)" src-tauri/resources/bin/praat
-            chmod +x src-tauri/resources/bin/ffmpeg src-tauri/resources/bin/praat || true
-            chmod +x src-tauri/resources/bin/praatcon || true
-          elif [[ "$RUNNER_OS" == "macOS" ]]; then
-            cp "$(command -v ffmpeg)" src-tauri/resources/bin/ffmpeg
-            if command -v praatcon >/dev/null 2>&1; then
-              cp "$(command -v praatcon)" src-tauri/resources/bin/praatcon
-            fi
-            cp "$(command -v praat)" src-tauri/resources/bin/praat
-            chmod +x src-tauri/resources/bin/ffmpeg src-tauri/resources/bin/praat || true
-            chmod +x src-tauri/resources/bin/praatcon || true
-          elif [[ "$RUNNER_OS" == "Windows" ]]; then
-            FFMPEG_PATH="$(where.exe ffmpeg | head -n 1 | tr -d '\r')"
-            PRAAT_PATH="$(where.exe praat | head -n 1 | tr -d '\r')"
-            cp "$FFMPEG_PATH" src-tauri/resources/bin/ffmpeg.exe
-            cp "$PRAAT_PATH" src-tauri/resources/bin/praat.exe
-
-            PRAATCON_PATH=""
-            if where.exe praatcon > /dev/null 2>&1; then
-              PRAATCON_PATH="$(where.exe praatcon | head -n 1 | tr -d '\r')"
-              cp "$PRAATCON_PATH" src-tauri/resources/bin/praatcon.exe
-            fi
+          # mecab実行ファイル
+          if ! command -v mecab >/dev/null 2>&1; then
+            echo "[error] mecab not found"
+            exit 1
           fi
 
-      # ---- Node / pnpm ----
+          cp -f "$(command -v mecab)" src-tauri/resources/bin/mecab
+          chmod +x src-tauri/resources/bin/mecab
+          echo "[info] bundled mecab binary"
+
+          # 辞書ファイル
+          if ! command -v mecab-config >/dev/null 2>&1; then
+            echo "[error] mecab-config not found"
+            exit 1
+          fi
+
+          dic_dir="$(mecab-config --dicdir)/ipadic"
+          if [[ ! -d "$dic_dir" || ! -f "$dic_dir/dicrc" ]]; then
+            echo "[error] ipadic not found at $dic_dir"
+            exit 1
+          fi
+
+          cp -R "$dic_dir"/* src-tauri/resources/mecab/ipadic/
+          echo "[info] bundled ipadic from $dic_dir"
+
+      # ========================================
+      # Node / pnpm setup
+      # ========================================
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -202,7 +382,10 @@ jobs:
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
 
-      # ---- Rust ----
+      # ========================================
+      # Rust setup
+      # ========================================
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -211,28 +394,29 @@ jobs:
         with:
           workspaces: src-tauri
 
-      # ---- Build (Linux / Windows) ----
-      - name: Build Tauri app
+      # ========================================
+      # Build
+      # ========================================
+
+      - name: Build Tauri app (Linux/Windows)
         if: matrix.os != 'macos-14'
         run: pnpm tauri build
 
-      # ---- Build (macOS: no-openmp) ----
       - name: Build Tauri app (macOS)
-        if: runner.os == 'macOS'
+        if: matrix.os == 'macos-14'
         env:
           MACOSX_DEPLOYMENT_TARGET: "11.0"
           CMAKE_OSX_DEPLOYMENT_TARGET: "11.0"
           CMAKE_ARGS: "-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0"
           GGML_NO_OPENMP: "1"
           WHISPER_NO_OPENMP: "1"
-        run: |
-          export MACOSX_DEPLOYMENT_TARGET=11.0
-          export CMAKE_OSX_DEPLOYMENT_TARGET=11.0
-          export CMAKE_ARGS="-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0"
-          pnpm tauri build -- --features no-openmp
+        run: pnpm tauri build -- --features no-openmp
 
-      # ---- Upload artifacts (mainブランチ) ----
-      - name: Upload artifacts
+      # ========================================
+      # Upload artifacts
+      # ========================================
+
+      - name: Upload artifacts (main branch)
         if: github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
@@ -240,8 +424,7 @@ jobs:
           path: |
             src-tauri/target/release/bundle
 
-      # ---- Create GitHub Release (タグpush時) ----
-      - name: Upload to GitHub Release
+      - name: Upload to GitHub Release (tags)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
