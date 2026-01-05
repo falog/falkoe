@@ -86,17 +86,6 @@ export function useHeaderAudioUrl(args: HeaderAudioArgs) {
           }
 
           if (uploadedAudioPath) {
-            if (preferAssetProtocol) {
-              if (!cancelled) {
-                setState({
-                  key: headerAudioKey,
-                  url: toAssetUrl(uploadedAudioPath),
-                  loading: false,
-                  owner: "none",
-                });
-              }
-              return;
-            }
             const blobUrl = await ensureBlobAudioUrl(uploadedAudioPath);
             if (!cancelled) {
               setState({
@@ -146,25 +135,15 @@ export function useHeaderAudioUrl(args: HeaderAudioArgs) {
                 }
               );
 
-              if (preferAssetProtocol) {
-                if (!cancelled) {
-                  setState({
-                    key: headerAudioKey,
-                    url: toAssetUrl(cachedPath),
-                    loading: false,
-                    owner: "none",
-                  });
-                }
-                return;
-              }
-
+              // Use blob URLs for local cached audio for best WebView compatibility.
+              // Some WebViews can be picky about custom protocols / MIME handling.
               const blobUrl = await ensureBlobAudioUrl(cachedPath);
               if (!cancelled) {
                 setState({
                   key: headerAudioKey,
-                  url: blobUrl,
+                  url: blobUrl ?? sentenceAudioUrl,
                   loading: false,
-                  owner: "cache",
+                  owner: blobUrl ? "cache" : "none",
                 });
               }
               return;

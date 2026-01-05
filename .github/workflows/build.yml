@@ -270,6 +270,13 @@ jobs:
           fi
 
           cp -R "$dic_dir"/* src-tauri/resources/mecab/ipadic/
+
+          # rewrite.defが存在しない場合は空ファイルを作成
+          if [[ ! -f "src-tauri/resources/mecab/ipadic/rewrite.def" ]]; then
+            echo "[warn] rewrite.def not found, creating empty file"
+            touch src-tauri/resources/mecab/ipadic/rewrite.def
+          fi
+
           echo "[info] bundled ipadic from $dic_dir"
 
       - name: Bundle MeCab (Windows)
@@ -328,6 +335,13 @@ jobs:
 
           rm -rf src-tauri/resources/mecab/ipadic/*
           cp -R "$dic_dir"/* src-tauri/resources/mecab/ipadic/
+
+          # rewrite.defが存在しない場合は空ファイルを作成
+          if [[ ! -f "src-tauri/resources/mecab/ipadic/rewrite.def" ]]; then
+            echo "[warn] rewrite.def not found, creating empty file"
+            touch src-tauri/resources/mecab/ipadic/rewrite.def
+          fi
+
           echo "[info] bundled naist-jdic from $dic_dir"
 
       - name: Bundle MeCab (macOS)
@@ -355,12 +369,42 @@ jobs:
           fi
 
           dic_dir="$(mecab-config --dicdir)/ipadic"
-          if [[ ! -d "$dic_dir" || ! -f "$dic_dir/dicrc" ]]; then
-            echo "[error] ipadic not found at $dic_dir"
+          echo "[info] looking for ipadic at: $dic_dir"
+
+          if [[ ! -d "$dic_dir" ]]; then
+            echo "[error] ipadic directory not found at $dic_dir"
+            echo "[info] available dictionaries:"
+            ls -la "$(mecab-config --dicdir)" || true
             exit 1
           fi
 
+          # 辞書ディレクトリの内容を確認
+          echo "[info] ipadic contents:"
+          ls -la "$dic_dir" || true
+
+          # 必須ファイルの存在確認
+          required_files=("dicrc" "sys.dic" "unk.dic")
+          for file in "${required_files[@]}"; do
+            if [[ ! -f "$dic_dir/$file" ]]; then
+              echo "[error] required file not found: $dic_dir/$file"
+              exit 1
+            fi
+          done
+
+          # クリーンコピー
+          rm -rf src-tauri/resources/mecab/ipadic/*
           cp -R "$dic_dir"/* src-tauri/resources/mecab/ipadic/
+
+          # rewrite.defが存在しない場合は空ファイルを作成
+          if [[ ! -f "src-tauri/resources/mecab/ipadic/rewrite.def" ]]; then
+            echo "[warn] rewrite.def not found, creating empty file"
+            touch src-tauri/resources/mecab/ipadic/rewrite.def
+          fi
+
+          # コピー結果の確認
+          echo "[info] bundled files:"
+          ls -la src-tauri/resources/mecab/ipadic/ || true
+
           echo "[info] bundled ipadic from $dic_dir"
 
       # ========================================
