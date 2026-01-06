@@ -1,7 +1,14 @@
 import { useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { documentDir, join, videoDir } from "@tauri-apps/api/path";
-import { exists, mkdir, readTextFile, writeFile } from "@tauri-apps/plugin-fs";
+import {
+  exists,
+  mkdir,
+  readDir,
+  readTextFile,
+  remove,
+  writeFile,
+} from "@tauri-apps/plugin-fs";
 import { message, Modal } from "antd";
 import {
   buildPitchAlignmentChartSvg,
@@ -179,16 +186,59 @@ export function useExportVideo(params: {
   const handleExportVideo = useCallback(async () => {
     if (isExportingVideo) return;
     setIsExportingVideo(true);
+
+    let tmpBase: string | null = null;
+
+    const tryRemoveEmptyDir = async (path: string) => {
+      try {
+        if (!(await exists(path))) return;
+        const entries = await readDir(path);
+        if (!entries || entries.length !== 0) return;
+        await remove(path);
+      } catch {
+        // ignore
+      }
+    };
+
+    const cleanupVideoTmp = async () => {
+      try {
+        const doc = await documentDir();
+        const falkoeDir = await join(doc, "falkoe");
+
+        // Remove our temp base (PNG renders etc.).
+        if (tmpBase && (await exists(tmpBase))) {
+          await remove(tmpBase, { recursive: true });
+        }
+
+        // Best-effort remove empty parents.
+        const hashRoot = await join(falkoeDir, "tmp", "video", sentenceHash);
+        await tryRemoveEmptyDir(hashRoot);
+        await tryRemoveEmptyDir(await join(falkoeDir, "tmp", "video"));
+        await tryRemoveEmptyDir(await join(falkoeDir, "tmp"));
+
+        // Legacy cleanup: older versions accidentally created
+        // $DOCUMENTS/falkoe/<sentenceHash>/tmp/video/... .
+        const legacyHashRoot = await join(falkoeDir, sentenceHash);
+        const legacyProbe = await join(legacyHashRoot, "tmp", "video");
+        if ((await exists(legacyHashRoot)) && (await exists(legacyProbe))) {
+          await remove(legacyHashRoot, { recursive: true });
+        }
+      } catch {
+        // ignore
+      }
+    };
+
     try {
+      // Put temp artifacts under $DOCUMENTS/falkoe/tmp/video/... (NOT under $DOCUMENTS/falkoe/<sentenceHash>/...).
+      // This keeps the Documents/falkoe root clean.
       const baseDir = await join(
-        sentenceHash,
         "tmp",
         "video",
+        sentenceHash,
         String(Date.now())
       );
 
-      // Put temp artifacts under $DOCUMENTS/falkoe/tmp/video/... to keep Videos clean.
-      const tmpBase = await join(await documentDir(), "falkoe", baseDir);
+      tmpBase = await join(await documentDir(), "falkoe", baseDir);
       if (!(await exists(tmpBase))) {
         await mkdir(tmpBase, { recursive: true });
       }
@@ -421,6 +471,7 @@ export function useExportVideo(params: {
       console.error(e);
       message.error("動画の作成に失敗しました: " + String(e));
     } finally {
+      await cleanupVideoTmp();
       setIsExportingVideo(false);
     }
   }, [

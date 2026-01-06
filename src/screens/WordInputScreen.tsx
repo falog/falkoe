@@ -19,7 +19,27 @@ import TopNav from "../components/TopNav";
 const LANG_OPTIONS = [
   { value: "eng", label: "English" },
   { value: "jpn", label: "Japanese" },
+  { value: "spa", label: "Spanish" },
+  { value: "fra", label: "French" },
+  { value: "deu", label: "German" },
+  { value: "ita", label: "Italian" },
+  { value: "por", label: "Portuguese" },
+  { value: "rus", label: "Russian" },
+  { value: "kor", label: "Korean" },
+  { value: "zho", label: "Chinese" },
+  { value: "ara", label: "Arabic" },
+  { value: "hin", label: "Hindi" },
+  { value: "tur", label: "Turkish" },
+  { value: "vie", label: "Vietnamese" },
+  { value: "tha", label: "Thai" },
+  { value: "ind", label: "Indonesian" },
+  { value: "ukr", label: "Ukrainian" },
+  { value: "pol", label: "Polish" },
+  { value: "nld", label: "Dutch" },
+  { value: "swe", label: "Swedish" },
 ];
+
+const NONE_TRANSLATION = "none";
 
 const WORD_COUNT = [
   { value: "1-", label: "1 word or more" },
@@ -149,27 +169,120 @@ function warnManualNeedsText(): void {
 async function fetchExamples(
   word: string,
   lang: string,
-  wordcount: string
+  wordcount: string,
+  translateTo: string | null
 ): Promise<Sentence[]> {
-  const url =
+  const showTransLang =
+    translateTo && translateTo !== NONE_TRANSLATION && translateTo !== lang
+      ? translateTo
+      : null;
+
+  const getLangCode = (x: any): string | null => {
+    if (!x) return null;
+    if (typeof x === "string") return x;
+    if (typeof x.code === "string") return x.code;
+    return null;
+  };
+
+  const fetchJson = async (url: string) => {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
+    return await res.json();
+  };
+
+  const toSentencesFromSameLang = (data: any): Sentence[] => {
+    if (!data || !Array.isArray(data.data)) return [];
+    return data.data.map((s: any) => {
+      let translation: string | null = null;
+      if (showTransLang && Array.isArray(s.translations)) {
+        const hit = s.translations.find((t: any) => {
+          const lc = getLangCode(t?.lang);
+          return lc === showTransLang;
+        });
+        if (hit && typeof hit.text === "string") {
+          translation = hit.text;
+        }
+      }
+
+      return {
+        id: s.id,
+        text: s.text,
+        translation,
+        audioUrl: `https://audio.tatoeba.org/sentences/${lang}/${s.id}.mp3`,
+        lang,
+      };
+    });
+  };
+
+  // 1) 通常: `lang` の文を検索し、必要なら `translateTo` の翻訳を表示
+  const primaryUrl =
     `https://api.tatoeba.org/unstable/sentences` +
     `?lang=${encodeURIComponent(lang)}` +
     `&q=${encodeURIComponent(word)}` +
     `&word_count=${encodeURIComponent(wordcount)}` +
     `&has_audio=yes` +
-    `&sort=words`;
+    `&sort=words` +
+    (showTransLang
+      ? `&showtrans:lang=${encodeURIComponent(showTransLang)}` +
+        `&showtrans:is_direct=yes`
+      : "");
 
-  const res = await fetch(url);
-  if (!res.ok) throw new Error("fetch failed");
+  const primaryData = await fetchJson(primaryUrl);
+  const primary = toSentencesFromSameLang(primaryData);
+  if (primary.length > 0 || !showTransLang) {
+    return primary;
+  }
 
-  const data = await res.json();
+  // 2) フォールバック: 入力語が翻訳側言語(例: 日本語)の可能性が高い場合
+  //    `showTransLang` 側で検索し、`lang` の翻訳（=表示・練習する言語）を結果として返す。
+  //    例: showTransLang=jpn で q=「こんにちは」 -> lang=eng の例文を返す
+  const fallbackUrl =
+    `https://api.tatoeba.org/unstable/sentences` +
+    `?lang=${encodeURIComponent(showTransLang)}` +
+    `&q=${encodeURIComponent(word)}` +
+    `&word_count=${encodeURIComponent(wordcount)}` +
+    `&trans:lang=${encodeURIComponent(lang)}` +
+    `&trans:is_direct=yes` +
+    `&trans:has_audio=yes` +
+    `&sort=words` +
+    `&showtrans:lang=${encodeURIComponent(lang)}` +
+    `&showtrans:is_direct=yes`;
 
-  return data.data.map((s: any) => ({
-    id: s.id,
-    text: s.text,
-    audioUrl: `https://audio.tatoeba.org/sentences/${lang}/${s.id}.mp3`,
-    lang,
-  }));
+  const fallbackData = await fetchJson(fallbackUrl);
+  if (!fallbackData || !Array.isArray(fallbackData.data)) return [];
+
+  const out: Sentence[] = [];
+  const seen = new Set<number>();
+
+  for (const sourceSentence of fallbackData.data) {
+    const sourceText =
+      sourceSentence && typeof sourceSentence.text === "string"
+        ? sourceSentence.text
+        : "";
+
+    const translations = Array.isArray(sourceSentence?.translations)
+      ? sourceSentence.translations
+      : [];
+    for (const t of translations) {
+      const lc = getLangCode(t?.lang);
+      if (lc !== lang) continue;
+      if (typeof t?.id !== "number") continue;
+      if (typeof t?.text !== "string") continue;
+      if (seen.has(t.id)) continue;
+
+      // showtrans側で検索した元文（=入力語が含まれる可能性が高い）を subtext に出す
+      out.push({
+        id: t.id,
+        text: t.text,
+        translation: sourceText || null,
+        audioUrl: `https://audio.tatoeba.org/sentences/${lang}/${t.id}.mp3`,
+        lang,
+      });
+      seen.add(t.id);
+    }
+  }
+
+  return out;
 }
 
 const WordInputScreen = ({
@@ -191,6 +304,7 @@ const WordInputScreen = ({
 }: WordInputScreenProps) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasSearched, setHasSearched] = useState(false);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [useSpeech, setUseSpeech] = useState(false);
   const [sentence, setSentence] = useState("");
@@ -209,6 +323,16 @@ const WordInputScreen = ({
   >(null);
   const [savingUpload, setSavingUpload] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [translateTo, setTranslateTo] = useState<string>(NONE_TRANSLATION);
+  const translateOptions = [
+    { value: NONE_TRANSLATION, label: "None" },
+    ...LANG_OPTIONS,
+  ];
+
+  const filterLangOption = (input: string, option?: any) => {
+    const label = typeof option?.label === "string" ? option.label : "";
+    return label.toLowerCase().includes(input.toLowerCase());
+  };
 
   // restore persisted selections
   useEffect(() => {
@@ -222,6 +346,7 @@ const WordInputScreen = ({
       const rt = sessionStorage.getItem("falkoe.recognizedText");
       const mtw = sessionStorage.getItem("falkoe.manualTextWord");
       const lg = sessionStorage.getItem("falkoe.lang");
+      const tr = sessionStorage.getItem("falkoe.translateTo");
 
       if (sp) setSavedUploadedPath(sp);
       if (fn) setSavedUploadedFilename(fn);
@@ -232,6 +357,7 @@ const WordInputScreen = ({
       if (rt) setRecognizedText(rt);
       if (mtw) setManualTextWord(mtw);
       if (lg) setLang(lg);
+      if (tr) setTranslateTo(tr);
     } catch {}
     setHydrated(true);
   }, [setLang]);
@@ -245,8 +371,17 @@ const WordInputScreen = ({
       sessionStorage.setItem("falkoe.useSpeech", String(useSpeech));
       sessionStorage.setItem("falkoe.useRecognition", String(useRecognition));
       sessionStorage.setItem("falkoe.lang", lang);
+      sessionStorage.setItem("falkoe.translateTo", translateTo);
     } catch {}
-  }, [hydrated, sentence, manualTextWord, useSpeech, useRecognition, lang]);
+  }, [
+    hydrated,
+    sentence,
+    manualTextWord,
+    useSpeech,
+    useRecognition,
+    lang,
+    translateTo,
+  ]);
 
   // ワードが変わったら、次回フォーカス時に再度確認できるようにする
   useEffect(() => {
@@ -256,11 +391,17 @@ const WordInputScreen = ({
   const search = async () => {
     if (!word.trim()) return;
 
+    setHasSearched(true);
     setLoading(true);
     setError(null);
 
     try {
-      const result = await fetchExamples(word.trim(), lang, wordcount);
+      const result = await fetchExamples(
+        word.trim(),
+        lang,
+        wordcount,
+        translateTo
+      );
       onSearchResult(result);
       console.log("result:", result.length);
     } catch (e) {
@@ -555,8 +696,18 @@ const WordInputScreen = ({
       <Select
         value={lang}
         onChange={setLang}
+        showSearch={{ filterOption: filterLangOption }}
         options={LANG_OPTIONS}
         style={{ width: 160 }}
+      />
+      翻訳先（Translate to）：
+      <Select
+        value={translateTo}
+        onChange={setTranslateTo}
+        showSearch={{ filterOption: filterLangOption }}
+        options={translateOptions}
+        disabled={useSpeech}
+        style={{ width: 200 }}
       />
       ワード数を選択してください：
       <Select
@@ -577,11 +728,19 @@ const WordInputScreen = ({
       {loading && <Spin />}
       {error && <Typography.Text type="danger">{error}</Typography.Text>}
       {!loading && !error && (
-        <ExampleList
-          disabled={useSpeech}
-          sentences={sentences}
-          onSelect={onSelect}
-        />
+        <>
+          {hasSearched && sentences.length === 0 ? (
+            <Typography.Text type="secondary">
+              該当する例文がありませんでした（検索語は選択した言語で入力してください）
+            </Typography.Text>
+          ) : (
+            <ExampleList
+              disabled={useSpeech}
+              sentences={sentences}
+              onSelect={onSelect}
+            />
+          )}
+        </>
       )}
     </Space>
   );

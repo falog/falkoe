@@ -126,8 +126,27 @@ pub struct PartialSegment {
 
 fn whisper_language(lang: &str) -> Option<&'static str> {
     match lang {
-        "eng" => Some("en"),
-        "jpn" => Some("ja"),
+        // Accept both ISO 639-3 codes (Tatoeba) and ISO 639-1-ish codes (Whisper).
+        "eng" | "en" => Some("en"),
+        "jpn" | "ja" => Some("ja"),
+        "spa" | "es" => Some("es"),
+        "fra" | "fr" => Some("fr"),
+        "deu" | "de" => Some("de"),
+        "ita" | "it" => Some("it"),
+        "por" | "pt" => Some("pt"),
+        "rus" | "ru" => Some("ru"),
+        "kor" | "ko" => Some("ko"),
+        "zho" | "zh" => Some("zh"),
+        "ara" | "ar" => Some("ar"),
+        "hin" | "hi" => Some("hi"),
+        "tur" | "tr" => Some("tr"),
+        "vie" | "vi" => Some("vi"),
+        "tha" | "th" => Some("th"),
+        "ind" | "id" => Some("id"),
+        "ukr" | "uk" => Some("uk"),
+        "pol" | "pl" => Some("pl"),
+        "nld" | "nl" => Some("nl"),
+        "swe" | "sv" => Some("sv"),
         _ => None,
     }
 }

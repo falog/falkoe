@@ -4,6 +4,7 @@ import { PlayCircleOutlined } from "@ant-design/icons";
 export type Sentence = {
   id: number;
   text: string;
+  translation?: string | null;
   audioUrl: string;
   lang: string;
 };
@@ -48,9 +49,20 @@ const ExampleList = ({ sentences, onSelect, disabled }: ExampleListProps) => {
               gap: 12,
             }}
           >
-            <Typography.Text disabled={disabled} style={{ flex: "1 1 auto" }}>
-              {item.text}
-            </Typography.Text>
+            <div style={{ flex: "1 1 auto", minWidth: 0 }}>
+              <Typography.Text disabled={disabled} style={{ display: "block" }}>
+                {item.text}
+              </Typography.Text>
+              {item.translation ? (
+                <Typography.Text
+                  type="secondary"
+                  disabled={disabled}
+                  style={{ display: "block", marginTop: 4 }}
+                >
+                  {item.translation}
+                </Typography.Text>
+              ) : null}
+            </div>
 
             <Space size={8} style={{ flex: "0 0 auto" }}>
               <Button

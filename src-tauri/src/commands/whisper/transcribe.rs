@@ -138,6 +138,18 @@ fn whisper_sampling_strategy() -> SamplingStrategy {
     }
 }
 
+fn should_split_on_word(whisper_lang: Option<&str>) -> bool {
+    match whisper_lang {
+        // Languages that typically separate words with whitespace.
+        Some(
+            "en" | "es" | "fr" | "de" | "it" | "pt" | "ru" | "uk" | "pl" | "nl" | "sv"
+            | "tr" | "vi" | "id" | "ar" | "hi" | "ko",
+        ) => true,
+        // Japanese/Chinese/Thai generally do not use spaces for word boundaries.
+        _ => false,
+    }
+}
+
 fn get_tiny_ctx(model_path: &str) -> Result<&'static Mutex<WhisperContext>> {
     Ok(TINY_CTX.get_or_init(|| {
         let params = WhisperContextParameters::default();
@@ -288,7 +300,7 @@ pub fn transcribe(wav_path: &str, model_path: &Path, whisper_lang: Option<&str>)
     // Token-level timestamps.
     params.set_token_timestamps(true);
     // Prefer word-ish splitting only for whitespace-separated languages.
-    params.set_split_on_word(matches!(whisper_lang, Some("en")));
+    params.set_split_on_word(should_split_on_word(whisper_lang));
 
     state.full(params, &audio)?;
 
