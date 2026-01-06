@@ -7,6 +7,7 @@ mod window;
 use anyhow::{bail, Context, Result};
 use std::fs;
 use std::path::PathBuf;
+use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 use tauri::Manager;
@@ -16,6 +17,37 @@ use paths::{pick_unique_mp4_path, sanitize_base_name};
 use segment::{build_playhead_x_expr, build_segment_filter_complex};
 use srt::generate_srt;
 use window::{compute_window, PitchAnalysisJson};
+
+fn remove_dir_all_best_effort(dir: &PathBuf) {
+    // Best-effort cleanup: on Windows especially, files can be briefly locked.
+    // We retry a couple of times and then give up silently.
+    for i in 0..3 {
+        match fs::remove_dir_all(dir) {
+            Ok(_) => return,
+            Err(e) => {
+                // Not found is fine.
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    return;
+                }
+                // Backoff a bit and retry.
+                if i < 2 {
+                    std::thread::sleep(Duration::from_millis(60 * (i as u64 + 1)));
+                    continue;
+                }
+            }
+        }
+    }
+}
+
+struct TmpDirCleanup {
+    dir: PathBuf,
+}
+
+impl Drop for TmpDirCleanup {
+    fn drop(&mut self) {
+        remove_dir_all_best_effort(&self.dir);
+    }
+}
 
 #[derive(serde::Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -76,6 +108,10 @@ pub fn export_practice_video(
             .join(format!("{out_base}-{run_id}"));
         fs::create_dir_all(&tmp_dir)
             .with_context(|| format!("failed to create tmp_dir: {tmp_dir:?}"))?;
+
+        // Ensure temp artifacts under Documents/falkoe/tmp/video/... are removed when this
+        // command finishes (success or error).
+        let _tmp_cleanup = TmpDirCleanup { dir: tmp_dir.clone() };
 
         let model_txt_path = tmp_dir.join("model.txt");
         fs::write(&model_txt_path, model_text.replace('\n', " "))?;

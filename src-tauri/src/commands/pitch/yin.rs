@@ -28,8 +28,10 @@ pub(crate) fn yin_f0(
         return None;
     }
 
-    // Silence gate (slightly relaxed to catch softer onsets)
-    if rms(frame) < 0.03 {
+    // Silence gate.
+    // Too strict a threshold makes quiet recordings look "misaligned" because
+    // we render word overlays but have no voiced f0 for the same time span.
+    if rms(frame) < 0.015 {
         return None;
     }
 

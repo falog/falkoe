@@ -59,7 +59,9 @@ fn should_enable_dtw(whisper_lang: Option<&str>) -> bool {
     }
 
     // DTW is expensive; keep it on by default only where we rely on it most.
-    matches!(whisper_lang, Some("ja"))
+    // We also enable it for English because we render per-word alignment overlays
+    // and timestamp drift is noticeable even for short recordings.
+    matches!(whisper_lang, Some("ja") | Some("en"))
 }
 
 fn dtw_preset_for_model_path(model_path: &Path) -> Option<DtwModelPreset> {
@@ -293,7 +295,9 @@ pub fn transcribe(wav_path: &str, model_path: &Path, whisper_lang: Option<&str>)
     let mut segments: Vec<Segment> = Vec::new();
     let mut tokens: Vec<TokenTimestamp> = Vec::new();
     let mut token_bytes: Vec<(f32, f32, Vec<u8>)> = Vec::new();
-    let mut prev_end_for_ja: Option<f32> = None;
+    // When DTW is enabled, token_data().t_dtw provides a more stable end timestamp.
+    // Use it to keep token/word overlays aligned (not just for Japanese).
+    let mut prev_end_for_dtw: Option<f32> = None;
 
     for s in state.as_iter() {
         let text = strip_whisper_special_tokens(&s.to_string()).trim().to_string();
@@ -355,20 +359,17 @@ pub fn transcribe(wav_path: &str, model_path: &Path, whisper_lang: Option<&str>)
                 None
             };
 
-            let (start, end) = if matches!(whisper_lang, Some("ja")) {
-                if let Some(dtw_end) = dtw {
-                    let capped_dur = raw_dur.clamp(0.04, 0.30);
-                    let start = match prev_end_for_ja {
-                        Some(prev) if prev <= dtw_end => prev,
-                        _ => (dtw_end - capped_dur.max(0.25)).max(0.0),
-                    };
-                    let end = dtw_end.max(start);
-                    prev_end_for_ja = Some(end);
-                    (start, end)
-                } else {
-                    prev_end_for_ja = Some(raw_end);
-                    (raw_start, raw_end)
-                }
+            let (start, end) = if let Some(dtw_end) = dtw {
+                // DTW provides a more reliable end timestamp; back-compute a plausible start.
+                // Also enforce monotonicity to avoid overlaps when tokens jitter.
+                let capped_dur = raw_dur.clamp(0.04, 0.30);
+                let start = match prev_end_for_dtw {
+                    Some(prev) if prev <= dtw_end => prev,
+                    _ => (dtw_end - capped_dur.max(0.25)).max(0.0),
+                };
+                let end = dtw_end.max(start);
+                prev_end_for_dtw = Some(end);
+                (start, end)
             } else {
                 (raw_start, raw_end)
             };
@@ -379,8 +380,8 @@ pub fn transcribe(wav_path: &str, model_path: &Path, whisper_lang: Option<&str>)
                 (start, end)
             };
 
-            if matches!(whisper_lang, Some("ja")) {
-                prev_end_for_ja = Some(end);
+            if dtw.is_some() {
+                prev_end_for_dtw = Some(end);
             }
 
             tokens.push(TokenTimestamp {
