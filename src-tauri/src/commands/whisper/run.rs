@@ -307,14 +307,25 @@ fn run_whisper_for_wav(app: &AppHandle, wav_path: &str, sentence_hash: &str, lan
                 (peak_pos, pitch_range, slope)
             }
 
-            // Japanese tokenization helper input (avoid inserting spaces between segments).
-            let mecab_text_ja = transcript
-                .segments
-                .iter()
-                .map(|s| s.text.trim())
-                .filter(|t| !t.is_empty())
-                .collect::<Vec<_>>()
-                .join("");
+            // Japanese tokenization helper input.
+            // Build from Whisper word timestamps when available so MeCab output can be aligned.
+            // (If this differs from whisper_words concat, mecab alignment will intentionally fall back.)
+            let mecab_text_ja = if let Some(t_words) = transcript.words.as_ref() {
+                t_words
+                    .iter()
+                    .map(|w| w.text.chars().filter(|c| !c.is_whitespace()).collect::<String>())
+                    .filter(|t| !t.is_empty())
+                    .collect::<Vec<_>>()
+                    .join("")
+            } else {
+                transcript
+                    .segments
+                    .iter()
+                    .map(|s| s.text.chars().filter(|c| !c.is_whitespace()).collect::<String>())
+                    .filter(|t| !t.is_empty())
+                    .collect::<Vec<_>>()
+                    .join("")
+            };
 
             fn time_to_index_floor(t: f32, time_step: f32) -> usize {
                 ((t / time_step.max(0.0001)).floor() as i64).max(0) as usize
@@ -594,7 +605,7 @@ fn run_whisper_for_wav(app: &AppHandle, wav_path: &str, sentence_hash: &str, lan
                 if let Some(mecab_tokens) =
                     super::mecab::mecab_timed_tokens_with_app(app, &mecab_text_ja, &mecab_wordlikes)
                 {
-                    println!("[accent] mecab used: {} tokens", mecab_tokens.len());
+                    crate::logging::log_line(app, format!("[mecab] used tokens={}", mecab_tokens.len()));
                     for t in mecab_tokens {
                         let s = t.text.trim();
                         if s.is_empty() {
@@ -619,9 +630,7 @@ fn run_whisper_for_wav(app: &AppHandle, wav_path: &str, sentence_hash: &str, lan
                         }
                     }
                 } else {
-                    if std::env::var("FALKOE_DEBUG_MECAB").is_ok() {
-                        println!("[accent] mecab not used; fallback to whisper word boundaries");
-                    }
+                    crate::logging::log_line(app, "[mecab] not used; fallback to whisper word boundaries");
                 for w in t_words {
                     let raw = w.text.trim();
                     if raw.is_empty() {

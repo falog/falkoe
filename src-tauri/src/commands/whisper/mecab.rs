@@ -378,6 +378,20 @@ fn mecab_timed_tokens_inner(
     text: &str,
     whisper_words: &[WordLike],
 ) -> Option<Vec<TimedToken>> {
+    if let Some(app) = app {
+        let bundled_cmd = resolve_bundled_tool(app, "mecab");
+        let bundled_dic = resolve_bundled_dicdir(app);
+        let env_cmd = env_mecab_path();
+        let env_dic = env_mecab_dicdir();
+        crate::logging::log_line(
+            app,
+            format!(
+                "[mecab] probe env_cmd={:?} env_dicdir={:?} bundled_cmd={:?} bundled_dicdir={:?}",
+                env_cmd, env_dic, bundled_cmd, bundled_dic
+            ),
+        );
+    }
+
     if debug_enabled() {
         println!("[mecab] mecab_timed_tokens called");
         println!("[mecab] text={:?}", text);
@@ -385,6 +399,9 @@ fn mecab_timed_tokens_inner(
     }
     // Requires whisper word timestamps to assign times to MeCab tokens.
     if whisper_words.is_empty() {
+        if let Some(app) = app {
+            crate::logging::log_line(app, "[mecab] skip: no whisper word timestamps");
+        }
         return None;
     }
 
@@ -405,6 +422,7 @@ fn mecab_timed_tokens_inner(
             if debug_enabled() {
                 println!("[mecab] unavailable or failed");
             }
+            log_mecab_failure(app, "[mecab] unavailable or failed (all candidates)");
             return None;
         }
     };
@@ -434,6 +452,17 @@ fn mecab_timed_tokens_inner(
             println!("  mecab_n   = {:?}", normalize_for_alignment(&mecab_concat));
             println!("  whisper_n = {:?}", normalize_for_alignment(&whisper_concat));
         }
+
+        log_mecab_failure(
+            app,
+            format!(
+                "[mecab] alignment mismatch mecab={} whisper={} mecab_n={} whisper_n={}",
+                crate::logging::truncate_for_log(&mecab_concat, 200),
+                crate::logging::truncate_for_log(&whisper_concat, 200),
+                crate::logging::truncate_for_log(&normalize_for_alignment(&mecab_concat), 200),
+                crate::logging::truncate_for_log(&normalize_for_alignment(&whisper_concat), 200)
+            ),
+        );
         return None;
     }
 
