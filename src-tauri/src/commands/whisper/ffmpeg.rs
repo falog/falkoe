@@ -5,6 +5,9 @@ use std::process::Command;
 use std::io::ErrorKind;
 use tauri::{AppHandle, Manager};
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 fn resolve_bundled_tool(app: &AppHandle, base_name: &str) -> Option<PathBuf> {
     let resource_dir = app.path().resource_dir().ok()?;
     let exe_name = if cfg!(target_os = "windows") {
@@ -44,7 +47,17 @@ pub(crate) fn ffmpeg_convert_to_wav(app: &AppHandle, input: &Path, output_wav: &
     }
 
     let args = build_convert_to_wav_args(input, output_wav)?;
-    let out = match Command::new(&cmd).args(&args).output() {
+    let out = match {
+        let mut c = Command::new(&cmd);
+        c.args(&args);
+        #[cfg(target_os = "windows")]
+        {
+            // Avoid flashing a console window on Windows.
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            c.creation_flags(CREATE_NO_WINDOW);
+        }
+        c.output()
+    } {
         Ok(o) => o,
         Err(e) => {
             // Make the common Windows failure modes actionable:

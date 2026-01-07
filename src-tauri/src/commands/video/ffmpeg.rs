@@ -4,6 +4,9 @@ use std::process::Command;
 use std::io::ErrorKind;
 use tauri::{AppHandle, Manager};
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 fn resolve_bundled_tool(app: &AppHandle, base_name: &str) -> Option<PathBuf> {
     let resource_dir = app.path().resource_dir().ok()?;
     let exe_name = if cfg!(target_os = "windows") {
@@ -34,7 +37,17 @@ pub(crate) fn run_ffmpeg(app: &AppHandle, args: &[String]) -> Result<()> {
     full_args.push("error".into());
     full_args.extend_from_slice(args);
 
-    let out = match Command::new(&cmd).args(&full_args).output() {
+    let out = match {
+        let mut c = Command::new(&cmd);
+        c.args(&full_args);
+        #[cfg(target_os = "windows")]
+        {
+            // Avoid flashing a console window on Windows.
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            c.creation_flags(CREATE_NO_WINDOW);
+        }
+        c.output()
+    } {
         Ok(o) => o,
         Err(e) => {
             if e.kind() == ErrorKind::NotFound {
