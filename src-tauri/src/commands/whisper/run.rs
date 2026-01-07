@@ -589,23 +589,49 @@ fn run_whisper_for_wav(app: &AppHandle, wav_path: &str, sentence_hash: &str, lan
 
             let mut out_words: Vec<AccentWordOut> = Vec::new();
 
-            // Prefer transcript word boundaries when available (prevents "明日行きます" from
-            // merging into one). Fall back to pitch.words if needed.
-            if let Some(t_words) = transcript.words.as_ref() {
-                // Try MeCab first (if installed) to re-tokenize and align onto Whisper word times.
-                let mecab_wordlikes = t_words
-                    .iter()
-                    .map(|w| super::mecab::WordLike {
-                        start: w.start,
-                        end: w.end,
-                        text: w.text.clone(),
-                    })
-                    .collect::<Vec<_>>();
+            // Prefer transcript word boundaries when available. If Whisper doesn't provide word
+            // timestamps, fall back to segment timing so MeCab can still be used (approximate).
+            let mut used_mecab = false;
+            let mecab_wordlikes: Option<(Vec<super::mecab::WordLike>, &'static str)> = if let Some(t_words) = transcript.words.as_ref() {
+                Some((
+                    t_words
+                        .iter()
+                        .map(|w| super::mecab::WordLike {
+                            start: w.start,
+                            end: w.end,
+                            text: w.text.clone(),
+                        })
+                        .collect::<Vec<_>>(),
+                    "words",
+                ))
+            } else if !transcript.segments.is_empty() {
+                Some((
+                    transcript
+                        .segments
+                        .iter()
+                        .map(|s| super::mecab::WordLike {
+                            start: s.start,
+                            end: s.end,
+                            text: s.text.clone(),
+                        })
+                        .collect::<Vec<_>>(),
+                    "segments",
+                ))
+            } else {
+                None
+            };
 
-                if let Some(mecab_tokens) =
-                    super::mecab::mecab_timed_tokens_with_app(app, &mecab_text_ja, &mecab_wordlikes)
-                {
-                    crate::logging::log_line(app, format!("[mecab] used tokens={}", mecab_tokens.len()));
+            if let Some((mecab_wordlikes, src)) = mecab_wordlikes.as_ref() {
+                if let Some(mecab_tokens) = super::mecab::mecab_timed_tokens_with_app(
+                    app,
+                    &mecab_text_ja,
+                    mecab_wordlikes,
+                ) {
+                    used_mecab = true;
+                    crate::logging::log_line(
+                        app,
+                        format!("[mecab] used tokens={} src={}", mecab_tokens.len(), src),
+                    );
                     for t in mecab_tokens {
                         let s = t.text.trim();
                         if s.is_empty() {
@@ -630,74 +656,76 @@ fn run_whisper_for_wav(app: &AppHandle, wav_path: &str, sentence_hash: &str, lan
                         }
                     }
                 } else {
-                    crate::logging::log_line(app, "[mecab] not used; fallback to whisper word boundaries");
-                for w in t_words {
-                    let raw = w.text.trim();
-                    if raw.is_empty() {
-                        continue;
-                    }
-                    let parts = split_trailing_tokens(raw);
-                    if parts.is_empty() {
-                        continue;
-                    }
-                    let total = parts.iter().map(|p| char_len(p)).sum::<usize>() as f32;
-                    let mut cur = w.start;
-                    let dur = (w.end - w.start).max(0.0);
-                    for (i, p) in parts.iter().enumerate() {
-                        let frac = char_len(p) as f32 / total.max(1.0);
-                        let next = if i + 1 == parts.len() {
-                            w.end
-                        } else {
-                            cur + dur * frac
-                        };
-                        let out = emit_token_with_time(&pitch, p, cur, next);
-                        if !out.word.is_empty() {
-                            out_words.push(out);
-                        }
-                        cur = next;
-                    }
+                    crate::logging::log_line(app, "[mecab] not used");
                 }
-                }
-            } else if let Some(words) = &pitch.words {
-                // Fallback: pitch.words can be per-character; merge contiguous content until a
-                // boundary (excluded token or punctuation).
-                let mut pending: Option<PendingContent> = None;
-                for w in words {
-                    let t = w.text.trim();
-                    if t.is_empty() {
-                        continue;
-                    }
+            }
 
-                    if is_punct_word(t) || is_ja_label_excluded_token(t) {
-                        flush_content_word(&pitch, &mut pending, &mut out_words);
-                        out_words.push(AccentWordOut {
-                            word: t.to_string(),
-                            start: w.start,
-                            end: w.end,
-                            text: t.to_string(),
-                            label: None,
-                            peak_pos: None,
-                            pitch_range: None,
-                            slope: None,
-                        });
-                        continue;
-                    }
-
-                    match pending.as_mut() {
-                        Some(p) => {
-                            p.text.push_str(t);
-                            p.end = w.end;
+            if !used_mecab {
+                if let Some(t_words) = transcript.words.as_ref() {
+                    crate::logging::log_line(app, "[mecab] fallback to whisper word boundaries");
+                    for w in t_words {
+                        let raw = w.text.trim();
+                        if raw.is_empty() {
+                            continue;
                         }
-                        None => {
-                            pending = Some(PendingContent {
-                                text: t.to_string(),
+                        let parts = split_trailing_tokens(raw);
+                        if parts.is_empty() {
+                            continue;
+                        }
+                        let total = parts.iter().map(|p| char_len(p)).sum::<usize>() as f32;
+                        let mut cur = w.start;
+                        let dur = (w.end - w.start).max(0.0);
+                        for (i, p) in parts.iter().enumerate() {
+                            let frac = char_len(p) as f32 / total.max(1.0);
+                            let next = if i + 1 == parts.len() { w.end } else { cur + dur * frac };
+                            let out = emit_token_with_time(&pitch, p, cur, next);
+                            if !out.word.is_empty() {
+                                out_words.push(out);
+                            }
+                            cur = next;
+                        }
+                    }
+                } else if let Some(words) = &pitch.words {
+                    // Fallback: pitch.words can be per-character; merge contiguous content until a
+                    // boundary (excluded token or punctuation).
+                    let mut pending: Option<PendingContent> = None;
+                    for w in words {
+                        let t = w.text.trim();
+                        if t.is_empty() {
+                            continue;
+                        }
+
+                        if is_punct_word(t) || is_ja_label_excluded_token(t) {
+                            flush_content_word(&pitch, &mut pending, &mut out_words);
+                            out_words.push(AccentWordOut {
+                                word: t.to_string(),
                                 start: w.start,
                                 end: w.end,
+                                text: t.to_string(),
+                                label: None,
+                                peak_pos: None,
+                                pitch_range: None,
+                                slope: None,
                             });
+                            continue;
+                        }
+
+                        match pending.as_mut() {
+                            Some(p) => {
+                                p.text.push_str(t);
+                                p.end = w.end;
+                            }
+                            None => {
+                                pending = Some(PendingContent {
+                                    text: t.to_string(),
+                                    start: w.start,
+                                    end: w.end,
+                                });
+                            }
                         }
                     }
+                    flush_content_word(&pitch, &mut pending, &mut out_words);
                 }
-                flush_content_word(&pitch, &mut pending, &mut out_words);
             }
 
             let accent_path = Path::new(wav_path).with_extension("accent.json");
