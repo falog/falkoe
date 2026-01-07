@@ -1,9 +1,10 @@
 use crate::model::ensure_model;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use std::fs;
 use std::path::Path;
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::process::Command;
 use tauri::{AppHandle, Emitter};
 
 use super::ffmpeg::ffmpeg_convert_to_wav;
@@ -12,6 +13,81 @@ use super::manifest::save_sentence_manifest_json;
 use super::paths::sentence_audio_dir;
 use super::transcript::save_transcript_json;
 use super::types::{FinalResult, Segment};
+
+fn should_isolate_transcribe() -> bool {
+    // Default to isolation on Windows to avoid whole-app crashes from native code.
+    // Can be disabled by setting FALKOE_ISOLATE_TRANSCRIBE=0.
+    if cfg!(target_os = "windows") {
+        match std::env::var("FALKOE_ISOLATE_TRANSCRIBE") {
+            Ok(v) if v == "0" || v.eq_ignore_ascii_case("false") => false,
+            _ => true,
+        }
+    } else {
+        matches!(
+            std::env::var("FALKOE_ISOLATE_TRANSCRIBE"),
+            Ok(v) if v == "1" || v.eq_ignore_ascii_case("true")
+        )
+    }
+}
+
+fn transcribe_in_subprocess(
+    app: &AppHandle,
+    wav_path: &str,
+    model_path: &std::path::Path,
+    whisper_lang: Option<&'static str>,
+) -> Result<super::types::Transcript> {
+    let exe = std::env::current_exe()?;
+
+    let mut cmd = Command::new(&exe);
+    cmd.arg("__transcribe_wav_json");
+    cmd.arg(wav_path);
+    cmd.arg("--model");
+    cmd.arg(model_path);
+    if let Some(l) = whisper_lang {
+        cmd.arg("--lang");
+        cmd.arg(l);
+    }
+    cmd.env("RUST_BACKTRACE", "1");
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+
+    crate::logging::log_line(
+        app,
+        format!(
+            "[whisper] transcribe(subprocess): spawning exe={:?} lang={:?}",
+            exe, whisper_lang
+        ),
+    );
+
+    let out = cmd.output()?;
+    let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    if !out.status.success() {
+        crate::logging::log_line(
+            app,
+            format!(
+                "[whisper] transcribe(subprocess): failed status={:?} stderr={}",
+                out.status.code(),
+                crate::logging::truncate_for_log(&stderr, 2000)
+            ),
+        );
+        bail!("transcribe subprocess failed");
+    }
+
+    if !stderr.is_empty() {
+        crate::logging::log_line(
+            app,
+            format!(
+                "[whisper] transcribe(subprocess): stderr={}",
+                crate::logging::truncate_for_log(&stderr, 2000)
+            ),
+        );
+    }
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let transcript: super::types::Transcript = serde_json::from_str(stdout.trim())
+        .with_context(|| "failed to parse transcribe subprocess stdout as JSON")?;
+    Ok(transcript)
+}
 
 fn run_whisper_for_wav(app: &AppHandle, wav_path: &str, sentence_hash: &str, lang: &str) -> Result<()> {
     println!("=== run_whisper START ===");
@@ -29,16 +105,37 @@ fn run_whisper_for_wav(app: &AppHandle, wav_path: &str, sentence_hash: &str, lan
     crate::logging::log_line(app, format!("[whisper] ensure_model: ok model_path={:?}", model_path));
 
     crate::logging::log_line(app, "[whisper] transcribe: begin");
-    let transcript = super::transcribe(wav_path, &model_path, whisper_language(lang))?;
-    crate::logging::log_line(
-        app,
-        format!(
-            "[whisper] transcribe: ok segments={} tokens={} words={}",
-            transcript.segments.len(),
-            transcript.tokens.as_ref().map(|t| t.len()).unwrap_or(0),
-            transcript.words.as_ref().map(|w| w.len()).unwrap_or(0)
-        ),
-    );
+    let whisper_lang = whisper_language(lang);
+
+    let transcript_res = if should_isolate_transcribe() {
+        transcribe_in_subprocess(app, wav_path, &model_path, whisper_lang)
+    } else {
+        Ok(super::transcribe(wav_path, &model_path, whisper_lang)?)
+    };
+
+    let transcript = match transcript_res {
+        Ok(t) => {
+            crate::logging::log_line(
+                app,
+                format!(
+                    "[whisper] transcribe: ok segments={} tokens={} words={}",
+                    t.segments.len(),
+                    t.tokens.as_ref().map(|t| t.len()).unwrap_or(0),
+                    t.words.as_ref().map(|w| w.len()).unwrap_or(0)
+                ),
+            );
+            t
+        }
+        Err(e) => {
+            // Ensure the UI completes even when transcription fails.
+            crate::logging::log_line(app, format!("[whisper] transcribe: error: {e}"));
+            super::types::Transcript {
+                segments: Vec::new(),
+                tokens: None,
+                words: None,
+            }
+        }
+    };
     save_transcript_json(wav_path, &transcript)?;
     crate::logging::log_line(app, "[whisper] save_transcript_json: ok");
 
