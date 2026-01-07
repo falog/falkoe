@@ -61,13 +61,17 @@ jobs:
           install: >-
             mingw-w64-x86_64-mecab
             mingw-w64-x86_64-mecab-naist-jdic
+            mingw-w64-x86_64-gettext
 
       - name: Verify MeCab installation (Windows)
         if: matrix.os == 'windows-latest'
         shell: msys2 {0}
         run: |
           set -euo pipefail
-          pacman -S --noconfirm --needed mingw-w64-x86_64-mecab mingw-w64-x86_64-mecab-naist-jdic
+          pacman -S --noconfirm --needed \
+            mingw-w64-x86_64-mecab \
+            mingw-w64-x86_64-mecab-naist-jdic \
+            mingw-w64-x86_64-gettext
           echo "[info] mecab packages:" 
           pacman -Q | grep -i mecab || true
           echo "[info] mecab location:" 
