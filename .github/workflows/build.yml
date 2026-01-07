@@ -241,13 +241,20 @@ jobs:
           curl -fsSL -o "$tmpdir/praat.tar.gz" "$url"
           tar -C "$tmpdir" -xzf "$tmpdir/praat.tar.gz"
 
-          if [[ ! -f "$tmpdir/praat" ]]; then
+          praat_bin=""
+          if [[ -f "$tmpdir/praat" ]]; then
+            praat_bin="$tmpdir/praat"
+          elif [[ -f "$tmpdir/praat_barren" ]]; then
+            praat_bin="$tmpdir/praat_barren"
+          fi
+
+          if [[ -z "$praat_bin" ]]; then
             echo "[error] praat binary not found after extract"
             ls -la "$tmpdir" || true
             exit 1
           fi
 
-          cp -f "$tmpdir/praat" src-tauri/resources/bin/praat
+          cp -f "$praat_bin" src-tauri/resources/bin/praat
           chmod +x src-tauri/resources/bin/praat
           echo "[info] bundled praat (barren)"
 
@@ -552,7 +559,28 @@ jobs:
             -f lavfi -i "sine=frequency=440:duration=1" -ac 1 -ar 16000 "$wav"
 
           echo "[info] running bundled praat --run"
-          timeout 15s src-tauri/resources/bin/praat --run "$script" "$wav" "$out" 0.01 75 500
+          python3 - <<'PY'
+          import subprocess
+          import sys
+
+          cmd = [
+              'src-tauri/resources/bin/praat',
+              '--run',
+              'src-tauri/resources/praat/extract_pitch_to_tsv.praat',
+              sys.argv[1],
+              sys.argv[2],
+              '0.01',
+              '75',
+              '500',
+          ]
+
+          try:
+              subprocess.run(cmd, check=True, timeout=15)
+          except subprocess.TimeoutExpired:
+              print('[error] Praat smoke test timed out', file=sys.stderr)
+              raise
+          PY
+          "$wav" "$out"
 
           if [[ ! -s "$out" ]]; then
             echo "[error] praat smoke test failed: output tsv missing/empty ($out)"
