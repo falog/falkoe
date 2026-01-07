@@ -24,10 +24,23 @@ fn run_whisper_for_wav(app: &AppHandle, wav_path: &str, sentence_hash: &str, lan
         ),
     );
 
+    crate::logging::log_line(app, "[whisper] ensure_model: begin");
     let model_path = ensure_model(app)?;
+    crate::logging::log_line(app, format!("[whisper] ensure_model: ok model_path={:?}", model_path));
 
+    crate::logging::log_line(app, "[whisper] transcribe: begin");
     let transcript = super::transcribe(wav_path, &model_path, whisper_language(lang))?;
+    crate::logging::log_line(
+        app,
+        format!(
+            "[whisper] transcribe: ok segments={} tokens={} words={}",
+            transcript.segments.len(),
+            transcript.tokens.as_ref().map(|t| t.len()).unwrap_or(0),
+            transcript.words.as_ref().map(|w| w.len()).unwrap_or(0)
+        ),
+    );
     save_transcript_json(wav_path, &transcript)?;
+    crate::logging::log_line(app, "[whisper] save_transcript_json: ok");
 
     let full_text = transcript
         .segments
@@ -49,40 +62,56 @@ fn run_whisper_for_wav(app: &AppHandle, wav_path: &str, sentence_hash: &str, lan
     };
 
     app.emit("transcript-final", final_result)?;
+    crate::logging::log_line(app, "[whisper] emitted transcript-final");
 
     // Run pitch analysis and persist it next to the transcript.
     // Japanese-only: also write accent.json (Heiban/Odaka/Nakadaka/Atamadaka labels).
     let is_ja = whisper_language(lang) == Some("ja");
-    if let Ok(mut pitch) = crate::commands::pitch::analyze_pitch(
-        app.clone(),
-        wav_path.to_string(),
-        None,
-        None,
-        None,
-        Some(true),
-    ) {
-        // For non-Japanese, avoid emitting Japanese pitch-accent category labels.
-        if !is_ja {
-            if let Some(words) = pitch.words.as_mut() {
-                for w in words {
-                    w.label = None;
+    crate::logging::log_line(app, "[pitch] analyze_pitch: begin");
+    let pitch_res = catch_unwind(AssertUnwindSafe(|| {
+        crate::commands::pitch::analyze_pitch(
+            app.clone(),
+            wav_path.to_string(),
+            None,
+            None,
+            None,
+            Some(true),
+        )
+    }));
+    let pitch_ok = match pitch_res {
+        Ok(Ok(p)) => Ok(p),
+        Ok(Err(e)) => Err(e),
+        Err(payload) => {
+            let msg = crate::logging::panic_payload_to_string(&*payload);
+            crate::logging::log_line(app, format!("[pitch] panic in analyze_pitch (caught): {msg}"));
+            return Ok(());
+        }
+    };
+
+    match pitch_ok {
+        Ok(mut pitch) => {
+            // For non-Japanese, avoid emitting Japanese pitch-accent category labels.
+            if !is_ja {
+                if let Some(words) = pitch.words.as_mut() {
+                    for w in words {
+                        w.label = None;
+                    }
+                }
+                if let Some(segs) = pitch.segments.as_mut() {
+                    for s in segs {
+                        s.label = None;
+                    }
                 }
             }
-            if let Some(segs) = pitch.segments.as_mut() {
-                for s in segs {
-                    s.label = None;
-                }
+
+            let pitch_path = Path::new(wav_path).with_extension("pitch.json");
+            if let Ok(json) = serde_json::to_string_pretty(&pitch) {
+                let _ = fs::write(&pitch_path, json);
+                println!("saved pitch: {:?}", pitch_path);
+                crate::logging::log_line(app, format!("[pitch] saved pitch: {:?}", pitch_path));
             }
-        }
 
-        let pitch_path = Path::new(wav_path).with_extension("pitch.json");
-        if let Ok(json) = serde_json::to_string_pretty(&pitch) {
-            let _ = fs::write(&pitch_path, json);
-            println!("saved pitch: {:?}", pitch_path);
-            crate::logging::log_line(app, format!("[pitch] saved pitch: {:?}", pitch_path));
-        }
-
-        if is_ja {
+            if is_ja {
             #[derive(serde::Serialize)]
             struct AccentWordOut {
                 word: String,
@@ -539,6 +568,10 @@ fn run_whisper_for_wav(app: &AppHandle, wav_path: &str, sentence_hash: &str, lan
                 println!("saved accent: {:?}", accent_path);
                 crate::logging::log_line(app, format!("[accent] saved accent: {:?}", accent_path));
             }
+            }
+        }
+        Err(e) => {
+            crate::logging::log_line(app, format!("[pitch] analyze_pitch: error: {e}"));
         }
     }
 
