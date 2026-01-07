@@ -7,6 +7,7 @@ mod window;
 use anyhow::{bail, Context, Result};
 use std::fs;
 use std::path::PathBuf;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
@@ -75,7 +76,7 @@ pub fn export_practice_video(
     model_text: String,
     segments: Vec<VideoSegmentReq>,
 ) -> Result<String, String> {
-    (|| -> Result<String> {
+    let res = catch_unwind(AssertUnwindSafe(|| (|| -> Result<String> {
         if segments.is_empty() {
             bail!("no segments");
         }
@@ -295,6 +296,14 @@ pub fn export_practice_video(
         }
 
         Ok(out_path.to_string_lossy().to_string())
-    })()
-    .map_err(|e| e.to_string())
+    })()));
+
+    match res {
+        Ok(r) => r.map_err(|e| e.to_string()),
+        Err(payload) => {
+            let msg = crate::logging::panic_payload_to_string(&*payload);
+            crate::logging::log_line(&app, format!("[video] panic in export_practice_video (caught): {msg}"));
+            Err("panic in export_practice_video (caught)".to_string())
+        }
+    }
 }

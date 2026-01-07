@@ -3,6 +3,7 @@ use crate::model::ensure_model;
 use anyhow::{bail, Result};
 use std::fs;
 use std::path::Path;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use tauri::{AppHandle, Emitter};
 
 use super::ffmpeg::ffmpeg_convert_to_wav;
@@ -15,6 +16,13 @@ use super::types::{FinalResult, Segment};
 fn run_whisper_for_wav(app: &AppHandle, wav_path: &str, sentence_hash: &str, lang: &str) -> Result<()> {
     println!("=== run_whisper START ===");
     println!("wav_path = {}", wav_path);
+    crate::logging::log_line(
+        app,
+        format!(
+            "[whisper] start wav_path={} sentence_hash={} lang={}",
+            wav_path, sentence_hash, lang
+        ),
+    );
 
     let model_path = ensure_model(app)?;
 
@@ -71,6 +79,7 @@ fn run_whisper_for_wav(app: &AppHandle, wav_path: &str, sentence_hash: &str, lan
         if let Ok(json) = serde_json::to_string_pretty(&pitch) {
             let _ = fs::write(&pitch_path, json);
             println!("saved pitch: {:?}", pitch_path);
+            crate::logging::log_line(app, format!("[pitch] saved pitch: {:?}", pitch_path));
         }
 
         if is_ja {
@@ -528,6 +537,7 @@ fn run_whisper_for_wav(app: &AppHandle, wav_path: &str, sentence_hash: &str, lan
             if let Ok(json) = serde_json::to_string_pretty(&AccentOut { words: out_words }) {
                 let _ = fs::write(&accent_path, json);
                 println!("saved accent: {:?}", accent_path);
+                crate::logging::log_line(app, format!("[accent] saved accent: {:?}", accent_path));
             }
         }
     }
@@ -544,8 +554,18 @@ pub(crate) fn run_whisper_model_impl(
     let wav_path = download_and_convert_to_wav(&app, &url, &sentence_hash)?;
 
     std::thread::spawn(move || {
-        if let Err(e) = run_whisper_for_wav(&app, &wav_path, &sentence_hash, &lang) {
-            eprintln!("whisper model error: {e}");
+        let res = catch_unwind(AssertUnwindSafe(|| run_whisper_for_wav(&app, &wav_path, &sentence_hash, &lang)));
+        match res {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                eprintln!("whisper model error: {e}");
+                crate::logging::log_line(&app, format!("[whisper] model error: {e}"));
+            }
+            Err(payload) => {
+                let msg = crate::logging::panic_payload_to_string(&*payload);
+                eprintln!("whisper model panic (caught): {msg}");
+                crate::logging::log_line(&app, format!("[whisper] model panic (caught): {msg}"));
+            }
         }
     });
 
@@ -561,8 +581,18 @@ pub(crate) fn run_whisper_uploaded_impl(
     let wav_path = convert_uploaded_to_wav(&app, &uploaded_path, &sentence_hash)?;
 
     std::thread::spawn(move || {
-        if let Err(e) = run_whisper_for_wav(&app, &wav_path, &sentence_hash, &lang) {
-            eprintln!("whisper uploaded error: {e}");
+        let res = catch_unwind(AssertUnwindSafe(|| run_whisper_for_wav(&app, &wav_path, &sentence_hash, &lang)));
+        match res {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                eprintln!("whisper uploaded error: {e}");
+                crate::logging::log_line(&app, format!("[whisper] uploaded error: {e}"));
+            }
+            Err(payload) => {
+                let msg = crate::logging::panic_payload_to_string(&*payload);
+                eprintln!("whisper uploaded panic (caught): {msg}");
+                crate::logging::log_line(&app, format!("[whisper] uploaded panic (caught): {msg}"));
+            }
         }
     });
 
@@ -578,8 +608,18 @@ pub(crate) fn run_whisper_impl(
     let app_handle = app.clone();
 
     std::thread::spawn(move || {
-        if let Err(e) = run_whisper_for_wav(&app_handle, &path, &sentence_hash, &lang) {
-            eprintln!("whisper error: {e}");
+        let res = catch_unwind(AssertUnwindSafe(|| run_whisper_for_wav(&app_handle, &path, &sentence_hash, &lang)));
+        match res {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                eprintln!("whisper error: {e}");
+                crate::logging::log_line(&app_handle, format!("[whisper] error: {e}"));
+            }
+            Err(payload) => {
+                let msg = crate::logging::panic_payload_to_string(&*payload);
+                eprintln!("whisper panic (caught): {msg}");
+                crate::logging::log_line(&app_handle, format!("[whisper] panic (caught): {msg}"));
+            }
         }
     });
 

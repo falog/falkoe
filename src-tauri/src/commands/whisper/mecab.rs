@@ -185,9 +185,19 @@ fn should_exclude_by_surface(surface: &str) -> bool {
     )
 }
 
-fn run_mecab(text: &str, rt: &MecabRuntime) -> Option<Vec<MecabToken>> {
+fn log_mecab_failure(app: Option<&AppHandle>, msg: impl AsRef<str>) {
+    let msg = msg.as_ref();
+    if let Some(app) = app {
+        crate::logging::log_line(app, msg);
+    }
+    if debug_enabled() {
+        eprintln!("{msg}");
+    }
+}
+
+fn run_mecab(text: &str, rt: &MecabRuntime, app: Option<&AppHandle>) -> Option<Vec<MecabToken>> {
     // First, try POS mode (more accurate exclude decisions).
-    if let Some(tokens) = run_mecab_with_pos(text, rt) {
+    if let Some(tokens) = run_mecab_with_pos(text, rt, app) {
         return Some(tokens);
     }
 
@@ -200,14 +210,20 @@ fn run_mecab(text: &str, rt: &MecabRuntime) -> Option<Vec<MecabToken>> {
     let mut child = match cmd
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
     {
         Ok(c) => c,
         Err(e) => {
-            if debug_enabled() {
-                println!("[mecab] spawn failed for {:?}: {e}", rt.cmd);
-            }
+            let hint = if cfg!(target_os = "windows") && e.raw_os_error() == Some(126) {
+                " (Windows error 126: missing DLL dependency; commonly libiconv-2.dll / libintl-8.dll)"
+            } else {
+                ""
+            };
+            log_mecab_failure(
+                app,
+                format!("[mecab] spawn failed cmd={:?} dicdir={:?}: {e}{hint}", rt.cmd, rt.dicdir),
+            );
             return None;
         }
     };
@@ -220,6 +236,23 @@ fn run_mecab(text: &str, rt: &MecabRuntime) -> Option<Vec<MecabToken>> {
 
     let output = child.wait_with_output().ok()?;
     if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if !stderr.trim().is_empty() {
+            log_mecab_failure(
+                app,
+                format!(
+                    "[mecab] non-zero exit cmd={:?}: status={:?} stderr={}",
+                    rt.cmd,
+                    output.status.code(),
+                    crate::logging::truncate_for_log(stderr.trim(), 2000)
+                ),
+            );
+        } else {
+            log_mecab_failure(
+                app,
+                format!("[mecab] non-zero exit cmd={:?}: status={:?}", rt.cmd, output.status.code()),
+            );
+        }
         return None;
     }
     let out = String::from_utf8(output.stdout).ok()?;
@@ -238,7 +271,7 @@ fn run_mecab(text: &str, rt: &MecabRuntime) -> Option<Vec<MecabToken>> {
     Some(toks)
 }
 
-fn run_mecab_with_pos(text: &str, rt: &MecabRuntime) -> Option<Vec<MecabToken>> {
+fn run_mecab_with_pos(text: &str, rt: &MecabRuntime, app: Option<&AppHandle>) -> Option<Vec<MecabToken>> {
     let mut cmd = Command::new(&rt.cmd);
     if let Some(dicdir) = &rt.dicdir {
         cmd.arg("-d").arg(dicdir);
@@ -246,14 +279,20 @@ fn run_mecab_with_pos(text: &str, rt: &MecabRuntime) -> Option<Vec<MecabToken>> 
     let mut child = match cmd
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
     {
         Ok(c) => c,
         Err(e) => {
-            if debug_enabled() {
-                println!("[mecab] spawn failed for {:?}: {e}", rt.cmd);
-            }
+            let hint = if cfg!(target_os = "windows") && e.raw_os_error() == Some(126) {
+                " (Windows error 126: missing DLL dependency; commonly libiconv-2.dll / libintl-8.dll)"
+            } else {
+                ""
+            };
+            log_mecab_failure(
+                app,
+                format!("[mecab] spawn failed cmd={:?} dicdir={:?}: {e}{hint}", rt.cmd, rt.dicdir),
+            );
             return None;
         }
     };
@@ -266,6 +305,23 @@ fn run_mecab_with_pos(text: &str, rt: &MecabRuntime) -> Option<Vec<MecabToken>> 
 
     let output = child.wait_with_output().ok()?;
     if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if !stderr.trim().is_empty() {
+            log_mecab_failure(
+                app,
+                format!(
+                    "[mecab] non-zero exit cmd={:?}: status={:?} stderr={}",
+                    rt.cmd,
+                    output.status.code(),
+                    crate::logging::truncate_for_log(stderr.trim(), 2000)
+                ),
+            );
+        } else {
+            log_mecab_failure(
+                app,
+                format!("[mecab] non-zero exit cmd={:?}: status={:?}", rt.cmd, output.status.code()),
+            );
+        }
         return None;
     }
 
@@ -338,7 +394,7 @@ fn mecab_timed_tokens_inner(
         if debug_enabled() {
             println!("[mecab] trying cmd={:?} dicdir={:?}", rt.cmd, rt.dicdir);
         }
-        if let Some(v) = run_mecab(text, &rt) {
+        if let Some(v) = run_mecab(text, &rt, app) {
             mecab_raw = Some(v);
             break;
         }

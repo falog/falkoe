@@ -11,6 +11,7 @@ use tauri_plugin_mic_recorder::init as mic_recorder;
 
 mod commands;
 mod model;
+mod logging;
 
 // Minimal public surface for internal tooling (e.g. src/bin/*).
 pub use commands::whisper::transcribe as transcribe;

@@ -25,6 +25,12 @@ function checkWindowsBundledTools(args) {
   const praatconExe = path.join(resourcesBin, "praatcon.exe");
   const praatExe = path.join(resourcesBin, "praat.exe");
   const mecabExe = path.join(resourcesBin, "mecab.exe");
+  const mecabDlls = [
+    path.join(resourcesBin, "libmecab-2.dll"),
+    path.join(resourcesBin, "libiconv-2.dll"),
+    path.join(resourcesBin, "libintl-8.dll"),
+    path.join(resourcesBin, "libcharset-1.dll"),
+  ];
 
   const missing = [];
   if (!existsSync(ffmpegExe)) missing.push(ffmpegExe);
@@ -57,15 +63,20 @@ function checkWindowsBundledTools(args) {
   }
 
   if (!hasPraat) {
-    console.warn(
-      [
-        "[tauri wrapper] Windows bundle note:",
-        "  Praat is not bundled (optional). If you want stable pitch extraction, place one of:",
-        `  - ${praatconExe}`,
-        `  - ${praatExe}`,
-        "  (See README: Bundled Tools (Praat))",
-      ].join("\n")
-    );
+    const msg = [
+      "[tauri wrapper] Windows bundle note:",
+      "  Praat is not bundled. If you want stable pitch extraction, place one of:",
+      `  - ${praatconExe}`,
+      `  - ${praatExe}`,
+    ].join("\n");
+
+    // User requested Praat bundling for distribution builds.
+    if (isPackaging && !allowMissing) {
+      console.error(msg);
+      process.exit(1);
+    } else {
+      console.warn(msg);
+    }
   }
 
   if (!hasMecab) {
@@ -87,6 +98,21 @@ function checkWindowsBundledTools(args) {
         "  MeCab may not work without a dictionary.",
       ].join("\n")
     );
+  }
+
+  if (hasMecab) {
+    const missingMecabDlls = mecabDlls.filter((p) => !existsSync(p));
+    if (missingMecabDlls.length > 0) {
+      console.warn(
+        [
+          "[tauri wrapper] Windows bundle note:",
+          "  MeCab is bundled but required DLLs are missing next to mecab.exe.",
+          "  This will typically crash/failed-to-launch with Windows error 126 (e.g. libiconv-2.dll not found).",
+          "  Missing:",
+          ...missingMecabDlls.map((p) => `  - ${p}`),
+        ].join("\n")
+      );
+    }
   }
 }
 

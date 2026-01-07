@@ -226,9 +226,91 @@ jobs:
       # ========================================
       # Praat
       # ========================================
-      # Note: Praat is intentionally NOT bundled in CI/release artifacts due to
-      # redistribution/license concerns. Falkoe will fall back to built-in YIN
-      # when Praat is not available.
+
+      - name: Bundle Praat (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p src-tauri/resources/bin
+
+          asset="praat6452_linux-intel64-barren.tar.gz"
+          url="https://www.fon.hum.uva.nl/praat/${asset}"
+          tmpdir="$(mktemp -d)"
+
+          curl -fsSL -o "$tmpdir/praat.tar.gz" "$url"
+          tar -C "$tmpdir" -xzf "$tmpdir/praat.tar.gz"
+
+          if [[ ! -f "$tmpdir/praat" ]]; then
+            echo "[error] praat binary not found after extract"
+            ls -la "$tmpdir" || true
+            exit 1
+          fi
+
+          cp -f "$tmpdir/praat" src-tauri/resources/bin/praat
+          chmod +x src-tauri/resources/bin/praat
+          echo "[info] bundled praat (barren)"
+
+      - name: Bundle Praat (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path 'src-tauri/resources/bin' | Out-Null
+
+          $asset = 'praat6452_win-intel64.zip'
+          $url = "https://www.fon.hum.uva.nl/praat/$asset"
+          $tmp = Join-Path $env:RUNNER_TEMP 'praat'
+          $zip = Join-Path $tmp $asset
+          $out = Join-Path $tmp 'out'
+
+          New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+          if (Test-Path $out) { Remove-Item -Recurse -Force $out }
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath $out -Force
+
+          $praatExe = Get-ChildItem -Path $out -Recurse -File -Filter 'Praat.exe' | Select-Object -First 1
+          if (-not $praatExe) {
+            $praatExe = Get-ChildItem -Path $out -Recurse -File -Filter 'praat.exe' | Select-Object -First 1
+          }
+          if (-not $praatExe) { throw 'Praat.exe not found in extracted archive' }
+
+          Copy-Item -Force $praatExe.FullName 'src-tauri/resources/bin/praat.exe'
+          Write-Host "[info] bundled praat.exe"
+
+      - name: Bundle Praat (macOS)
+        if: matrix.os == 'macos-14'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p src-tauri/resources/bin
+
+          asset="praat6452_mac.dmg"
+          url="https://www.fon.hum.uva.nl/praat/${asset}"
+          tmpdir="$(mktemp -d)"
+
+          curl -fsSL -o "$tmpdir/praat.dmg" "$url"
+          mnt="$tmpdir/mnt"
+          mkdir -p "$mnt"
+
+          hdiutil attach "$tmpdir/praat.dmg" -mountpoint "$mnt" -nobrowse -quiet
+          # The DMG usually contains Praat.app (or Praat).
+          if [[ -d "$mnt/Praat.app" && -f "$mnt/Praat.app/Contents/MacOS/Praat" ]]; then
+            cp -f "$mnt/Praat.app/Contents/MacOS/Praat" src-tauri/resources/bin/praat
+          elif [[ -f "$mnt/Praat" ]]; then
+            cp -f "$mnt/Praat" src-tauri/resources/bin/praat
+          else
+            ls -la "$mnt" || true
+            hdiutil detach "$mnt" -quiet || true
+            echo "[error] Praat app/binary not found in DMG"
+            exit 1
+          fi
+          hdiutil detach "$mnt" -quiet
+
+          chmod +x src-tauri/resources/bin/praat
+          echo "[info] bundled praat"
 
       # ========================================
       # バンドル処理: MeCab
@@ -303,11 +385,23 @@ jobs:
 
           # 必要なDLLを直接コピー（lddよりも確実）
           cp -f "$mecab_dir"/libmecab*.dll src-tauri/resources/bin/ 2>/dev/null || true
+          cp -f "$mecab_dir"/libiconv-2.dll src-tauri/resources/bin/ 2>/dev/null || true
+          cp -f "$mecab_dir"/libintl-8.dll src-tauri/resources/bin/ 2>/dev/null || true
+          cp -f "$mecab_dir"/libcharset-1.dll src-tauri/resources/bin/ 2>/dev/null || true
           cp -f "$mecab_dir"/libgcc_s_seh*.dll src-tauri/resources/bin/ 2>/dev/null || true
           cp -f "$mecab_dir"/libstdc++*.dll src-tauri/resources/bin/ 2>/dev/null || true
           cp -f "$mecab_dir"/libwinpthread*.dll src-tauri/resources/bin/ 2>/dev/null || true
 
-          echo "[info] bundled mecab.exe and DLLs"
+          # Fail early if critical deps are missing in the bundled directory.
+          for dll in libmecab-2.dll libiconv-2.dll libintl-8.dll libcharset-1.dll; do
+            if [[ ! -f "src-tauri/resources/bin/$dll" ]]; then
+              echo "[error] missing required MeCab DLL in bundle: $dll"
+              echo "[info] Hint: ensure MSYS2 deps are installed and copied from $mecab_dir"
+              exit 1
+            fi
+          done
+
+          echo "[info] bundled mecab.exe and DLLs (including libiconv/libintl)"
 
           # 辞書ファイル（NAIST-JDIC）
           dic_dir=""
@@ -417,6 +511,116 @@ jobs:
       # ========================================
       # Node / pnpm setup
       # ========================================
+
+      - name: Verify bundled tools (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "[info] bundled tools directory listing:"
+          ls -la src-tauri/resources/bin || true
+          echo "[info] bundled praat scripts directory listing:"
+          ls -la src-tauri/resources/praat || true
+
+          # Required for all platforms in release builds
+          test -e src-tauri/resources/bin/ffmpeg
+
+          # Praat binary should be bundled (per project policy)
+          test -e src-tauri/resources/bin/praat
+
+          # MeCab is optional in principle, but we bundle it in CI.
+          test -e src-tauri/resources/bin/mecab
+          test -e src-tauri/resources/mecab/ipadic/dicrc
+          test -e src-tauri/resources/mecab/ipadic/sys.dic
+          test -e src-tauri/resources/mecab/ipadic/unk.dic
+
+          echo "[info] checksums (sha256):"
+          (command -v sha256sum >/dev/null 2>&1 && sha256sum src-tauri/resources/bin/ffmpeg src-tauri/resources/bin/praat src-tauri/resources/bin/mecab) || true
+
+      - name: Smoke test Praat (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmpdir="$(mktemp -d)"
+          wav="$tmpdir/test.wav"
+          out="$tmpdir/out.tsv"
+          script="src-tauri/resources/praat/extract_pitch_to_tsv.praat"
+
+          echo "[info] generating test wav with bundled ffmpeg"
+          src-tauri/resources/bin/ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i "sine=frequency=440:duration=1" -ac 1 -ar 16000 "$wav"
+
+          echo "[info] running bundled praat --run"
+          timeout 15s src-tauri/resources/bin/praat --run "$script" "$wav" "$out" 0.01 75 500
+
+          if [[ ! -s "$out" ]]; then
+            echo "[error] praat smoke test failed: output tsv missing/empty ($out)"
+            ls -la "$tmpdir" || true
+            exit 1
+          fi
+          echo "[info] praat smoke test ok: $(wc -l < "$out") lines"
+
+      - name: Verify bundled tools (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Write-Host "[info] bundled tools directory listing:"
+          Get-ChildItem -Path 'src-tauri/resources/bin' -File | Sort-Object Name | Format-Table Name,Length
+          Write-Host "[info] bundled praat scripts directory listing:"
+          Get-ChildItem -Path 'src-tauri/resources/praat' -File | Sort-Object Name | Format-Table Name,Length
+
+          # Required for all platforms in release builds
+          if (!(Test-Path 'src-tauri/resources/bin/ffmpeg.exe')) { throw 'missing bundled ffmpeg.exe' }
+
+          # Praat binary should be bundled (per project policy)
+          if (!(Test-Path 'src-tauri/resources/bin/praat.exe')) { throw 'missing bundled praat.exe' }
+
+          # MeCab is optional in principle, but we bundle it in CI.
+          if (!(Test-Path 'src-tauri/resources/bin/mecab.exe')) { throw 'missing bundled mecab.exe' }
+          foreach ($dll in @('libmecab-2.dll','libiconv-2.dll','libintl-8.dll','libcharset-1.dll')) {
+            if (!(Test-Path (Join-Path 'src-tauri/resources/bin' $dll))) { throw "missing bundled MeCab DLL: $dll" }
+          }
+          foreach ($f in @('dicrc','sys.dic','unk.dic')) {
+            if (!(Test-Path (Join-Path 'src-tauri/resources/mecab/ipadic' $f))) { throw "missing bundled MeCab dictionary file: $f" }
+          }
+
+          Write-Host "[info] checksums (sha256):"
+          Get-FileHash 'src-tauri/resources/bin/ffmpeg.exe' -Algorithm SHA256 | Format-List
+          Get-FileHash 'src-tauri/resources/bin/praat.exe' -Algorithm SHA256 | Format-List
+          Get-FileHash 'src-tauri/resources/bin/mecab.exe' -Algorithm SHA256 | Format-List
+
+      - name: Smoke test Praat (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tmp = Join-Path $env:RUNNER_TEMP 'praat-smoke'
+          New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+          $wav = Join-Path $tmp 'test.wav'
+          $out = Join-Path $tmp 'out.tsv'
+          $ffmpeg = Resolve-Path 'src-tauri/resources/bin/ffmpeg.exe'
+          $praat = Resolve-Path 'src-tauri/resources/bin/praat.exe'
+          $script = Resolve-Path 'src-tauri/resources/praat/extract_pitch_to_tsv.praat'
+
+          Write-Host "[info] generating test wav with bundled ffmpeg"
+          & $ffmpeg -hide_banner -loglevel error -y -f lavfi -i "sine=frequency=440:duration=1" -ac 1 -ar 16000 $wav
+
+          Write-Host "[info] running bundled praat --run"
+          $p = Start-Process -FilePath $praat -ArgumentList @('--run', $script, $wav, $out, '0.01', '75', '500') -PassThru
+          $ok = $p.WaitForExit(15000)
+          if (-not $ok) {
+            try { $p.Kill() } catch {}
+            throw 'Praat smoke test timed out'
+          }
+          if ($p.ExitCode -ne 0) {
+            throw "Praat smoke test failed with exit code $($p.ExitCode)"
+          }
+
+          if (!(Test-Path $out)) { throw 'Praat smoke test failed: out.tsv not created' }
+          if ((Get-Item $out).Length -le 0) { throw 'Praat smoke test failed: out.tsv is empty' }
+          Write-Host "[info] praat smoke test ok"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
