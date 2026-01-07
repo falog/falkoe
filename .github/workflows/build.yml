@@ -559,7 +559,7 @@ jobs:
             -f lavfi -i "sine=frequency=440:duration=1" -ac 1 -ar 16000 "$wav"
 
           echo "[info] running bundled praat --run"
-          python3 - <<'PY'
+          python3 - "$wav" "$out" <<'PY'
           import subprocess
           import sys
 
@@ -580,7 +580,6 @@ jobs:
               print('[error] Praat smoke test timed out', file=sys.stderr)
               raise
           PY
-          "$wav" "$out"
 
           if [[ ! -s "$out" ]]; then
             echo "[error] praat smoke test failed: output tsv missing/empty ($out)"
