@@ -83,6 +83,17 @@ fn resolve_bundled_dicdir(app: &AppHandle) -> Option<PathBuf> {
         .find(|p| p.join("dicrc").exists())
 }
 
+fn resolve_bundled_mecabrc(app: &AppHandle) -> Option<PathBuf> {
+    let resource_dir = app.path().resource_dir().ok()?;
+    let candidates = [
+        // bundle layout
+        resource_dir.join("mecab").join("mecabrc"),
+        // dev layout (resources synced under target/*/resources)
+        resource_dir.join("resources").join("mecab").join("mecabrc"),
+    ];
+    candidates.into_iter().find(|p| p.is_file())
+}
+
 #[derive(Debug, Clone)]
 struct MecabRuntime {
     cmd: PathBuf,
@@ -204,6 +215,11 @@ fn run_mecab(text: &str, rt: &MecabRuntime, app: Option<&AppHandle>) -> Option<V
     // Fallback: wakati surfaces only.
     let mut cmd = Command::new(&rt.cmd);
     cmd.arg("-O").arg("wakati");
+    if let Some(app) = app {
+        if let Some(rc) = resolve_bundled_mecabrc(app) {
+            cmd.arg("-r").arg(rc);
+        }
+    }
     if let Some(dicdir) = &rt.dicdir {
         cmd.arg("-d").arg(dicdir);
     }
@@ -273,6 +289,11 @@ fn run_mecab(text: &str, rt: &MecabRuntime, app: Option<&AppHandle>) -> Option<V
 
 fn run_mecab_with_pos(text: &str, rt: &MecabRuntime, app: Option<&AppHandle>) -> Option<Vec<MecabToken>> {
     let mut cmd = Command::new(&rt.cmd);
+    if let Some(app) = app {
+        if let Some(rc) = resolve_bundled_mecabrc(app) {
+            cmd.arg("-r").arg(rc);
+        }
+    }
     if let Some(dicdir) = &rt.dicdir {
         cmd.arg("-d").arg(dicdir);
     }
@@ -381,13 +402,14 @@ fn mecab_timed_tokens_inner(
     if let Some(app) = app {
         let bundled_cmd = resolve_bundled_tool(app, "mecab");
         let bundled_dic = resolve_bundled_dicdir(app);
+        let bundled_rc = resolve_bundled_mecabrc(app);
         let env_cmd = env_mecab_path();
         let env_dic = env_mecab_dicdir();
         crate::logging::log_line(
             app,
             format!(
-                "[mecab] probe env_cmd={:?} env_dicdir={:?} bundled_cmd={:?} bundled_dicdir={:?}",
-                env_cmd, env_dic, bundled_cmd, bundled_dic
+                "[mecab] probe env_cmd={:?} env_dicdir={:?} bundled_cmd={:?} bundled_dicdir={:?} bundled_mecabrc={:?}",
+                env_cmd, env_dic, bundled_cmd, bundled_dic, bundled_rc
             ),
         );
     }
