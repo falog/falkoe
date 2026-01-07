@@ -215,12 +215,14 @@ fn run_mecab(text: &str, rt: &MecabRuntime, app: Option<&AppHandle>) -> Option<V
     // Fallback: wakati surfaces only.
     let mut cmd = Command::new(&rt.cmd);
     cmd.arg("-O").arg("wakati");
-    if let Some(app) = app {
-        if let Some(rc) = resolve_bundled_mecabrc(app) {
-            cmd.arg("-r").arg(rc);
-        }
-    }
     if let Some(dicdir) = &rt.dicdir {
+        // Only override mecabrc when we also control the dictionary dir.
+        // Otherwise we can break system installations by pointing dicdir to a non-existent bundled path.
+        if let Some(app) = app {
+            if let Some(rc) = resolve_bundled_mecabrc(app) {
+                cmd.arg("-r").arg(rc);
+            }
+        }
         cmd.arg("-d").arg(dicdir);
     }
     let mut child = match cmd
@@ -289,12 +291,13 @@ fn run_mecab(text: &str, rt: &MecabRuntime, app: Option<&AppHandle>) -> Option<V
 
 fn run_mecab_with_pos(text: &str, rt: &MecabRuntime, app: Option<&AppHandle>) -> Option<Vec<MecabToken>> {
     let mut cmd = Command::new(&rt.cmd);
-    if let Some(app) = app {
-        if let Some(rc) = resolve_bundled_mecabrc(app) {
-            cmd.arg("-r").arg(rc);
-        }
-    }
     if let Some(dicdir) = &rt.dicdir {
+        // Only override mecabrc when we also control the dictionary dir.
+        if let Some(app) = app {
+            if let Some(rc) = resolve_bundled_mecabrc(app) {
+                cmd.arg("-r").arg(rc);
+            }
+        }
         cmd.arg("-d").arg(dicdir);
     }
     let mut child = match cmd
