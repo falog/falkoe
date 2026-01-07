@@ -84,9 +84,41 @@ fn transcribe_in_subprocess(
     }
 
     let stdout = String::from_utf8_lossy(&out.stdout);
-    let transcript: super::types::Transcript = serde_json::from_str(stdout.trim())
-        .with_context(|| "failed to parse transcribe subprocess stdout as JSON")?;
-    Ok(transcript)
+    let stdout_trimmed = stdout.trim();
+
+    // Some native dependencies (whisper.cpp) may print logs to stdout.
+    // Extract the JSON object from stdout and parse that.
+    let parsed: Result<super::types::Transcript> = (|| {
+        if let Ok(t) = serde_json::from_str::<super::types::Transcript>(stdout_trimmed) {
+            return Ok(t);
+        }
+
+        let start = stdout_trimmed.find('{');
+        let end = stdout_trimmed.rfind('}');
+        if let (Some(s), Some(e)) = (start, end) {
+            if s < e {
+                let json_slice = &stdout_trimmed[s..=e];
+                let t = serde_json::from_str::<super::types::Transcript>(json_slice)?;
+                return Ok(t);
+            }
+        }
+
+        bail!("no JSON object found in stdout")
+    })();
+
+    match parsed {
+        Ok(t) => Ok(t),
+        Err(e) => {
+            crate::logging::log_line(
+                app,
+                format!(
+                    "[whisper] transcribe(subprocess): stdout(truncated)={}",
+                    crate::logging::truncate_for_log(stdout_trimmed, 2000)
+                ),
+            );
+            Err(e).with_context(|| "failed to parse transcribe subprocess stdout as JSON")
+        }
+    }
 }
 
 fn run_whisper_for_wav(app: &AppHandle, wav_path: &str, sentence_hash: &str, lang: &str) -> Result<()> {
