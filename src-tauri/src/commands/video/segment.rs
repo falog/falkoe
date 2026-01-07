@@ -2,6 +2,27 @@ use std::path::Path;
 
 use super::ffmpeg::escape_filter_path;
 
+fn windows_drawtext_fontfile_opt() -> String {
+    if !cfg!(target_os = "windows") {
+        return String::new();
+    }
+
+    let candidates = [
+        r"C:\\Windows\\Fonts\\meiryo.ttc",
+        r"C:\\Windows\\Fonts\\YuGothR.ttc",
+        r"C:\\Windows\\Fonts\\msgothic.ttc",
+    ];
+
+    for c in candidates {
+        let p = Path::new(c);
+        if p.is_file() {
+            return format!(":fontfile='{}'", escape_filter_path(p));
+        }
+    }
+
+    String::new()
+}
+
 pub(crate) fn build_playhead_x_expr(
     sx: f32,
     pad_x: f32,
@@ -32,23 +53,32 @@ pub(crate) fn build_segment_filter_complex(
 ) -> (String, String) {
     // Animate playhead using overlay with a thin orange bar.
     // This avoids drawbox-eval issues on some ffmpeg builds.
+    let font_opt = windows_drawtext_fontfile_opt();
     let base_chain = vec![
         format!(
-            "drawtext=textfile='{}':x=(w-text_w)/2:y=8:fontcolor=white:fontsize=26:box=1:boxcolor=black@0.35:boxborderw=8",
-            escape_filter_path(model_txt_path)
+            "drawtext=textfile='{}'{}:x=(w-text_w)/2:y=8:fontcolor=white:fontsize=26:box=1:boxcolor=black@0.35:boxborderw=8",
+            escape_filter_path(model_txt_path),
+            font_opt
         ),
         format!(
-            "drawtext=textfile='{}':x=12:y=8:fontcolor=white:fontsize=22:box=1:boxcolor=black@0.35:boxborderw=8",
-            escape_filter_path(label_txt_path)
+            "drawtext=textfile='{}'{}:x=12:y=8:fontcolor=white:fontsize=22:box=1:boxcolor=black@0.35:boxborderw=8",
+            escape_filter_path(label_txt_path),
+            font_opt
         ),
     ]
     .join(",");
 
     let subtitle_chain: Option<String> = subtitle_srt_path.map(|srt_path| {
-        format!(
-            "subtitles='{}':force_style='Alignment=2,Fontsize=28,Outline=1,Shadow=0,MarginV=40'",
-            escape_filter_path(srt_path)
-        )
+        let mut s = format!("subtitles='{}'", escape_filter_path(srt_path));
+        if cfg!(target_os = "windows") {
+            s.push_str(":charenc=UTF-8");
+            s.push_str(&format!(
+                ":fontsdir='{}'",
+                escape_filter_path(Path::new(r"C:\\Windows\\Fonts"))
+            ));
+        }
+        s.push_str(":force_style='Alignment=2,Fontsize=28,Outline=1,Shadow=0,MarginV=40'");
+        s
     });
 
     let mut filter_complex = String::new();

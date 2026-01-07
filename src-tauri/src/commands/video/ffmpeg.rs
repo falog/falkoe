@@ -93,6 +93,28 @@ pub(crate) fn escape_filter_path(p: &Path) -> String {
     s.replace(':', "\\:").replace('\'', "\\'")
 }
 
+fn windows_drawtext_fontfile_opt() -> String {
+    if !cfg!(target_os = "windows") {
+        return String::new();
+    }
+
+    // Prefer fonts that usually exist on Windows and support Japanese.
+    let candidates = [
+        r"C:\\Windows\\Fonts\\meiryo.ttc",
+        r"C:\\Windows\\Fonts\\YuGothR.ttc",
+        r"C:\\Windows\\Fonts\\msgothic.ttc",
+    ];
+
+    for c in candidates {
+        let p = Path::new(c);
+        if p.is_file() {
+            return format!(":fontfile='{}'", escape_filter_path(p));
+        }
+    }
+
+    String::new()
+}
+
 fn build_gap_clip_args(
     out_path: &Path,
     w: u32,
@@ -103,15 +125,19 @@ fn build_gap_clip_args(
 ) -> Vec<String> {
     let dur = dur_sec.max(0.1);
     let color = format!("color=c=black:s={}x{}:d={:.3}", w.max(1), h.max(1), dur);
+
+    let font_opt = windows_drawtext_fontfile_opt();
     let vf = vec![
         format!(
-            "drawtext=textfile='{}':x=(w-text_w)/2:y=8:fontcolor=white:fontsize=26:box=1:boxcolor=black@0.35:boxborderw=8",
-            escape_filter_path(model_txt_path)
+            "drawtext=textfile='{}'{}:x=(w-text_w)/2:y=8:fontcolor=white:fontsize=26:box=1:boxcolor=black@0.35:boxborderw=8",
+            escape_filter_path(model_txt_path),
+            font_opt
         ),
         format!(
             // Center label big on black screen.
-            "drawtext=textfile='{}':x=(w-text_w)/2:y=(h-text_h)/2:fontcolor=white:fontsize=56:box=1:boxcolor=black@0.35:boxborderw=12",
-            escape_filter_path(label_txt_path)
+            "drawtext=textfile='{}'{}:x=(w-text_w)/2:y=(h-text_h)/2:fontcolor=white:fontsize=56:box=1:boxcolor=black@0.35:boxborderw=12",
+            escape_filter_path(label_txt_path),
+            font_opt
         ),
     ]
     .join(",");
