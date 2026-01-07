@@ -1,9 +1,8 @@
 use anyhow::{bail, Result};
 use std::{
     fs,
-    fs::OpenOptions,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
 };
 use tauri::{AppHandle, Manager};
 
@@ -109,7 +108,7 @@ pub(crate) fn extract_f0_with_praat(
     fs::create_dir_all(&tmp_dir)?;
 
     // Pick an output TSV path that is guaranteed to be a file path (not a directory).
-    // We also reserve it via create_new to avoid races.
+    // Do NOT pre-create the file: the Praat script will delete/recreate it.
     let mut out_path: Option<PathBuf> = None;
     for attempt in 0..64 {
         let candidate = tmp_dir.join(format!(
@@ -123,27 +122,15 @@ pub(crate) fn extract_f0_with_praat(
         ));
 
         if candidate.exists() {
-            let removed = if candidate.is_dir() {
-                fs::remove_dir_all(&candidate).is_ok()
-            } else {
-                fs::remove_file(&candidate).is_ok()
-            };
-            if !removed {
+            if candidate.is_dir() {
+                // Don't try to delete arbitrary directories; just pick another name.
                 continue;
             }
+            let _ = fs::remove_file(&candidate);
         }
 
-        match OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&candidate)
-        {
-            Ok(_f) => {
-                out_path = Some(candidate);
-                break;
-            }
-            Err(_) => continue,
-        }
+        out_path = Some(candidate);
+        break;
     }
 
     let out_path = out_path.ok_or_else(|| {
@@ -181,6 +168,10 @@ pub(crate) fn extract_f0_with_praat(
                 &format!("{pitch_floor}"),
                 &format!("{pitch_ceiling}"),
             ])
+            // Praat sometimes prints errors like "script command ... not completed".
+            // We handle errors ourselves (and fall back), so keep this quiet.
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .spawn()
         {
             Ok(c) => c,
@@ -200,7 +191,14 @@ pub(crate) fn extract_f0_with_praat(
                     if status.success() {
                         ok = true;
                     } else {
-                        errors.push(format!("- cmd={:?}\n  status={}", praat, status));
+                        let mut line = format!("- cmd={:?}\n  status={}", praat, status);
+                        #[cfg(not(target_os = "windows"))]
+                        {
+                            if status.code() == Some(255) {
+                                line.push_str("\n  hint=Praat may be a GUI build failing in headless mode. Install a console/headless Praat (praatcon) or ensure a graphical session is available.");
+                            }
+                        }
+                        errors.push(line);
                     }
                     break;
                 }
