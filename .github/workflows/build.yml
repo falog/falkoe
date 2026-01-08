@@ -60,7 +60,7 @@ jobs:
           update: true
           install: >-
             mingw-w64-x86_64-mecab
-            mingw-w64-x86_64-mecab-naist-jdic
+            mingw-w64-x86_64-mecab-ipadic
             mingw-w64-x86_64-gettext
 
       - name: Verify MeCab installation (Windows)
@@ -70,7 +70,7 @@ jobs:
           set -euo pipefail
           pacman -S --noconfirm --needed \
             mingw-w64-x86_64-mecab \
-            mingw-w64-x86_64-mecab-naist-jdic \
+            mingw-w64-x86_64-mecab-ipadic \
             mingw-w64-x86_64-gettext
           echo "[info] mecab packages:" 
           pacman -Q | grep -i mecab || true
@@ -414,20 +414,20 @@ jobs:
 
           echo "[info] bundled mecab.exe and DLLs (including libiconv/libintl)"
 
-          # 辞書ファイル（NAIST-JDIC）
+          # 辞書ファイル（IPA辞書）
           dic_dir=""
           echo "[info] searching for mecab dictionary..."
 
           if command -v mecab-config >/dev/null 2>&1; then
             dic_root="$(mecab-config --dicdir)"
             echo "[info] mecab-config --dicdir: $dic_root"
-            dic_dir="$dic_root/naist-jdic"
+            dic_dir="$dic_root/ipadic"
             echo "[info] checking: $dic_dir"
           fi
 
           if [[ -z "$dic_dir" || ! -d "$dic_dir" ]]; then
             echo "[info] searching fallback locations..."
-            for candidate in /mingw64/lib/mecab/dic/naist-jdic /mingw64/share/mecab/dic/naist-jdic; do
+            for candidate in /mingw64/lib/mecab/dic/ipadic /mingw64/share/mecab/dic/ipadic; do
               echo "[info] checking candidate: $candidate"
               if [[ -d "$candidate" ]]; then
                 dic_dir="$candidate"
@@ -438,7 +438,7 @@ jobs:
           fi
 
           if [[ -z "$dic_dir" || ! -f "$dic_dir/dicrc" ]]; then
-            echo "[error] naist-jdic not found or invalid"
+            echo "[error] ipadic not found or invalid"
             echo "[info] searched locations:"
             ls -la /mingw64/lib/mecab/dic 2>/dev/null || echo "[info] /mingw64/lib/mecab/dic not found"
             ls -la /mingw64/share/mecab/dic 2>/dev/null || echo "[info] /mingw64/share/mecab/dic not found"
@@ -463,7 +463,7 @@ jobs:
             fi
           done
 
-          echo "[info] bundled naist-jdic from $dic_dir"
+          echo "[info] bundled ipadic from $dic_dir"
 
       - name: Bundle MeCab (macOS)
         if: matrix.os == 'macos-14'
