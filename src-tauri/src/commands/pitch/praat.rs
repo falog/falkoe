@@ -191,6 +191,7 @@ pub(crate) fn extract_f0_with_praat(
                     if status.success() {
                         ok = true;
                     } else {
+                        #[cfg_attr(target_os = "windows", allow(unused_mut))]
                         let mut line = format!("- cmd={:?}\n  status={}", praat, status);
                         #[cfg(not(target_os = "windows"))]
                         {
