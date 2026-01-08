@@ -288,7 +288,7 @@ jobs:
           echo "[info] bundled WORLD helper: world_pitch"
 
       - name: Build + bundle WORLD helper (macOS)
-        if: matrix.os == 'macos-14'
+        if: startsWith(matrix.os, 'macos-')
         shell: bash
         run: |
           set -euo pipefail
@@ -377,7 +377,7 @@ jobs:
           Write-Host "[info] bundled praat.exe"
 
       - name: Bundle Praat (macOS)
-        if: matrix.os == 'macos-14'
+        if: startsWith(matrix.os, 'macos-')
         shell: bash
         run: |
           set -euo pipefail
@@ -563,7 +563,7 @@ jobs:
           echo "[info] bundled ipadic from $dic_dir"
 
       - name: Bundle MeCab (macOS)
-        if: matrix.os == 'macos-14'
+        if: startsWith(matrix.os, 'macos-')
         shell: bash
         run: |
           set -euo pipefail
