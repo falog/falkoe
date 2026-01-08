@@ -844,24 +844,82 @@ jobs:
             exit 1
           fi
 
+          echo "[info] quick resource permission diagnostics"
+          ls -la src-tauri/resources || true
+          ls -la src-tauri/resources/bin || true
+          if [[ -d src-tauri/resources/bin/Praat.app ]]; then
+            ls -la src-tauri/resources/bin/Praat.app || true
+            ls -la src-tauri/resources/bin/Praat.app/Contents || true
+            ls -la src-tauri/resources/bin/Praat.app/Contents/MacOS || true
+          fi
+          # Show any symlinks under resources/bin (symlinks can point outside and break tauri-build)
+          find src-tauri/resources/bin -maxdepth 6 -type l -print 2>/dev/null || true
+
           echo "[info] scanning for unreadable files (before chmod)"
           python3 - <<'PY'
           import os
           import sys
 
           root = "src-tauri/resources"
-          unreadable = []
-          for dirpath, dirnames, filenames in os.walk(root):
+          root_real = os.path.realpath(root)
+
+          issues = []
+
+          def add(kind: str, path: str, detail: str = ""):
+            issues.append((kind, path, detail))
+
+          def onerror(err):
+            add("walk_error", getattr(err, "filename", ""), repr(err))
+
+          for dirpath, dirnames, filenames in os.walk(root, onerror=onerror, followlinks=False):
+            # Directory access matters too (need +x to traverse).
+            if not os.access(dirpath, os.R_OK | os.X_OK):
+              add("unreadable_dir", dirpath, "need R+X")
+
             for name in filenames:
               p = os.path.join(dirpath, name)
-              if not os.access(p, os.R_OK):
-                unreadable.append(p)
+              try:
+                # lstat first so we can reason about symlinks
+                st = os.lstat(p)
+              except OSError as e:
+                add("lstat_failed", p, repr(e))
+                continue
 
-          for p in unreadable[:200]:
-            print(p)
+              if os.path.islink(p):
+                # Diagnose where the link points, but don't fail just for being outside.
+                target_real = os.path.realpath(p)
+                if not (target_real == root_real or target_real.startswith(root_real + os.sep)):
+                  add("symlink_outside_root", p, f"-> {target_real}")
+                # Try opening through the symlink to catch actual PermissionError.
+                try:
+                  with open(p, "rb") as f:
+                    f.read(1)
+                except PermissionError as e:
+                  add("unreadable_via_symlink", p, repr(e))
+                except FileNotFoundError as e:
+                  add("broken_symlink", p, repr(e))
+                except OSError as e:
+                  # Other errors are still valuable signal.
+                  add("symlink_open_failed", p, repr(e))
+                continue
 
-          if unreadable:
-            print(f"[info] unreadable files: {len(unreadable)}", file=sys.stderr)
+              # Regular file: ensure we can actually open it.
+              try:
+                with open(p, "rb") as f:
+                  f.read(1)
+              except PermissionError as e:
+                add("unreadable_file", p, repr(e))
+              except OSError as e:
+                add("open_failed", p, repr(e))
+
+          for kind, path, detail in issues[:200]:
+            if detail:
+              print(f"{kind}: {path} {detail}")
+            else:
+              print(f"{kind}: {path}")
+
+          if issues:
+            print(f"[info] pre-chmod issues found: {len(issues)} (showing up to 200)", file=sys.stderr)
           PY
 
           echo "[info] normalizing permissions under src-tauri/resources"
@@ -873,18 +931,79 @@ jobs:
           import sys
 
           root = "src-tauri/resources"
-          unreadable = []
-          for dirpath, dirnames, filenames in os.walk(root):
+          root_real = os.path.realpath(root)
+
+          issues = []
+
+          def add(kind: str, path: str, detail: str = ""):
+            issues.append((kind, path, detail))
+
+          def onerror(err):
+            add("walk_error", getattr(err, "filename", ""), repr(err))
+
+          for dirpath, dirnames, filenames in os.walk(root, onerror=onerror, followlinks=False):
+            if not os.access(dirpath, os.R_OK | os.X_OK):
+              add("unreadable_dir", dirpath, "need R+X")
+
             for name in filenames:
               p = os.path.join(dirpath, name)
-              if not os.access(p, os.R_OK):
-                unreadable.append(p)
+              try:
+                os.lstat(p)
+              except OSError as e:
+                add("lstat_failed", p, repr(e))
+                continue
 
-          if unreadable:
-            print(f"[error] still found unreadable files under {root}: {len(unreadable)}", file=sys.stderr)
-            for p in unreadable[:200]:
-              print(p)
+              if os.path.islink(p):
+                target_real = os.path.realpath(p)
+                if not (target_real == root_real or target_real.startswith(root_real + os.sep)):
+                  # Keep as diagnostic, but don't fail CI solely due to this.
+                  add("symlink_outside_root", p, f"-> {target_real}")
+                try:
+                  with open(p, "rb") as f:
+                    f.read(1)
+                except PermissionError as e:
+                  add("unreadable_via_symlink", p, repr(e))
+                except FileNotFoundError as e:
+                  add("broken_symlink", p, repr(e))
+                except OSError as e:
+                  add("symlink_open_failed", p, repr(e))
+                continue
+
+              try:
+                with open(p, "rb") as f:
+                  f.read(1)
+              except PermissionError as e:
+                add("unreadable_file", p, repr(e))
+              except OSError as e:
+                add("open_failed", p, repr(e))
+
+          # Fail only on issues that can actually cause EACCES during resource walking.
+          fail_kinds = {
+            "walk_error",
+            "unreadable_dir",
+            "lstat_failed",
+            "unreadable_file",
+            "open_failed",
+            "unreadable_via_symlink",
+            "broken_symlink",
+          }
+          fail_issues = [i for i in issues if i[0] in fail_kinds]
+
+          if fail_issues:
+            print(f"[error] still found unreadable entries under {root}: {len(fail_issues)} (showing up to 200)", file=sys.stderr)
+            for kind, path, detail in fail_issues[:200]:
+              if detail:
+                print(f"{kind}: {path} {detail}")
+              else:
+                print(f"{kind}: {path}")
             sys.exit(1)
+
+          # Non-fatal diagnostics
+          diag = [i for i in issues if i[0] == "symlink_outside_root"]
+          if diag:
+            print(f"[warn] symlinks pointing outside resources detected: {len(diag)} (showing up to 50)", file=sys.stderr)
+            for kind, path, detail in diag[:50]:
+              print(f"{kind}: {path} {detail}")
           PY
 
       # ========================================
