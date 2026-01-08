@@ -394,7 +394,7 @@ GPUを使いたい場合は、ビルド時にバックエンドを有効化し�
 
 - Debian/Ubuntu 例:
   - `sudo apt update`
-  - `sudo apt install -y cmake libvulkan-dev shaderc`
+  - `sudo apt install -y cmake libvulkan-dev glslc`
   - （実行時に必要なことが多い）`sudo apt install -y libvulkan1 vulkan-tools`
 
 ビルド例:

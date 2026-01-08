@@ -64,8 +64,14 @@ jobs:
           if [[ "${{ matrix.variant }}" == "whisper-vulkan" ]]; then
             sudo apt install -y \
               cmake \
-              libvulkan-dev \
-              shaderc
+              libvulkan-dev
+
+            # ggml-vulkan build expects `glslc` (shader compiler). Package names vary by distro.
+            sudo apt install -y glslc || \
+              sudo apt install -y shaderc || \
+              sudo apt install -y shaderc-tools
+
+            command -v glslc
           fi
 
       - name: Install tools (Windows)
@@ -80,17 +86,24 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           # Provides Vulkan headers/libs and glslc (shader compiler) used by ggml-vulkan build.
-          choco install -y vulkan-sdk
-          if (-not $env:VULKAN_SDK) {
-            # Best-effort: try to locate the SDK folder and set VULKAN_SDK for subsequent steps.
-            $sdk = Get-ChildItem -Path 'C:\VulkanSDK' -Directory -ErrorAction SilentlyContinue |
-              Sort-Object Name -Descending |
-              Select-Object -First 1
-            if ($sdk) {
-              "VULKAN_SDK=$($sdk.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-              "PATH=$($sdk.FullName)\\Bin;$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-            }
+          # NOTE: Chocolatey `vulkan-sdk` frequently breaks due to upstream URL changes.
+          # Use winget (preinstalled on windows-latest) for a more stable install.
+          winget --version
+          winget install --id KhronosGroup.VulkanSDK -e --silent --accept-package-agreements --accept-source-agreements
+
+          # Best-effort: locate the installed SDK folder and set VULKAN_SDK + PATH for subsequent steps.
+          $sdk = Get-ChildItem -Path 'C:\VulkanSDK' -Directory -ErrorAction SilentlyContinue |
+            Sort-Object Name -Descending |
+            Select-Object -First 1
+          if (-not $sdk) {
+            throw "Vulkan SDK install succeeded but C:\\VulkanSDK was not found"
           }
+
+          "VULKAN_SDK=$($sdk.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PATH=$($sdk.FullName)\\Bin;$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          # Sanity check
+          & "$($sdk.FullName)\\Bin\\glslc.exe" --version
 
       - name: Setup MSYS2 (Windows)
         if: matrix.os == 'windows-latest'
