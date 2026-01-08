@@ -119,18 +119,15 @@ fn main() {
         let _: u64 = std::fs::copy("src/bindings.rs", out.join("bindings.rs"))
             .expect("Failed to copy bindings.rs");
     } else {
-        let mut bindings = bindgen::Builder::default().header("wrapper.h");
+        let bindings = bindgen::Builder::default().header("wrapper.h");
 
         #[cfg(feature = "metal")]
-        {
-            bindings = bindings.header("whisper.cpp/ggml/include/ggml-metal.h");
-        }
+        let bindings = bindings.header("whisper.cpp/ggml/include/ggml-metal.h");
+
         #[cfg(feature = "vulkan")]
-        {
-            bindings = bindings
-                .header("whisper.cpp/ggml/include/ggml-vulkan.h")
-                .clang_arg("-DGGML_USE_VULKAN=1");
-        }
+        let bindings = bindings
+            .header("whisper.cpp/ggml/include/ggml-vulkan.h")
+            .clang_arg("-DGGML_USE_VULKAN=1");
 
         let bindings = bindings
             .clang_arg("-I./whisper.cpp/")

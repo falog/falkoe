@@ -6,6 +6,12 @@ use std::{
 };
 use tauri::{AppHandle, Manager};
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 fn resolve_bundled_tool(app: &AppHandle, base_name: &str) -> Option<PathBuf> {
     let resource_dir = app.path().resource_dir().ok()?;
     let exe_name = if cfg!(target_os = "windows") {
@@ -123,7 +129,14 @@ pub(crate) fn extract_f0_with_world(
 
     let mut last_err: Option<anyhow::Error> = None;
     for cmd in cmd_candidates {
-        let out = Command::new(&cmd)
+        let mut command = Command::new(&cmd);
+        #[cfg(target_os = "windows")]
+        {
+            // Prevent a console window from popping up when launching helper binaries.
+            command.creation_flags(CREATE_NO_WINDOW);
+        }
+
+        let out = command
             .args([
                 wav_path
                     .to_str()
