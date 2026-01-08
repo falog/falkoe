@@ -845,18 +845,47 @@ jobs:
           fi
 
           echo "[info] scanning for unreadable files (before chmod)"
-          find src-tauri/resources -not -readable -print | head -n 200 || true
+          python3 - <<'PY'
+          import os
+          import sys
+
+          root = "src-tauri/resources"
+          unreadable = []
+          for dirpath, dirnames, filenames in os.walk(root):
+            for name in filenames:
+              p = os.path.join(dirpath, name)
+              if not os.access(p, os.R_OK):
+                unreadable.append(p)
+
+          for p in unreadable[:200]:
+            print(p)
+
+          if unreadable:
+            print(f"[info] unreadable files: {len(unreadable)}", file=sys.stderr)
+          PY
 
           echo "[info] normalizing permissions under src-tauri/resources"
           chmod -R a+rX src-tauri/resources || true
 
           echo "[info] scanning for unreadable files (after chmod)"
-          unreadable_count="$(find src-tauri/resources -not -readable -print | wc -l | tr -d ' ')"
-          if [[ "$unreadable_count" != "0" ]]; then
-            echo "[error] still found unreadable files under src-tauri/resources: $unreadable_count"
-            find src-tauri/resources -not -readable -print | head -n 200
-            exit 1
-          fi
+          python3 - <<'PY'
+          import os
+          import sys
+
+          root = "src-tauri/resources"
+          unreadable = []
+          for dirpath, dirnames, filenames in os.walk(root):
+            for name in filenames:
+              p = os.path.join(dirpath, name)
+              if not os.access(p, os.R_OK):
+                unreadable.append(p)
+
+          if unreadable:
+            print(f"[error] still found unreadable files under {root}: {len(unreadable)}", file=sys.stderr)
+            for p in unreadable[:200]:
+              print(p)
+            sys.exit(1)
+          PY
 
       # ========================================
       # Build
