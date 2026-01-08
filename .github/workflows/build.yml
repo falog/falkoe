@@ -715,13 +715,47 @@ jobs:
       # Upload artifacts
       # ========================================
 
-      - name: Upload artifacts (main branch)
+      # upload-artifact occasionally fails with transient network errors (e.g. ECONNRESET).
+      # Retry a few times before failing the job.
+      - name: Upload artifacts (main branch) (attempt 1)
+        id: upload_artifacts_1
         if: github.ref == 'refs/heads/main'
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: falkoe-${{ matrix.os }}
+          overwrite: true
           path: |
             src-tauri/target/release/bundle
+
+      - name: Upload artifacts (main branch) (attempt 2)
+        id: upload_artifacts_2
+        if: github.ref == 'refs/heads/main' && steps.upload_artifacts_1.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: falkoe-${{ matrix.os }}
+          overwrite: true
+          path: |
+            src-tauri/target/release/bundle
+
+      - name: Upload artifacts (main branch) (attempt 3)
+        id: upload_artifacts_3
+        if: github.ref == 'refs/heads/main' && steps.upload_artifacts_2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: falkoe-${{ matrix.os }}
+          overwrite: true
+          path: |
+            src-tauri/target/release/bundle
+
+      - name: Fail if artifact upload failed
+        if: github.ref == 'refs/heads/main' && steps.upload_artifacts_3.outcome == 'failure'
+        shell: bash
+        run: |
+          echo "[error] upload-artifact failed after 3 attempts"
+          exit 1
 
       - name: Upload to GitHub Release (tags)
         if: startsWith(github.ref, 'refs/tags/')
