@@ -32,6 +32,10 @@ jobs:
           - os: ubuntu-latest
             variant: whisper-vulkan
 
+          # Optional GPU build (Windows only): whisper.cpp Vulkan backend
+          - os: windows-latest
+            variant: whisper-vulkan
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -69,6 +73,24 @@ jobs:
         shell: powershell
         run: |
           choco install -y ffmpeg
+
+      - name: Install Vulkan SDK (Windows, whisper-vulkan)
+        if: matrix.os == 'windows-latest' && matrix.variant == 'whisper-vulkan'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Provides Vulkan headers/libs and glslc (shader compiler) used by ggml-vulkan build.
+          choco install -y vulkan-sdk
+          if (-not $env:VULKAN_SDK) {
+            # Best-effort: try to locate the SDK folder and set VULKAN_SDK for subsequent steps.
+            $sdk = Get-ChildItem -Path 'C:\VulkanSDK' -Directory -ErrorAction SilentlyContinue |
+              Sort-Object Name -Descending |
+              Select-Object -First 1
+            if ($sdk) {
+              "VULKAN_SDK=$($sdk.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+              "PATH=$($sdk.FullName)\\Bin;$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            }
+          }
 
       - name: Setup MSYS2 (Windows)
         if: matrix.os == 'windows-latest'
@@ -733,6 +755,10 @@ jobs:
 
       - name: Build Tauri app (Linux Vulkan)
         if: matrix.os == 'ubuntu-latest' && matrix.variant == 'whisper-vulkan'
+        run: pnpm tauri build -- --features whisper-vulkan
+
+      - name: Build Tauri app (Windows Vulkan)
+        if: matrix.os == 'windows-latest' && matrix.variant == 'whisper-vulkan'
         run: pnpm tauri build -- --features whisper-vulkan
 
       - name: Build Tauri app (macOS)
