@@ -776,7 +776,25 @@ jobs:
 
       - name: Build Tauri app (Windows Vulkan)
         if: matrix.os == 'windows-latest' && matrix.variant == 'whisper-vulkan'
-        run: pnpm tauri build -- --features whisper-vulkan
+        shell: powershell
+        env:
+          # Work around MSBuild/CMake failures caused by very deep paths.
+          # (e.g. FTK1011 unable to create .tlog files under CMake TryCompile dirs)
+          CARGO_TARGET_DIR: D:\t
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force 'D:\t' | Out-Null
+
+          pnpm tauri build -- --features whisper-vulkan
+
+          # Copy bundles back to the default location expected by later steps.
+          $src = 'D:\t\release\bundle'
+          $dst = 'src-tauri\target\release\bundle'
+          if (-not (Test-Path $src)) {
+            throw "Expected bundle directory not found: $src"
+          }
+          New-Item -ItemType Directory -Force $dst | Out-Null
+          Copy-Item -Recurse -Force "$src\*" $dst
 
       # ========================================
       # Label bundle filenames (GPU builds)
