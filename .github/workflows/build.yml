@@ -406,6 +406,15 @@ jobs:
           fi
           hdiutil detach "$mnt" -quiet
 
+          # Tauri (tauri-build) walks bundled resources during build.
+          # Ensure everything we copied is readable to avoid EACCES (os error 13).
+          if [[ -d src-tauri/resources/bin/Praat.app ]]; then
+            chmod -R a+rX src-tauri/resources/bin/Praat.app || true
+          fi
+          if [[ -f src-tauri/resources/bin/praat.bin ]]; then
+            chmod a+rX src-tauri/resources/bin/praat.bin || true
+          fi
+
           # Keep a stable entrypoint at src-tauri/resources/bin/praat
           cat > src-tauri/resources/bin/praat <<'SH'
           #!/usr/bin/env bash
