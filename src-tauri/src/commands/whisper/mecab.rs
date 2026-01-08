@@ -3,6 +3,12 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use tauri::{AppHandle, Manager};
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 fn for_external_tool_path(p: &Path) -> PathBuf {
     // Some Windows CLI tools (notably MSYS2 builds) don't reliably accept verbatim paths (\\?\...).
     // Strip the prefix when present.
@@ -270,6 +276,13 @@ fn run_mecab(text: &str, rt: &MecabRuntime, app: Option<&AppHandle>) -> Option<V
 
     // Fallback: wakati surfaces only.
     let mut cmd = Command::new(&rt.cmd);
+
+    // Avoid spawning a black console window on Windows.
+    #[cfg(target_os = "windows")]
+    {
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
     cmd.arg("-O").arg("wakati");
     if let Some(dicdir) = &rt.dicdir {
         // Only override mecabrc when we also control the dictionary dir.
@@ -347,6 +360,13 @@ fn run_mecab(text: &str, rt: &MecabRuntime, app: Option<&AppHandle>) -> Option<V
 
 fn run_mecab_with_pos(text: &str, rt: &MecabRuntime, app: Option<&AppHandle>) -> Option<Vec<MecabToken>> {
     let mut cmd = Command::new(&rt.cmd);
+
+    // Avoid spawning a black console window on Windows.
+    #[cfg(target_os = "windows")]
+    {
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
     if let Some(dicdir) = &rt.dicdir {
         // Only override mecabrc when we also control the dictionary dir.
         if let Some(app) = app {

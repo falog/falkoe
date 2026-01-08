@@ -6,6 +6,12 @@ use std::{
 };
 use tauri::{AppHandle, Manager};
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 fn resolve_bundled_tool(app: &AppHandle, base_name: &str) -> Option<PathBuf> {
     let resource_dir = app.path().resource_dir().ok()?;
     let exe_name = if cfg!(target_os = "windows") {
@@ -158,22 +164,28 @@ pub(crate) fn extract_f0_with_praat(
     let mut errors: Vec<String> = Vec::new();
     let mut ok = false;
     for praat in resolve_praat_cmd_candidates(app) {
-        let mut child = match Command::new(&praat)
-            .args([
-                "--run",
-                &script_s,
-                &wav_s,
-                &out_s,
-                &format!("{time_step}"),
-                &format!("{pitch_floor}"),
-                &format!("{pitch_ceiling}"),
-            ])
-            // Praat sometimes prints errors like "script command ... not completed".
-            // We handle errors ourselves (and fall back), so keep this quiet.
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
+        let mut cmd = Command::new(&praat);
+        cmd.args([
+            "--run",
+            &script_s,
+            &wav_s,
+            &out_s,
+            &format!("{time_step}"),
+            &format!("{pitch_floor}"),
+            &format!("{pitch_ceiling}"),
+        ])
+        // Praat sometimes prints errors like "script command ... not completed".
+        // We handle errors ourselves (and fall back), so keep this quiet.
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+
+        // Avoid spawning a black console window on Windows.
+        #[cfg(target_os = "windows")]
         {
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+
+        let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
                 errors.push(format!("- cmd={:?}\n  error={}", praat, e));
