@@ -106,8 +106,9 @@ fn mecab_candidates() -> [&'static str; 3] {
 }
 
 fn mecab_runtime_candidates(app: Option<&AppHandle>) -> Vec<MecabRuntime> {
-    let dicdir = env_mecab_dicdir()
-        .or_else(|| app.and_then(resolve_bundled_dicdir));
+    let env_dicdir = env_mecab_dicdir();
+    let bundled_dicdir = app.and_then(resolve_bundled_dicdir);
+    let dicdir = env_dicdir.clone().or_else(|| bundled_dicdir.clone());
 
     let mut out: Vec<MecabRuntime> = Vec::new();
 
@@ -120,12 +121,17 @@ fn mecab_runtime_candidates(app: Option<&AppHandle>) -> Vec<MecabRuntime> {
     }
 
     // 2) Bundled binary under resource_dir (preferred for distribution builds)
+    // BUT: skip bundled mecab.exe if we have no bundled dictionary.
+    // This avoids Windows distributions that bundle mecab.exe but not ipadic,
+    // which would fail trying to load a non-existent dicdir.
     if let Some(app) = app {
         if let Some(p) = resolve_bundled_tool(app, "mecab") {
-            out.push(MecabRuntime {
-                cmd: p,
-                dicdir: dicdir.clone(),
-            });
+            if bundled_dicdir.is_some() || env_dicdir.is_some() {
+                out.push(MecabRuntime {
+                    cmd: p,
+                    dicdir: dicdir.clone(),
+                });
+            }
         }
     }
 
