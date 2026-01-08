@@ -17,10 +17,20 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest
-          - windows-latest
-          - macos-14
+        include:
+          # Default CPU builds
+          - os: ubuntu-latest
+            variant: default
+          - os: windows-latest
+            variant: default
+          - os: macos-14
+            variant: default
+
+          # Optional GPU build (Linux only): whisper.cpp Vulkan backend
+          # Keep this as a separate artifact (not uploaded to GitHub Releases by default)
+          # to avoid filename collisions with the default packages.
+          - os: ubuntu-latest
+            variant: whisper-vulkan
 
     steps:
       - name: Checkout
@@ -45,6 +55,14 @@ jobs:
             ffmpeg \
             mecab \
             mecab-ipadic-utf8
+
+          # Optional: Vulkan backend build deps for whisper.cpp
+          if [[ "${{ matrix.variant }}" == "whisper-vulkan" ]]; then
+            sudo apt install -y \
+              cmake \
+              libvulkan-dev \
+              shaderc
+          fi
 
       - name: Install tools (Windows)
         if: matrix.os == 'windows-latest'
@@ -710,11 +728,15 @@ jobs:
       # ========================================
 
       - name: Build Tauri app (Linux/Windows)
-        if: matrix.os != 'macos-14'
+        if: matrix.os != 'macos-14' && matrix.variant == 'default'
         run: pnpm tauri build
 
+      - name: Build Tauri app (Linux Vulkan)
+        if: matrix.os == 'ubuntu-latest' && matrix.variant == 'whisper-vulkan'
+        run: pnpm tauri build -- --features whisper-vulkan
+
       - name: Build Tauri app (macOS)
-        if: matrix.os == 'macos-14'
+        if: matrix.os == 'macos-14' && matrix.variant == 'default'
         env:
           MACOSX_DEPLOYMENT_TARGET: "11.0"
           CMAKE_OSX_DEPLOYMENT_TARGET: "11.0"
@@ -735,7 +757,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: falkoe-${{ matrix.os }}
+          name: falkoe-${{ matrix.os }}-${{ matrix.variant }}
           overwrite: true
           path: |
             src-tauri/target/release/bundle
@@ -746,7 +768,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: falkoe-${{ matrix.os }}
+          name: falkoe-${{ matrix.os }}-${{ matrix.variant }}
           overwrite: true
           path: |
             src-tauri/target/release/bundle
@@ -757,7 +779,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: falkoe-${{ matrix.os }}
+          name: falkoe-${{ matrix.os }}-${{ matrix.variant }}
           overwrite: true
           path: |
             src-tauri/target/release/bundle
@@ -770,7 +792,7 @@ jobs:
           exit 1
 
       - name: Upload to GitHub Release (tags)
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') && matrix.variant == 'default'
         uses: softprops/action-gh-release@v2
         with:
           files: |
