@@ -14,7 +14,7 @@ fn whisper_lang_arg_to_code(lang: Option<&str>) -> Option<&'static str> {
         Some("por") | Some("pt") => Some("pt"),
         Some("rus") | Some("ru") => Some("ru"),
         Some("kor") | Some("ko") => Some("ko"),
-        Some("zho") | Some("zh") => Some("zh"),
+        Some("zho") | Some("zh") | Some("cmn") | Some("yue") => Some("zh"),
         Some("ara") | Some("ar") => Some("ar"),
         Some("hin") | Some("hi") => Some("hi"),
         Some("tur") | Some("tr") => Some("tr"),

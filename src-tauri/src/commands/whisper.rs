@@ -136,7 +136,8 @@ fn whisper_language(lang: &str) -> Option<&'static str> {
         "por" | "pt" => Some("pt"),
         "rus" | "ru" => Some("ru"),
         "kor" | "ko" => Some("ko"),
-        "zho" | "zh" => Some("zh"),
+        // Chinese: UI may use ISO 639-3-ish variants (Tatoeba) like cmn/yue.
+        "zho" | "zh" | "cmn" | "yue" => Some("zh"),
         "ara" | "ar" => Some("ar"),
         "hin" | "hi" => Some("hi"),
         "tur" | "tr" => Some("tr"),
