@@ -26,7 +26,8 @@ const LANG_OPTIONS = [
   { value: "por", label: "Portuguese" },
   { value: "rus", label: "Russian" },
   { value: "kor", label: "Korean" },
-  { value: "zho", label: "Chinese" },
+  { value: "cmn", label: "Chinese (Mandarin)" },
+  { value: "yue", label: "Chinese (Cantonese)" },
   { value: "ara", label: "Arabic" },
   { value: "hin", label: "Hindi" },
   { value: "tur", label: "Turkish" },
@@ -221,7 +222,7 @@ async function fetchExamples(
     `&q=${encodeURIComponent(word)}` +
     `&word_count=${encodeURIComponent(wordcount)}` +
     `&has_audio=yes` +
-    `&sort=words` +
+    `&sort=relevance` +
     (showTransLang
       ? `&showtrans:lang=${encodeURIComponent(showTransLang)}` +
         `&showtrans:is_direct=yes`
