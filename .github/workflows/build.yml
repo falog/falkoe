@@ -15,8 +15,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       # Human-friendly label for distribution artifacts.
-      # default = CPU build, whisper-vulkan = GPU build (Vulkan backend)
-      VARIANT_LABEL: ${{ matrix.variant == 'default' && 'cpu' || 'gpu-vulkan' }}
+      # Keep this in the matrix to avoid fragile expression logic.
+      VARIANT_LABEL: ${{ matrix.label }}
 
     strategy:
       fail-fast: false
@@ -25,20 +25,30 @@ jobs:
           # Default CPU builds
           - os: ubuntu-latest
             variant: default
+            label: cpu
           - os: windows-latest
             variant: default
+            label: cpu
           - os: macos-14
             variant: default
+            label: cpu
+
+          # Optional GPU build (macOS only): whisper.cpp Metal backend
+          - os: macos-14
+            variant: whisper-metal
+            label: gpu-metal
 
           # Optional GPU build (Linux only): whisper.cpp Vulkan backend
           # Keep this as a separate artifact (not uploaded to GitHub Releases by default)
           # to avoid filename collisions with the default packages.
           - os: ubuntu-latest
             variant: whisper-vulkan
+            label: gpu-vulkan
 
           # Optional GPU build (Windows only): whisper.cpp Vulkan backend
           - os: windows-latest
             variant: whisper-vulkan
+            label: gpu-vulkan
 
     steps:
       - name: Checkout
@@ -850,8 +860,18 @@ jobs:
           WHISPER_NO_OPENMP: "1"
         run: pnpm tauri build -- --features no-openmp
 
+      - name: Build Tauri app (macOS Metal)
+        if: matrix.os == 'macos-14' && matrix.variant == 'whisper-metal'
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+          CMAKE_OSX_DEPLOYMENT_TARGET: "11.0"
+          CMAKE_ARGS: "-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0"
+          GGML_NO_OPENMP: "1"
+          WHISPER_NO_OPENMP: "1"
+        run: pnpm tauri build -- --features whisper-metal,no-openmp
+
       - name: Label bundle filenames (macOS)
-        if: matrix.os == 'macos-14' && matrix.variant == 'default'
+        if: matrix.os == 'macos-14' && (matrix.variant == 'default' || matrix.variant == 'whisper-metal')
         shell: bash
         run: |
           set -euo pipefail
