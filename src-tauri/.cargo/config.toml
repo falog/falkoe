@@ -7,6 +7,16 @@ rustflags = [
     "-C", "link-arg=dynamic_lookup",
 ]
 
+[target.x86_64-pc-windows-msvc.env]
+# Avoid shipping binaries that require AVX2/FMA/F16C.
+# Some users have older CPUs (e.g. Sandy Bridge) that support AVX but not AVX2,
+# and will crash with STATUS_ILLEGAL_INSTRUCTION (0xC000001D).
+# Force MSVC to compile C/C++ code with AVX (not AVX2).
+CMAKE_C_FLAGS = "/arch:AVX"
+CMAKE_CXX_FLAGS = "/arch:AVX"
+CMAKE_C_FLAGS_RELEASE = "/arch:AVX"
+CMAKE_CXX_FLAGS_RELEASE = "/arch:AVX"
+
 [env]
 # macOS ARM64 でのビルド時の環境変数
 WHISPER_NO_I8MM = "1"
