@@ -17,6 +17,11 @@ import {
 } from "../../components/PitchAlignmentChart";
 import type { Recording } from "../../types/recording";
 import type { SourceKind } from "../../types/speech";
+import type { WordPitch } from "../../types/pitch";
+
+type AccentOut = {
+  words: WordPitch[];
+};
 
 const makeSafeVideoBaseName = (text: string) => {
   const raw = (text ?? "").trim();
@@ -69,6 +74,17 @@ const waitForJsonFile = async <T>(
     }
   }
   return null;
+};
+
+const loadAccentWordsIfAny = async (accentPath: string) => {
+  try {
+    if (!(await exists(accentPath))) return null;
+    const txt = await readTextFile(accentPath);
+    const parsed = JSON.parse(txt) as AccentOut;
+    return parsed.words ?? null;
+  } catch {
+    return null;
+  }
 };
 
 const pickFirstExisting = async (paths: string[]) => {
@@ -288,6 +304,12 @@ export function useExportVideo(params: {
         sourceKind === "uploaded" ? "uploaded.pitch.json" : "model.pitch.json"
       );
 
+      const refAccent = await join(
+        sentenceDir,
+        refSubdir,
+        sourceKind === "uploaded" ? "uploaded.accent.json" : "model.accent.json"
+      );
+
       const ensureReferenceAnalyzed = async () => {
         // Simulate pressing the "模範音声を音声認識する" button:
         // reuse the same handler so UI state (spinner etc.) behaves consistently.
@@ -345,6 +367,9 @@ export function useExportVideo(params: {
       }
 
       const { pitchJson: refPitchAnalysis } = await ensureReferenceAnalyzed();
+      const refAccentWords = isJapanese(sentenceLang)
+        ? await loadAccentWordsIfAny(refAccent)
+        : null;
 
       const refTranscriptPicked0 = await pickFirstExisting([
         refTranscript,
@@ -358,6 +383,7 @@ export function useExportVideo(params: {
 
       const refSvgRes = buildPitchAlignmentChartSvg({
         analysis: refPitchAnalysis,
+        words: refAccentWords ?? undefined,
         height: 320,
         showLabels: isJapanese(sentenceLang) && sourceKind !== "uploaded",
         token,
@@ -405,6 +431,7 @@ export function useExportVideo(params: {
       for (let i = 0; i < doneRecs.length; i++) {
         const rec = doneRecs[i];
         const pitchPath = rec.path.replace(/\.wav$/i, ".pitch.json");
+        const accentPath = rec.path.replace(/\.wav$/i, ".accent.json");
         let pitchAnalysis: any;
         try {
           pitchAnalysis = JSON.parse(await readTextFile(pitchPath));
@@ -419,8 +446,13 @@ export function useExportVideo(params: {
           );
         }
 
+        const accentWords = isJapanese(sentenceLang)
+          ? await loadAccentWordsIfAny(accentPath)
+          : null;
+
         const svgRes = buildPitchAlignmentChartSvg({
           analysis: pitchAnalysis,
+          words: accentWords ?? undefined,
           height: 320,
           showLabels: isJapanese(sentenceLang),
           token,
