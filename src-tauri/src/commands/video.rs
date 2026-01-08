@@ -106,7 +106,10 @@ pub fn export_practice_video(
             .join("falkoe")
             .join("tmp")
             .join("video")
-            .join(format!("{out_base}-{run_id}"));
+            // Important: keep this path short and free of user-provided text.
+            // On Windows, spaces/special characters/very long paths can cause ffmpeg/libass
+            // (subtitles filter) to fail to open .srt files.
+            .join(format!("run-{run_id}"));
         fs::create_dir_all(&tmp_dir)
             .with_context(|| format!("failed to create tmp_dir: {tmp_dir:?}"))?;
 
