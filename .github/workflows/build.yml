@@ -923,7 +923,9 @@ jobs:
           PY
 
           echo "[info] normalizing permissions under src-tauri/resources"
-          chmod -R a+rX src-tauri/resources || true
+          # Some bundled assets can end up copied as read-only.
+          # If the build runs multiple times in the same workspace, overwrites can hit EACCES.
+          chmod -R u+rwX,go+rX src-tauri/resources || true
 
           echo "[info] scanning for unreadable files (after chmod)"
           python3 - <<'PY'
@@ -1010,8 +1012,8 @@ jobs:
       # Build
       # ========================================
 
-      - name: Build Tauri app (Linux/Windows)
-        if: matrix.os != 'macos-14' && matrix.variant == 'default'
+      - name: Build Tauri app (Linux/Windows CPU)
+        if: ${{ !startsWith(matrix.os, 'macos-') && matrix.variant == 'default' }}
         run: pnpm tauri build
 
       - name: Build Tauri app (Linux Vulkan)
