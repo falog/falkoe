@@ -15,6 +15,23 @@ type AccentOut = {
   words: WordPitch[];
 };
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const waitForAccentWords = async (path: string, timeoutMs: number) => {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const txt = await readTextFile(path);
+      const parsed = JSON.parse(txt) as AccentOut;
+      return parsed.words ?? null;
+    } catch {
+      // file may not exist yet or may be mid-write; retry
+      await sleep(200);
+    }
+  }
+  return null;
+};
+
 type Props = {
   isTranscribing: boolean;
   modelText: string | null;
@@ -176,21 +193,16 @@ export function ModelTranscriptSection({
 
           if (isJapanese) {
             // Prefer accent overlay from model.accent.json if present (Japanese only).
-            try {
-              const accentPath = await join(
-                dir,
-                "falkoe",
-                "sentences",
-                sentenceHash,
-                cacheSubdir,
-                `${cacheStem}.accent.json`
-              );
-              const accentCached = await readTextFile(accentPath);
-              const accentParsed = JSON.parse(accentCached) as AccentOut;
-              if (!cancelled) setAccentWords(accentParsed.words ?? null);
-            } catch {
-              // ignore; fall back to pitch.words/segments
-            }
+            const accentPath = await join(
+              dir,
+              "falkoe",
+              "sentences",
+              sentenceHash,
+              cacheSubdir,
+              `${cacheStem}.accent.json`
+            );
+            const words = await waitForAccentWords(accentPath, 5000);
+            if (!cancelled) setAccentWords(words);
           }
           return;
         } catch {
@@ -206,21 +218,16 @@ export function ModelTranscriptSection({
 
         if (isJapanese) {
           // If available, load accent overlay generated during transcription (Japanese only).
-          try {
-            const accentPath = await join(
-              dir,
-              "falkoe",
-              "sentences",
-              sentenceHash,
-              cacheSubdir,
-              `${cacheStem}.accent.json`
-            );
-            const accentCached = await readTextFile(accentPath);
-            const accentParsed = JSON.parse(accentCached) as AccentOut;
-            if (!cancelled) setAccentWords(accentParsed.words ?? null);
-          } catch {
-            // ignore
-          }
+          const accentPath = await join(
+            dir,
+            "falkoe",
+            "sentences",
+            sentenceHash,
+            cacheSubdir,
+            `${cacheStem}.accent.json`
+          );
+          const words = await waitForAccentWords(accentPath, 5000);
+          if (!cancelled) setAccentWords(words);
         }
       } catch (e) {
         if (!cancelled) setPitchError(String(e));

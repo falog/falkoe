@@ -10,6 +10,22 @@ type AccentOut = {
   words: WordPitch[];
 };
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const waitForAccentWords = async (path: string, timeoutMs: number) => {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const txt = await readTextFile(path);
+      const parsed = JSON.parse(txt) as AccentOut;
+      return parsed.words ?? null;
+    } catch {
+      await sleep(200);
+    }
+  }
+  return null;
+};
+
 type Props = {
   rec: Recording;
   index: number;
@@ -94,9 +110,8 @@ export default function RecordingItem({
           // Prefer accent overlay generated during transcription (Japanese only).
           try {
             const accentPath = rec.path.replace(/\.wav$/i, ".accent.json");
-            const accentCached = await readTextFile(accentPath);
-            const accentParsed = JSON.parse(accentCached) as AccentOut;
-            setAccentWords(accentParsed.words ?? null);
+            const words = await waitForAccentWords(accentPath, 5000);
+            setAccentWords(words);
           } catch {
             // ignore; fall back to pitch.words/segments
           }
@@ -116,9 +131,8 @@ export default function RecordingItem({
         // If available, load accent overlay generated during transcription (Japanese only).
         try {
           const accentPath = rec.path.replace(/\.wav$/i, ".accent.json");
-          const accentCached = await readTextFile(accentPath);
-          const accentParsed = JSON.parse(accentCached) as AccentOut;
-          setAccentWords(accentParsed.words ?? null);
+          const words = await waitForAccentWords(accentPath, 5000);
+          setAccentWords(words);
         } catch {
           // ignore
         }
