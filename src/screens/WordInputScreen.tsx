@@ -699,7 +699,7 @@ const WordInputScreen = ({
         onChange={setLang}
         showSearch={{ filterOption: filterLangOption }}
         options={LANG_OPTIONS}
-        style={{ width: 160 }}
+        style={{ width: 200 }}
       />
       翻訳先（Translate to）：
       <Select
