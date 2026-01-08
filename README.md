@@ -147,6 +147,48 @@ Your voice might help someone else's learning journey.
 
 ---
 
+## 💻 動作要件 / System Requirements (CPU)
+
+### Whisper（音声認識）について
+
+Falkoe の音声認識は `whisper.cpp/ggml` ベースです。Windows の x86_64 配布版では **AVX 命令対応CPUが必須**です。
+
+- ✅ **最低要件（Windows x86_64）**: **AVX 対応CPU**
+- ⚡ **推奨（高速）**: **AVX2 対応CPU**（対応していれば自動でより高速な実装が選ばれます）
+
+AVX が無い CPU だと、起動直後に Whisper が `Illegal instruction` 相当で落ちることがあります（例: `0xC000001D`）。
+
+目安（Intel/AMD）:
+
+- Intel: **第2世代 Core (Sandy Bridge) 以降**
+- AMD: **Bulldozer 世代 (FX) 以降**
+
+確認方法（例）:
+
+- Windows: Sysinternals の `coreinfo.exe -f` を実行し、`AVX` が `*` になっているか確認
+- Linux: `lscpu | grep -i avx`
+
+---
+
+### About Whisper (speech recognition)
+
+Falkoe uses a `whisper.cpp/ggml` backend. On **Windows x86_64 distribution builds**, a CPU with **AVX support is required**.
+
+- ✅ **Minimum (Windows x86_64)**: CPU with **AVX**
+- ⚡ **Recommended (faster)**: **AVX2** (when available, a faster backend is selected automatically at runtime)
+
+If your CPU does not support AVX, Whisper may crash immediately with an “Illegal instruction” type error (e.g. `0xC000001D`).
+
+Rough guidance:
+
+- Intel: **2nd-gen Core (Sandy Bridge) or later**
+- AMD: **Bulldozer-era (FX) or later**
+
+How to check (examples):
+
+- Windows: run Sysinternals `coreinfo.exe -f` and look for `AVX` marked with `*`
+- Linux: `lscpu | grep -i avx`
+
 ## 📦 Bundled Tools (ffmpeg) / 同梱ツール(ffmpeg)
 
 Falkoe は音声変換(mp3→wavなど)のために `ffmpeg` を使います。

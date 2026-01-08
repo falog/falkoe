@@ -9,6 +9,116 @@ use tauri::Manager;
 static LOG_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 static LOG_PATH: OnceLock<Option<std::path::PathBuf>> = OnceLock::new();
 
+const DEFAULT_ROTATE_MAX_BYTES: u64 = 5 * 1024 * 1024; // 5 MiB
+const DEFAULT_ROTATE_KEEP_FILES: usize = 10;
+
+fn env_u64(name: &str) -> Option<u64> {
+    std::env::var(name)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .and_then(|s| s.parse::<u64>().ok())
+}
+
+fn rotate_max_bytes() -> u64 {
+    env_u64("FALKOE_LOG_ROTATE_MAX_BYTES").unwrap_or(DEFAULT_ROTATE_MAX_BYTES)
+}
+
+fn rotate_keep_files() -> usize {
+    env_u64("FALKOE_LOG_ROTATE_KEEP_FILES")
+        .and_then(|v| usize::try_from(v).ok())
+        .unwrap_or(DEFAULT_ROTATE_KEEP_FILES)
+}
+
+fn rotated_log_path(base: &std::path::Path, ts_millis: u128) -> std::path::PathBuf {
+    let parent = base.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let stem = base
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("backend");
+    let ext = base.extension().and_then(|s| s.to_str());
+
+    let name = match ext {
+        Some(ext) if !ext.is_empty() => format!("{stem}.{ts_millis}.{ext}"),
+        _ => format!("{stem}.{ts_millis}"),
+    };
+    parent.join(name)
+}
+
+fn cleanup_rotated_logs(base: &std::path::Path, keep: usize) {
+    if keep == 0 {
+        return;
+    }
+    let Some(parent) = base.parent() else {
+        return;
+    };
+    let Some(stem) = base.file_stem().and_then(|s| s.to_str()).map(|s| s.to_string()) else {
+        return;
+    };
+    let ext = base.extension().and_then(|s| s.to_str()).map(|s| s.to_string());
+
+    let read_dir = match std::fs::read_dir(parent) {
+        Ok(rd) => rd,
+        Err(_) => return,
+    };
+
+    let mut candidates: Vec<(SystemTime, std::path::PathBuf)> = Vec::new();
+    for entry in read_dir.flatten() {
+        let path = entry.path();
+        if path == base {
+            continue;
+        }
+        let file_name = match path.file_name().and_then(|s| s.to_str()) {
+            Some(s) => s,
+            None => continue,
+        };
+
+        // Matches: {stem}.{ts}.{ext} (same directory)
+        // Example: backend.1730000000000.log
+        if let Some(ext) = &ext {
+            let prefix = format!("{stem}.");
+            let suffix = format!(".{ext}");
+            if !(file_name.starts_with(&prefix) && file_name.ends_with(&suffix)) {
+                continue;
+            }
+        } else {
+            let prefix = format!("{stem}.");
+            if !file_name.starts_with(&prefix) {
+                continue;
+            }
+        }
+
+        let modified = entry
+            .metadata()
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .unwrap_or(UNIX_EPOCH);
+        candidates.push((modified, path));
+    }
+
+    // Newest first; delete older beyond keep.
+    candidates.sort_by(|a, b| b.0.cmp(&a.0));
+    for (_t, p) in candidates.into_iter().skip(keep) {
+        let _ = std::fs::remove_file(p);
+    }
+}
+
+fn maybe_rotate_log_file(path: &std::path::PathBuf, ts_millis: u128) {
+    let max_bytes = rotate_max_bytes();
+    if max_bytes == 0 {
+        return;
+    }
+    let current_len = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    if current_len < max_bytes {
+        return;
+    }
+
+    let rotated = rotated_log_path(path, ts_millis);
+    if std::fs::rename(path, &rotated).is_ok() {
+        cleanup_rotated_logs(path, rotate_keep_files());
+    }
+}
+
 fn env_log_dir() -> Option<std::path::PathBuf> {
     std::env::var("FALKOE_LOG_DIR")
         .ok()
@@ -85,6 +195,12 @@ pub(crate) fn log_line(app: &AppHandle, line: impl AsRef<str>) {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0);
+
+    // Size-based rotation: if backend.log grows too large, rename it and start a new file.
+    // Defaults are intentionally modest; override via env vars if needed:
+    // - FALKOE_LOG_ROTATE_MAX_BYTES (u64)
+    // - FALKOE_LOG_ROTATE_KEEP_FILES (usize)
+    maybe_rotate_log_file(&path, ts);
 
     if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&path) {
         let _ = writeln!(f, "[{ts}] {}", line.as_ref());
