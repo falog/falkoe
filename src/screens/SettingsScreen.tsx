@@ -163,7 +163,7 @@ export default function SettingsScreen({
           変更後、必要ならモデルをダウンロードします（初回は時間がかかります）。
         </Typography.Text>
 
-        <Space direction="vertical" style={{ width: "100%" }}>
+        <Space orientation="vertical" style={{ width: "100%" }}>
           <Typography.Text type="secondary">状態: {status}</Typography.Text>
           {status === "downloading" && typeof progress === "number" && (
             <Progress percent={progress} size="small" />

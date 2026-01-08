@@ -797,11 +797,11 @@ jobs:
           Copy-Item -Recurse -Force "$src\*" $dst
 
       # ========================================
-      # Label bundle filenames (GPU builds)
+      # Label bundle filenames (CPU/GPU)
       # ========================================
 
-      - name: Label bundle filenames (Linux, GPU)
-        if: matrix.os == 'ubuntu-latest' && matrix.variant == 'whisper-vulkan'
+      - name: Label bundle filenames (Linux)
+        if: matrix.os == 'ubuntu-latest'
         shell: bash
         run: |
           set -euo pipefail
@@ -823,8 +823,8 @@ jobs:
             mv "$f" "${f%.rpm}-${label}.rpm"
           done
 
-      - name: Label bundle filenames (Windows, GPU)
-        if: matrix.os == 'windows-latest' && matrix.variant == 'whisper-vulkan'
+      - name: Label bundle filenames (Windows)
+        if: matrix.os == 'windows-latest'
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
@@ -849,6 +849,17 @@ jobs:
           GGML_NO_OPENMP: "1"
           WHISPER_NO_OPENMP: "1"
         run: pnpm tauri build -- --features no-openmp
+
+      - name: Label bundle filenames (macOS)
+        if: matrix.os == 'macos-14' && matrix.variant == 'default'
+        shell: bash
+        run: |
+          set -euo pipefail
+          label="${VARIANT_LABEL}"
+          shopt -s nullglob
+          for f in src-tauri/target/release/bundle/dmg/*.dmg; do
+            mv "$f" "${f%.dmg}-${label}.dmg"
+          done
 
       # ========================================
       # Upload artifacts
@@ -897,7 +908,7 @@ jobs:
           exit 1
 
       - name: Upload to GitHub Release (tags)
-        if: startsWith(github.ref, 'refs/tags/') && matrix.variant == 'default'
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: |
