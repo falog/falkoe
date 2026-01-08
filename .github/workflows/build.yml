@@ -60,7 +60,7 @@ jobs:
           update: true
           install: >-
             mingw-w64-x86_64-mecab
-            mingw-w64-x86_64-mecab-ipadic
+            mingw-w64-x86_64-mecab-ipadic-utf8
             mingw-w64-x86_64-gettext
 
       - name: Verify MeCab installation (Windows)
@@ -70,7 +70,7 @@ jobs:
           set -euo pipefail
           pacman -S --noconfirm --needed \
             mingw-w64-x86_64-mecab \
-            mingw-w64-x86_64-mecab-ipadic \
+            mingw-w64-x86_64-mecab-ipadic-utf8 \
             mingw-w64-x86_64-gettext
           echo "[info] mecab packages:" 
           pacman -Q | grep -i mecab || true
@@ -421,13 +421,18 @@ jobs:
           if command -v mecab-config >/dev/null 2>&1; then
             dic_root="$(mecab-config --dicdir)"
             echo "[info] mecab-config --dicdir: $dic_root"
-            dic_dir="$dic_root/ipadic"
-            echo "[info] checking: $dic_dir"
+            for candidate in "$dic_root/ipadic" "$dic_root/ipadic-utf8"; do
+              echo "[info] checking: $candidate"
+              if [[ -d "$candidate" ]]; then
+                dic_dir="$candidate"
+                break
+              fi
+            done
           fi
 
           if [[ -z "$dic_dir" || ! -d "$dic_dir" ]]; then
             echo "[info] searching fallback locations..."
-            for candidate in /mingw64/lib/mecab/dic/ipadic /mingw64/share/mecab/dic/ipadic; do
+            for candidate in /mingw64/lib/mecab/dic/ipadic /mingw64/share/mecab/dic/ipadic /mingw64/lib/mecab/dic/ipadic-utf8 /mingw64/share/mecab/dic/ipadic-utf8; do
               echo "[info] checking candidate: $candidate"
               if [[ -d "$candidate" ]]; then
                 dic_dir="$candidate"
