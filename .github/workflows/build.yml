@@ -13,6 +13,10 @@ permissions:
 jobs:
   build:
     runs-on: ${{ matrix.os }}
+    env:
+      # Human-friendly label for distribution artifacts.
+      # default = CPU build, whisper-vulkan = GPU build (Vulkan backend)
+      VARIANT_LABEL: ${{ matrix.variant == 'default' && 'cpu' || 'gpu-vulkan' }}
 
     strategy:
       fail-fast: false
@@ -774,6 +778,50 @@ jobs:
         if: matrix.os == 'windows-latest' && matrix.variant == 'whisper-vulkan'
         run: pnpm tauri build -- --features whisper-vulkan
 
+      # ========================================
+      # Label bundle filenames (GPU builds)
+      # ========================================
+
+      - name: Label bundle filenames (Linux, GPU)
+        if: matrix.os == 'ubuntu-latest' && matrix.variant == 'whisper-vulkan'
+        shell: bash
+        run: |
+          set -euo pipefail
+          label="${VARIANT_LABEL}"
+          shopt -s nullglob
+          for f in src-tauri/target/release/bundle/msi/*.msi; do
+            mv "$f" "${f%.msi}-${label}.msi"
+          done
+          for f in src-tauri/target/release/bundle/nsis/*.exe; do
+            mv "$f" "${f%.exe}-${label}.exe"
+          done
+          for f in src-tauri/target/release/bundle/appimage/*.AppImage; do
+            mv "$f" "${f%.AppImage}-${label}.AppImage"
+          done
+          for f in src-tauri/target/release/bundle/deb/*.deb; do
+            mv "$f" "${f%.deb}-${label}.deb"
+          done
+          for f in src-tauri/target/release/bundle/rpm/*.rpm; do
+            mv "$f" "${f%.rpm}-${label}.rpm"
+          done
+
+      - name: Label bundle filenames (Windows, GPU)
+        if: matrix.os == 'windows-latest' && matrix.variant == 'whisper-vulkan'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $label = "${env:VARIANT_LABEL}"
+          $patterns = @(
+            'src-tauri/target/release/bundle/msi/*.msi',
+            'src-tauri/target/release/bundle/nsis/*.exe'
+          )
+          foreach ($pattern in $patterns) {
+            Get-ChildItem -Path $pattern -ErrorAction SilentlyContinue | ForEach-Object {
+              $newName = "$($_.BaseName)-$label$($_.Extension)"
+              Rename-Item -Path $_.FullName -NewName $newName
+            }
+          }
+
       - name: Build Tauri app (macOS)
         if: matrix.os == 'macos-14' && matrix.variant == 'default'
         env:
@@ -796,7 +844,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: falkoe-${{ matrix.os }}-${{ matrix.variant }}
+          name: falkoe-${{ matrix.os }}-${{ env.VARIANT_LABEL }}
           overwrite: true
           path: |
             src-tauri/target/release/bundle
@@ -807,7 +855,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: falkoe-${{ matrix.os }}-${{ matrix.variant }}
+          name: falkoe-${{ matrix.os }}-${{ env.VARIANT_LABEL }}
           overwrite: true
           path: |
             src-tauri/target/release/bundle
@@ -818,7 +866,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: falkoe-${{ matrix.os }}-${{ matrix.variant }}
+          name: falkoe-${{ matrix.os }}-${{ env.VARIANT_LABEL }}
           overwrite: true
           path: |
             src-tauri/target/release/bundle
