@@ -3,6 +3,19 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use tauri::{AppHandle, Manager};
 
+fn for_external_tool_path(p: &Path) -> PathBuf {
+    // Some Windows CLI tools (notably MSYS2 builds) don't reliably accept verbatim paths (\\?\...).
+    // Strip the prefix when present.
+    #[cfg(target_os = "windows")]
+    {
+        let s = p.to_string_lossy();
+        if let Some(rest) = s.strip_prefix(r"\\?\") {
+            return PathBuf::from(rest);
+        }
+    }
+    p.to_path_buf()
+}
+
 #[derive(Debug, Clone)]
 pub struct WordLike {
     pub start: f32,
@@ -263,10 +276,10 @@ fn run_mecab(text: &str, rt: &MecabRuntime, app: Option<&AppHandle>) -> Option<V
         // Otherwise we can break system installations by pointing dicdir to a non-existent bundled path.
         if let Some(app) = app {
             if let Some(rc) = resolve_bundled_mecabrc(app) {
-                cmd.arg("-r").arg(rc);
+                cmd.arg("-r").arg(for_external_tool_path(&rc));
             }
         }
-        cmd.arg("-d").arg(dicdir);
+        cmd.arg("-d").arg(for_external_tool_path(dicdir));
     }
     let mut child = match cmd
         .stdin(Stdio::piped())
@@ -338,10 +351,10 @@ fn run_mecab_with_pos(text: &str, rt: &MecabRuntime, app: Option<&AppHandle>) ->
         // Only override mecabrc when we also control the dictionary dir.
         if let Some(app) = app {
             if let Some(rc) = resolve_bundled_mecabrc(app) {
-                cmd.arg("-r").arg(rc);
+                cmd.arg("-r").arg(for_external_tool_path(&rc));
             }
         }
-        cmd.arg("-d").arg(dicdir);
+        cmd.arg("-d").arg(for_external_tool_path(dicdir));
     }
     let mut child = match cmd
         .stdin(Stdio::piped())
