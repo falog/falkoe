@@ -1127,7 +1127,7 @@ jobs:
       # Retry a few times before failing the job.
       - name: Upload artifacts (main branch) (attempt 1)
         id: upload_artifacts_1
-        if: github.ref == 'refs/heads/main' && !matrix.canary
+        if: github.ref == 'refs/heads/main'
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
@@ -1138,7 +1138,7 @@ jobs:
 
       - name: Upload artifacts (main branch) (attempt 2)
         id: upload_artifacts_2
-        if: github.ref == 'refs/heads/main' && !matrix.canary && steps.upload_artifacts_1.outcome == 'failure'
+        if: github.ref == 'refs/heads/main' && steps.upload_artifacts_1.outcome == 'failure'
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
@@ -1149,7 +1149,7 @@ jobs:
 
       - name: Upload artifacts (main branch) (attempt 3)
         id: upload_artifacts_3
-        if: github.ref == 'refs/heads/main' && !matrix.canary && steps.upload_artifacts_2.outcome == 'failure'
+        if: github.ref == 'refs/heads/main' && steps.upload_artifacts_2.outcome == 'failure'
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
