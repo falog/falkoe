@@ -833,6 +833,31 @@ jobs:
         with:
           workspaces: src-tauri
 
+      - name: Preflight permissions (macOS)
+        if: startsWith(matrix.os, 'macos-')
+        shell: bash
+        run: |
+          set -euo pipefail
+          # tauri-build walks bundled resources; fail early if any are unreadable.
+          if [[ ! -d src-tauri/resources ]]; then
+            echo "[error] src-tauri/resources not found"
+            exit 1
+          fi
+
+          echo "[info] scanning for unreadable files (before chmod)"
+          find src-tauri/resources -not -readable -print | head -n 200 || true
+
+          echo "[info] normalizing permissions under src-tauri/resources"
+          chmod -R a+rX src-tauri/resources || true
+
+          echo "[info] scanning for unreadable files (after chmod)"
+          unreadable_count="$(find src-tauri/resources -not -readable -print | wc -l | tr -d ' ')"
+          if [[ "$unreadable_count" != "0" ]]; then
+            echo "[error] still found unreadable files under src-tauri/resources: $unreadable_count"
+            find src-tauri/resources -not -readable -print | head -n 200
+            exit 1
+          fi
+
       # ========================================
       # Build
       # ========================================
@@ -919,6 +944,7 @@ jobs:
           CMAKE_ARGS: "-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0"
           GGML_NO_OPENMP: "1"
           WHISPER_NO_OPENMP: "1"
+          RUST_BACKTRACE: "1"
         run: pnpm tauri build -- --features no-openmp
 
       - name: Build Tauri app (macOS Metal)
@@ -929,6 +955,7 @@ jobs:
           CMAKE_ARGS: "-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0"
           GGML_NO_OPENMP: "1"
           WHISPER_NO_OPENMP: "1"
+          RUST_BACKTRACE: "1"
         run: pnpm tauri build -- --features whisper-metal,no-openmp
 
       - name: Label bundle filenames (macOS)
