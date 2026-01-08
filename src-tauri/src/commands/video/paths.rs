@@ -7,8 +7,26 @@ pub(crate) fn sanitize_base_name(s: &str) -> String {
         if ch.is_control() {
             continue;
         }
-        let repl = matches!(ch, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | '\'');
-        out.push(if repl { '_' } else { ch });
+        // Keep filenames portable across platforms.
+        // Windows forbids: \\ / : * ? " < > |
+        // For video exports, we preserve readability by converting those into their
+        // fullwidth equivalents instead of replacing with '_'.
+        let mapped = match ch {
+            '\\' => '＼',
+            '/' => '／',
+            ':' => '：',
+            '*' => '＊',
+            '?' => '？',
+            '"' => '＂',
+            '<' => '＜',
+            '>' => '＞',
+            '|' => '｜',
+            // ASCII apostrophe is technically allowed, but it commonly causes quoting/escaping
+            // issues in downstream tools. Use a typographic apostrophe instead.
+            '\'' => '’',
+            _ => ch,
+        };
+        out.push(mapped);
     }
     let out = out.trim().trim_end_matches(['.', ' ']).to_string();
     let out = if out.is_empty() { "falkoe".to_string() } else { out };
@@ -43,9 +61,28 @@ mod tests {
     #[test]
     fn sanitize_base_name_basic() {
         assert_eq!(sanitize_base_name("  hello world  "), "hello world");
-        assert_eq!(sanitize_base_name("a/b:c"), "a_b_c");
+        assert_eq!(sanitize_base_name("a/b:c"), "a／b：c");
         assert_eq!(sanitize_base_name(""), "falkoe");
         assert_eq!(sanitize_base_name("....   "), "falkoe");
+    }
+
+    #[test]
+    fn sanitize_base_name_rewrites_apostrophe() {
+        assert_eq!(sanitize_base_name("it's fine"), "it’s fine");
+        assert_eq!(sanitize_base_name("rock'n'roll"), "rock’n’roll");
+    }
+
+    #[test]
+    fn sanitize_base_name_fullwidth_forbidden_chars() {
+        assert_eq!(sanitize_base_name("a\\b"), "a＼b");
+        assert_eq!(sanitize_base_name("a/b"), "a／b");
+        assert_eq!(sanitize_base_name("a:b"), "a：b");
+        assert_eq!(sanitize_base_name("a*b"), "a＊b");
+        assert_eq!(sanitize_base_name("a?b"), "a？b");
+        assert_eq!(sanitize_base_name("a\"b"), "a＂b");
+        assert_eq!(sanitize_base_name("a<b"), "a＜b");
+        assert_eq!(sanitize_base_name("a>b"), "a＞b");
+        assert_eq!(sanitize_base_name("a|b"), "a｜b");
     }
 
     #[test]

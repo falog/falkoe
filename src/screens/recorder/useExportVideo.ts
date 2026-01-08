@@ -24,15 +24,28 @@ type AccentOut = {
 };
 
 const makeSafeVideoBaseName = (text: string) => {
-  const raw = (text ?? "").trim();
-  const replaced = raw
-    .replace(/[\\/\?%\*:\|"<>']/g, "_")
+  const raw = (text ?? "")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/[.\s]+$/g, "");
-  const base = replaced || "falkoe";
+  const base = raw || "falkoe";
+
+  // Preserve readability while avoiding Windows-illegal filename characters.
+  // Convert these to fullwidth instead of '_' so the name looks natural.
+  const mapped = base
+    .replace(/\\/g, "＼")
+    .replace(/\//g, "／")
+    .replace(/:/g, "：")
+    .replace(/\*/g, "＊")
+    .replace(/\?/g, "？")
+    .replace(/"/g, "＂")
+    .replace(/</g, "＜")
+    .replace(/>/g, "＞")
+    .replace(/\|/g, "｜")
+    .replace(/'/g, "’");
+
   // Keep it reasonably short for cross-platform compatibility.
-  return base.length > 80 ? base.slice(0, 80).trim() : base;
+  return mapped.length > 80 ? mapped.slice(0, 80).trim() : mapped;
 };
 
 const isJapanese = (lang?: string | null) => {
