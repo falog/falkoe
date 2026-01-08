@@ -101,9 +101,14 @@ pub(crate) fn run_ffmpeg(app: &AppHandle, args: &[String]) -> Result<()> {
 }
 
 pub(crate) fn escape_filter_path(p: &Path) -> String {
-    // Use forward slashes and escape ':' and single quotes for filter args.
+    // Use forward slashes and escape characters that can break ffmpeg filter args.
+    // Note: ffmpeg filtergraph parsing can be sensitive even when values are quoted.
     let s = p.to_string_lossy().replace('\\', "/");
-    s.replace(':', "\\:").replace('\'', "\\'")
+    s.replace(':', "\\:")
+        .replace('\'', "\\'")
+        .replace(',', "\\,")
+        .replace('[', "\\[")
+        .replace(']', "\\]")
 }
 
 fn windows_drawtext_fontfile_opt() -> String {
