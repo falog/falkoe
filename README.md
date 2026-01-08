@@ -350,8 +350,8 @@ The app bundle is configured in [src-tauri/tauri.conf.json](src-tauri/tauri.conf
 ### Install examples (development)
 
 - Linux (Debian/Ubuntu):
-  - `sudo apt-get update`
-  - `sudo apt-get install -y mecab mecab-ipadic-utf8`
+  - `sudo apt update`
+  - `sudo apt install -y mecab mecab-ipadic-utf8`
   - Note: some environments use `mecab-ipadic` instead
 - macOS (Homebrew): `brew install mecab mecab-ipadic`
 - Windows (Chocolatey): `choco install -y mecab mecab-ipadic`
@@ -375,6 +375,36 @@ Falkoe の音声認識は Whisper（`whisper.cpp` 互換の `ggml-*.bin`）を�
 - **環境変数がある場合は環境変数が優先**されます（主に開発/検証用）。
 
 ### 環境変数（任意）
+
+### GPU acceleration (optional) / GPU高速化（任意）
+
+Whisper は **デフォルトではCPUで動きます**（配布での互換性を優先）。
+
+GPUを使いたい場合は、ビルド時にバックエンドを有効化した **別ビルド**を作ってください：
+
+- Linux/Windows: `--features whisper-vulkan`
+- macOS: `--features whisper-metal`
+
+> 注意: GPUを“積んでいる”だけでは使われません。Vulkan/Metalのランタイム（ドライバ等）が正しく入っていて、
+> かつバックエンド有効でビルドされている必要があります。
+
+#### LinuxでVulkanビルドする場合（開発用）
+
+`whisper-vulkan` はビルド時に Vulkan と `glslc`（shader compiler）が必要です。
+
+- Debian/Ubuntu 例:
+  - `sudo apt update`
+  - `sudo apt install -y cmake libvulkan-dev shaderc`
+  - （実行時に必要なことが多い）`sudo apt install -y libvulkan1 vulkan-tools`
+
+ビルド例:
+
+```bash
+cd src-tauri
+cargo check --features whisper-vulkan
+```
+
+Vulkanが有効か確認したい場合は `vulkaninfo`（`vulkan-tools`）を実行して、GPUが列挙されるか確認してください。
 
 #### モデルの選択/上書き
 

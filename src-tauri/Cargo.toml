@@ -43,5 +43,11 @@ sha2 = "0.10"
 
 [features]
 default = []
-openmp = []
+openmp = ["whisper-rs/openmp"]
 no-openmp = []
+
+# Optional Whisper GPU backends.
+# Note: these are optional build-time features. Distribution builds should keep a CPU-only
+# variant for maximum compatibility.
+whisper-vulkan = ["whisper-rs/vulkan"]
+whisper-metal = ["whisper-rs/metal"]

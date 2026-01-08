@@ -849,7 +849,13 @@ fn append_segment_json(wav_path: &str, seg: &Segment) -> Result<()> {
 
 fn get_tiny_ctx(model_path: &str) -> Result<&'static Mutex<WhisperContext>> {
     Ok(TINY_CTX.get_or_init(|| {
-        let params = WhisperContextParameters::default();
+        let mut params = WhisperContextParameters::default();
+        // If built with a GPU backend, prefer using it.
+        // (If the system doesn't provide a usable GPU/loader, whisper.cpp falls back to CPU.)
+        #[cfg(any(feature = "whisper-vulkan", feature = "whisper-metal"))]
+        {
+            params.use_gpu = true;
+        }
         let ctx = WhisperContext::new_with_params(model_path, params)
             .expect("failed to load whisper model");
         Mutex::new(ctx)
@@ -1049,6 +1055,14 @@ pub fn transcribe(
 
     println!("before WhisperContext::new_with_params");
     let mut ctx_params = WhisperContextParameters::default();
+
+    // If built with a GPU backend, prefer using it.
+    // (If the system doesn't provide a usable GPU/loader, whisper.cpp falls back to CPU.)
+    #[cfg(any(feature = "whisper-vulkan", feature = "whisper-metal"))]
+    {
+        ctx_params.use_gpu = true;
+    }
+
     // Falkoe downloads ggml-small.bin, so use the Small preset.
     ctx_params.dtw_parameters.mode = DtwMode::ModelPreset {
         model_preset: DtwModelPreset::Small,
