@@ -13,6 +13,7 @@ permissions:
 jobs:
   build:
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.canary || false }}
     env:
       # Human-friendly label for distribution artifacts.
       # Keep this in the matrix to avoid fragile expression logic.
@@ -26,17 +27,32 @@ jobs:
           - os: ubuntu-latest
             variant: default
             label: cpu
+            canary: false
           - os: windows-latest
             variant: default
             label: cpu
+            canary: false
           - os: macos-14
             variant: default
             label: cpu
+            canary: false
 
           # Optional GPU build (macOS only): whisper.cpp Metal backend
           - os: macos-14
             variant: whisper-metal
             label: gpu-metal
+            canary: false
+
+          # Canary builds (macos-latest): catch breakages on new macOS/Xcode early.
+          # Not uploaded to GitHub Releases.
+          - os: macos-latest
+            variant: default
+            label: cpu-canary
+            canary: true
+          - os: macos-latest
+            variant: whisper-metal
+            label: gpu-metal-canary
+            canary: true
 
           # Optional GPU build (Linux only): whisper.cpp Vulkan backend
           # Keep this as a separate artifact (not uploaded to GitHub Releases by default)
@@ -44,11 +60,13 @@ jobs:
           - os: ubuntu-latest
             variant: whisper-vulkan
             label: gpu-vulkan
+            canary: false
 
           # Optional GPU build (Windows only): whisper.cpp Vulkan backend
           - os: windows-latest
             variant: whisper-vulkan
             label: gpu-vulkan
+            canary: false
 
     steps:
       - name: Checkout
@@ -145,7 +163,7 @@ jobs:
           command -v mecab || true
 
       - name: Install tools (macOS)
-        if: matrix.os == 'macos-14'
+        if: startsWith(matrix.os, 'macos-')
         run: |
           brew update
           brew install ffmpeg
@@ -225,7 +243,7 @@ jobs:
           Write-Host "[info] bundled ffmpeg.exe (GPL build)"
 
       - name: Bundle ffmpeg (macOS)
-        if: matrix.os == 'macos-14'
+        if: startsWith(matrix.os, 'macos-')
         shell: bash
         run: |
           set -euo pipefail
@@ -851,7 +869,7 @@ jobs:
           }
 
       - name: Build Tauri app (macOS)
-        if: matrix.os == 'macos-14' && matrix.variant == 'default'
+        if: startsWith(matrix.os, 'macos-') && matrix.variant == 'default'
         env:
           MACOSX_DEPLOYMENT_TARGET: "11.0"
           CMAKE_OSX_DEPLOYMENT_TARGET: "11.0"
@@ -861,7 +879,7 @@ jobs:
         run: pnpm tauri build -- --features no-openmp
 
       - name: Build Tauri app (macOS Metal)
-        if: matrix.os == 'macos-14' && matrix.variant == 'whisper-metal'
+        if: startsWith(matrix.os, 'macos-') && matrix.variant == 'whisper-metal'
         env:
           MACOSX_DEPLOYMENT_TARGET: "11.0"
           CMAKE_OSX_DEPLOYMENT_TARGET: "11.0"
@@ -871,7 +889,7 @@ jobs:
         run: pnpm tauri build -- --features whisper-metal,no-openmp
 
       - name: Label bundle filenames (macOS)
-        if: matrix.os == 'macos-14' && (matrix.variant == 'default' || matrix.variant == 'whisper-metal')
+        if: startsWith(matrix.os, 'macos-') && (matrix.variant == 'default' || matrix.variant == 'whisper-metal')
         shell: bash
         run: |
           set -euo pipefail
@@ -889,7 +907,7 @@ jobs:
       # Retry a few times before failing the job.
       - name: Upload artifacts (main branch) (attempt 1)
         id: upload_artifacts_1
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && !matrix.canary
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
@@ -900,7 +918,7 @@ jobs:
 
       - name: Upload artifacts (main branch) (attempt 2)
         id: upload_artifacts_2
-        if: github.ref == 'refs/heads/main' && steps.upload_artifacts_1.outcome == 'failure'
+        if: github.ref == 'refs/heads/main' && !matrix.canary && steps.upload_artifacts_1.outcome == 'failure'
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
@@ -911,7 +929,7 @@ jobs:
 
       - name: Upload artifacts (main branch) (attempt 3)
         id: upload_artifacts_3
-        if: github.ref == 'refs/heads/main' && steps.upload_artifacts_2.outcome == 'failure'
+        if: github.ref == 'refs/heads/main' && !matrix.canary && steps.upload_artifacts_2.outcome == 'failure'
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
@@ -921,14 +939,14 @@ jobs:
             src-tauri/target/release/bundle
 
       - name: Fail if artifact upload failed
-        if: github.ref == 'refs/heads/main' && steps.upload_artifacts_3.outcome == 'failure'
+        if: github.ref == 'refs/heads/main' && !matrix.canary && steps.upload_artifacts_3.outcome == 'failure'
         shell: bash
         run: |
           echo "[error] upload-artifact failed after 3 attempts"
           exit 1
 
       - name: Upload to GitHub Release (tags)
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') && !matrix.canary
         uses: softprops/action-gh-release@v2
         with:
           files: |
