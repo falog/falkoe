@@ -416,31 +416,44 @@ jobs:
 
           # 辞書ファイル（NAIST-JDIC）
           dic_dir=""
+          echo "[info] searching for mecab dictionary..."
+
           if command -v mecab-config >/dev/null 2>&1; then
             dic_root="$(mecab-config --dicdir)"
+            echo "[info] mecab-config --dicdir: $dic_root"
             dic_dir="$dic_root/naist-jdic"
+            echo "[info] checking: $dic_dir"
           fi
 
           if [[ -z "$dic_dir" || ! -d "$dic_dir" ]]; then
+            echo "[info] searching fallback locations..."
             for candidate in /mingw64/lib/mecab/dic/naist-jdic /mingw64/share/mecab/dic/naist-jdic; do
+              echo "[info] checking candidate: $candidate"
               if [[ -d "$candidate" ]]; then
                 dic_dir="$candidate"
+                echo "[info] found dictionary at: $dic_dir"
                 break
               fi
             done
           fi
 
-          if [[ ! -f "$dic_dir/dicrc" ]]; then
-            echo "[error] naist-jdic not found"
+          if [[ -z "$dic_dir" || ! -f "$dic_dir/dicrc" ]]; then
+            echo "[error] naist-jdic not found or invalid"
             echo "[info] searched locations:"
-            ls -la /mingw64/lib/mecab/dic 2>/dev/null || true
-            ls -la /mingw64/share/mecab/dic 2>/dev/null || true
+            ls -la /mingw64/lib/mecab/dic 2>/dev/null || echo "[info] /mingw64/lib/mecab/dic not found"
+            ls -la /mingw64/share/mecab/dic 2>/dev/null || echo "[info] /mingw64/share/mecab/dic not found"
+            echo "[info] Checking installed mecab packages:"
+            pacman -Q | grep -i mecab || echo "[info] no mecab packages found"
             exit 1
           fi
 
           # シンボリックリンクを解決して実ファイルをコピー
+          echo "[info] copying dictionary from $dic_dir to src-tauri/resources/mecab/ipadic/"
           rm -rf src-tauri/resources/mecab/ipadic/*
           cp -RL "$dic_dir"/* src-tauri/resources/mecab/ipadic/
+
+          echo "[info] dictionary files copied:"
+          ls -lh src-tauri/resources/mecab/ipadic/ | head -n 20
 
           # 必須ファイルの確認
           for file in dicrc sys.dic unk.dic; do
