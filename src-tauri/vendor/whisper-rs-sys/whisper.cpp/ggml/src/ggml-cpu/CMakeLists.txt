@@ -155,6 +155,14 @@ function(ggml_add_cpu_backend_variant_impl tag_name)
                 check_arm_feature(sve     "#include <arm_sve.h>\nint main()  { svfloat32_t _a, _b; volatile svfloat32_t _c = svadd_f32_z(svptrue_b8(), _a, _b); return 0; }")
                 check_arm_feature(sme     "#include <arm_sme.h>\n__arm_locally_streaming int main() { __asm__ volatile(\"smstart; smstop;\"); return 0; }")
 
+                # Only enable the i8mm code paths when the runtime feature test succeeded.
+                # Some toolchains may still define __ARM_FEATURE_MATMUL_INT8 even when the
+                # current CPU cannot execute i8mm instructions (leading to build failures
+                # or runtime crashes). See also: GGML_USE_MATMUL_INT8 guards in the sources.
+                if (GGML_MACHINE_SUPPORTS_i8mm)
+                    list(APPEND ARCH_DEFINITIONS GGML_USE_MATMUL_INT8)
+                endif()
+
                 list(APPEND ARCH_FLAGS "${ARM_MCPU_FLAG}${ARM_MCPU_FLAG_FIX}")
             else()
                 if (GGML_CPU_ARM_ARCH)

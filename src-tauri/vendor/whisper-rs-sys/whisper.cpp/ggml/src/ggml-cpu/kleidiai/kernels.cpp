@@ -254,7 +254,7 @@ static ggml_kleidiai_kernels gemm_gemv_kernels[] = {
         /* .op_type            = */ GGML_TYPE_F32,
     },
 #endif
-#if defined(__ARM_FEATURE_MATMUL_INT8)
+#if defined(__ARM_FEATURE_MATMUL_INT8) && defined(GGML_USE_MATMUL_INT8)
     {
         /* i8mm GEMM */
         /* .kern_info = */ {
@@ -303,7 +303,7 @@ static ggml_kleidiai_kernels gemm_gemv_kernels[] = {
     },
 #endif
 #else
-#if defined(__ARM_FEATURE_MATMUL_INT8)
+#if defined(__ARM_FEATURE_MATMUL_INT8) && defined(GGML_USE_MATMUL_INT8)
     {
         /* i8mm GEMM */
         /* .kern_info = */ {

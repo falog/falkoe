@@ -142,7 +142,7 @@ void ggml_vec_dot_q4_0_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const voi
     const int nb = n / qk;
 
     assert(n % qk == 0);
-#if defined(__ARM_FEATURE_MATMUL_INT8)
+#if defined(__ARM_FEATURE_MATMUL_INT8) && defined(GGML_USE_MATMUL_INT8)
     assert((nrc == 2) || (nrc == 1));
 #else
     assert(nrc == 1);
@@ -155,7 +155,7 @@ void ggml_vec_dot_q4_0_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const voi
     const block_q4_0 * GGML_RESTRICT x = vx;
     const block_q8_0 * GGML_RESTRICT y = vy;
 
-#if defined(__ARM_FEATURE_MATMUL_INT8)
+#if defined(__ARM_FEATURE_MATMUL_INT8) && defined(GGML_USE_MATMUL_INT8)
     if (nrc == 2) {
         const block_q4_0 * GGML_RESTRICT vx0 = vx;
         const block_q4_0 * GGML_RESTRICT vx1 = (const block_q4_0 *) ((const uint8_t*)vx + bx);
@@ -435,7 +435,7 @@ void ggml_vec_dot_q4_1_q8_1(int n, float * GGML_RESTRICT s, size_t bs, const voi
     const int nb = n / qk;
 
     assert(n % qk == 0);
-#if defined(__ARM_FEATURE_MATMUL_INT8)
+#if defined(__ARM_FEATURE_MATMUL_INT8) && defined(GGML_USE_MATMUL_INT8)
     assert((nrc == 2) || (nrc == 1));
 #else
     assert(nrc == 1);
@@ -448,7 +448,7 @@ void ggml_vec_dot_q4_1_q8_1(int n, float * GGML_RESTRICT s, size_t bs, const voi
     const block_q4_1 * GGML_RESTRICT x = vx;
     const block_q8_1 * GGML_RESTRICT y = vy;
 
-#if defined(__ARM_FEATURE_MATMUL_INT8)
+#if defined(__ARM_FEATURE_MATMUL_INT8) && defined(GGML_USE_MATMUL_INT8)
     if (nrc == 2) {
         const block_q4_1 * GGML_RESTRICT vx0 = vx;
         const block_q4_1 * GGML_RESTRICT vx1 = (const block_q4_1 *) ((const uint8_t*)vx + bx);
@@ -885,7 +885,7 @@ void ggml_vec_dot_q8_0_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const voi
     const int nb = n / qk;
 
     assert(n % qk == 0);
-#if defined(__ARM_FEATURE_MATMUL_INT8)
+#if defined(__ARM_FEATURE_MATMUL_INT8) && defined(GGML_USE_MATMUL_INT8)
     assert((nrc == 2) || (nrc == 1));
 #else
     assert(nrc == 1);
@@ -898,7 +898,7 @@ void ggml_vec_dot_q8_0_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const voi
     const block_q8_0 * GGML_RESTRICT x = vx;
     const block_q8_0 * GGML_RESTRICT y = vy;
 
-#if defined(__ARM_FEATURE_MATMUL_INT8)
+#if defined(__ARM_FEATURE_MATMUL_INT8) && defined(GGML_USE_MATMUL_INT8)
     if (nrc == 2) {
         const block_q8_0 * GGML_RESTRICT vx0 = vx;
         const block_q8_0 * GGML_RESTRICT vx1 = (const block_q8_0 *) ((const uint8_t*)vx + bx);
@@ -2046,7 +2046,7 @@ void ggml_vec_dot_q3_K_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const voi
 
 void ggml_vec_dot_q4_K_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc) {
     assert(n % QK_K == 0);
-#ifdef __ARM_FEATURE_MATMUL_INT8
+#if defined(__ARM_FEATURE_MATMUL_INT8) && defined(GGML_USE_MATMUL_INT8)
     assert((nrc == 2) || (nrc == 1));
 #else
     assert(nrc == 1);
@@ -2067,7 +2067,7 @@ void ggml_vec_dot_q4_K_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const voi
 
     uint32_t utmp[4];
 
-#if defined(__ARM_FEATURE_MATMUL_INT8)
+#if defined(__ARM_FEATURE_MATMUL_INT8) && defined(GGML_USE_MATMUL_INT8)
     if (nrc == 2) {
         const block_q4_K * GGML_RESTRICT x0 = x;
         const block_q4_K * GGML_RESTRICT x1 = (const block_q4_K *) ((const uint8_t *)vx + bx);
@@ -2465,7 +2465,7 @@ void ggml_vec_dot_q5_K_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const voi
 
 void ggml_vec_dot_q6_K_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc) {
     assert(n % QK_K == 0);
-#ifdef __ARM_FEATURE_MATMUL_INT8
+#if defined(__ARM_FEATURE_MATMUL_INT8) && defined(GGML_USE_MATMUL_INT8)
     assert((nrc == 2) || (nrc == 1));
 #else
     assert(nrc == 1);
@@ -2480,7 +2480,7 @@ void ggml_vec_dot_q6_K_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const voi
 
     const int nb = n / QK_K;
 
-#if defined(__ARM_FEATURE_MATMUL_INT8)
+#if defined(__ARM_FEATURE_MATMUL_INT8) && defined(GGML_USE_MATMUL_INT8)
     if (nrc == 2) {
         const block_q6_K * GGML_RESTRICT x0 = x;
         const block_q6_K * GGML_RESTRICT x1 = (const block_q6_K *) ((const uint8_t *)vx + bx);

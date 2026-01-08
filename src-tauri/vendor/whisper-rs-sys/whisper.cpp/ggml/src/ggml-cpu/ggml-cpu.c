@@ -42,7 +42,7 @@
 #include <omp.h>
 #endif
 
-#if defined(__ARM_FEATURE_SVE) || defined(__ARM_FEATURE_MATMUL_INT8)
+#if defined(__ARM_FEATURE_SVE) || (defined(__ARM_FEATURE_MATMUL_INT8) && defined(GGML_USE_MATMUL_INT8))
 #undef GGML_USE_LLAMAFILE
 #endif
 
@@ -210,7 +210,7 @@ static const struct ggml_type_traits_cpu type_traits_cpu[GGML_TYPE_COUNT] = {
         .from_float               = quantize_row_q4_0,
         .vec_dot                  = ggml_vec_dot_q4_0_q8_0,
         .vec_dot_type             = GGML_TYPE_Q8_0,
-#if defined (__ARM_FEATURE_MATMUL_INT8)
+#if defined (__ARM_FEATURE_MATMUL_INT8) && defined(GGML_USE_MATMUL_INT8)
         .nrows                    = 2,
 #else
         .nrows                    = 1,
@@ -220,7 +220,7 @@ static const struct ggml_type_traits_cpu type_traits_cpu[GGML_TYPE_COUNT] = {
         .from_float               = quantize_row_q4_1,
         .vec_dot                  = ggml_vec_dot_q4_1_q8_1,
         .vec_dot_type             = GGML_TYPE_Q8_1,
-#if defined (__ARM_FEATURE_MATMUL_INT8)
+#if defined (__ARM_FEATURE_MATMUL_INT8) && defined(GGML_USE_MATMUL_INT8)
         .nrows                    = 2,
 #else
         .nrows                    = 1,
@@ -242,7 +242,7 @@ static const struct ggml_type_traits_cpu type_traits_cpu[GGML_TYPE_COUNT] = {
         .from_float               = quantize_row_q8_0,
         .vec_dot                  = ggml_vec_dot_q8_0_q8_0,
         .vec_dot_type             = GGML_TYPE_Q8_0,
-#if defined (__ARM_FEATURE_MATMUL_INT8)
+#if defined (__ARM_FEATURE_MATMUL_INT8) && defined(GGML_USE_MATMUL_INT8)
         .nrows                    = 2,
 #else
         .nrows                    = 1,
@@ -275,7 +275,7 @@ static const struct ggml_type_traits_cpu type_traits_cpu[GGML_TYPE_COUNT] = {
         .from_float               = quantize_row_q4_K,
         .vec_dot                  = ggml_vec_dot_q4_K_q8_K,
         .vec_dot_type             = GGML_TYPE_Q8_K,
-#if defined (__ARM_FEATURE_MATMUL_INT8)
+#if defined (__ARM_FEATURE_MATMUL_INT8) && defined(GGML_USE_MATMUL_INT8)
         .nrows                    = 2,
 #else
         .nrows                    = 1,
@@ -291,7 +291,7 @@ static const struct ggml_type_traits_cpu type_traits_cpu[GGML_TYPE_COUNT] = {
         .from_float               = quantize_row_q6_K,
         .vec_dot                  = ggml_vec_dot_q6_K_q8_K,
         .vec_dot_type             = GGML_TYPE_Q8_K,
-#if defined (__ARM_FEATURE_MATMUL_INT8)
+#if defined (__ARM_FEATURE_MATMUL_INT8) && defined(GGML_USE_MATMUL_INT8)
         .nrows                    = 2,
 #else
         .nrows                    = 1,
@@ -3492,7 +3492,7 @@ int ggml_cpu_has_sve(void) {
 }
 
 int ggml_cpu_has_matmul_int8(void) {
-#if defined(__ARM_ARCH) && defined(__ARM_FEATURE_MATMUL_INT8)
+#if defined(__ARM_ARCH) && defined(__ARM_FEATURE_MATMUL_INT8) && defined(GGML_USE_MATMUL_INT8)
     return 1;
 #else
     return 0;
