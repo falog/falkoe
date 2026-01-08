@@ -51,3 +51,6 @@ no-openmp = []
 # variant for maximum compatibility.
 whisper-vulkan = ["whisper-rs/vulkan"]
 whisper-metal = ["whisper-rs/metal"]
+
+[patch.crates-io]
+whisper-rs-sys = { path = "vendor/whisper-rs-sys" }
