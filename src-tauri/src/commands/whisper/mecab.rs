@@ -72,15 +72,52 @@ fn resolve_bundled_tool(app: &AppHandle, base_name: &str) -> Option<PathBuf> {
 
 fn resolve_bundled_dicdir(app: &AppHandle) -> Option<PathBuf> {
     // We treat a directory as a dictionary dir if it contains a dicrc file.
+    // In production bundles, resource_dir typically points at the resources dir.
+    // In dev, it can point at `target/debug` while resources are synced to `target/debug/resources`.
     let resource_dir = app.path().resource_dir().ok()?;
+
     let candidates = [
+        // bundle layout
         resource_dir.join("mecab").join("ipadic"),
+        resource_dir.join("mecab").join("ipadic-utf8"),
+        resource_dir.join("mecab").join("dic").join("ipadic"),
         resource_dir.join("mecab").join("dic"),
         resource_dir.join("mecab"),
+        // dev layout (resources synced under target/*/resources)
+        resource_dir.join("resources").join("mecab").join("ipadic"),
+        resource_dir
+            .join("resources")
+            .join("mecab")
+            .join("ipadic-utf8"),
+        resource_dir
+            .join("resources")
+            .join("mecab")
+            .join("dic")
+            .join("ipadic"),
+        resource_dir.join("resources").join("mecab").join("dic"),
+        resource_dir.join("resources").join("mecab"),
     ];
-    candidates
-        .into_iter()
-        .find(|p| p.join("dicrc").exists())
+
+    for p in &candidates {
+        if p.join("dicrc").is_file() {
+            return Some(p.clone());
+        }
+    }
+
+    // If not found, emit diagnostics to backend.log so users can see what paths were tried.
+    let tried = candidates
+        .iter()
+        .map(|p| format!("{:?} (dicrc={})", p, p.join("dicrc").is_file()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    crate::logging::log_line(
+        app,
+        format!(
+            "[mecab] bundled dicdir not found under resource_dir={:?}; tried: {}",
+            resource_dir, tried
+        ),
+    );
+    None
 }
 
 fn resolve_bundled_mecabrc(app: &AppHandle) -> Option<PathBuf> {
