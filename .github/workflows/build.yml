@@ -394,9 +394,10 @@ jobs:
           hdiutil attach "$tmpdir/praat.dmg" -mountpoint "$mnt" -nobrowse -quiet
           # The DMG usually contains Praat.app (or Praat).
           if [[ -d "$mnt/Praat.app" && -f "$mnt/Praat.app/Contents/MacOS/Praat" ]]; then
-            cp -f "$mnt/Praat.app/Contents/MacOS/Praat" src-tauri/resources/bin/praat
+            rm -rf src-tauri/resources/bin/Praat.app
+            cp -R "$mnt/Praat.app" src-tauri/resources/bin/Praat.app
           elif [[ -f "$mnt/Praat" ]]; then
-            cp -f "$mnt/Praat" src-tauri/resources/bin/praat
+            cp -f "$mnt/Praat" src-tauri/resources/bin/praat.bin
           else
             ls -la "$mnt" || true
             hdiutil detach "$mnt" -quiet || true
@@ -405,7 +406,35 @@ jobs:
           fi
           hdiutil detach "$mnt" -quiet
 
+          # Keep a stable entrypoint at src-tauri/resources/bin/praat
+          cat > src-tauri/resources/bin/praat <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+          if [[ -x "$here/Praat.app/Contents/MacOS/Praat" ]]; then
+            exec "$here/Praat.app/Contents/MacOS/Praat" "$@"
+          elif [[ -x "$here/praat.bin" ]]; then
+            exec "$here/praat.bin" "$@"
+          else
+            echo "[error] Praat not bundled correctly" >&2
+            exit 1
+          fi
+          SH
+
           chmod +x src-tauri/resources/bin/praat
+          if [[ -f src-tauri/resources/bin/praat.bin ]]; then
+            chmod +x src-tauri/resources/bin/praat.bin
+          fi
+
+          # Best-effort: avoid Gatekeeper quarantine kills in CI.
+          # (If the attribute doesn't exist, these no-op.)
+          if command -v xattr >/dev/null 2>&1; then
+            xattr -dr com.apple.quarantine src-tauri/resources/bin/Praat.app 2>/dev/null || true
+            xattr -d com.apple.quarantine src-tauri/resources/bin/praat.bin 2>/dev/null || true
+            xattr -d com.apple.quarantine src-tauri/resources/bin/praat 2>/dev/null || true
+          fi
+
           echo "[info] bundled praat"
 
       # ========================================
@@ -648,6 +677,11 @@ jobs:
 
           # Praat binary should be bundled (per project policy)
           test -e src-tauri/resources/bin/praat
+
+          # On macOS, we bundle Praat.app and expose a wrapper at bin/praat.
+          if [[ "${RUNNER_OS:-}" == "macOS" ]]; then
+            test -x src-tauri/resources/bin/Praat.app/Contents/MacOS/Praat || test -x src-tauri/resources/bin/praat.bin
+          fi
 
           # MeCab is optional in principle, but we bundle it in CI.
           test -e src-tauri/resources/bin/mecab
