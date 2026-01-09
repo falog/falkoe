@@ -15,9 +15,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.canary || false }}
     env:
-      # Human-friendly label for distribution artifacts.
-      # Keep this in the matrix to avoid fragile expression logic.
-      VARIANT_LABEL: ${{ matrix.label }}
+      # Distinguish canary artifacts from release artifacts.
+      # (Canary builds are not uploaded to GitHub Releases.)
+      ARTIFACT_NAME: ${{ matrix.artifact_name }}
 
       # Optional: bundle transcribe helper binaries (CPU + optional GPU) into the same package.
       # These are set per-matrix entry to keep step logic simple.
@@ -34,20 +34,20 @@ jobs:
           # Default CPU builds
           - os: ubuntu-latest
             variant: default
-            label: cpu
             canary: false
+            artifact_name: falkoe-ubuntu-latest
             needs_vulkan_deps: "1"
             bundle_transcribe_helpers: "1"
             build_vulkan_helper: "1"
             require_vulkan_helper: "1"
           - os: windows-latest
             variant: default
-            label: cpu
             canary: false
+            artifact_name: falkoe-windows-latest
           - os: macos-14
             variant: default
-            label: cpu
             canary: false
+            artifact_name: falkoe-macos-14
             bundle_transcribe_helpers: "1"
             build_metal_helper: "1"
             require_metal_helper: "1"
@@ -56,8 +56,8 @@ jobs:
           # Not uploaded to GitHub Releases.
           - os: macos-latest
             variant: default
-            label: cpu-canary
             canary: true
+            artifact_name: falkoe-macos-latest-canary
             bundle_transcribe_helpers: "1"
             build_metal_helper: "1"
             require_metal_helper: "1"
@@ -1036,33 +1036,6 @@ jobs:
           New-Item -ItemType Directory -Force $dst | Out-Null
           Copy-Item -Recurse -Force "$src\*" $dst
 
-      # ========================================
-      # Label bundle filenames (CPU/GPU)
-      # ========================================
-
-      - name: Label bundle filenames (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        shell: bash
-        run: |
-          set -euo pipefail
-          label="${VARIANT_LABEL}"
-          shopt -s nullglob
-          for f in src-tauri/target/release/bundle/msi/*.msi; do
-            mv "$f" "${f%.msi}-${label}.msi"
-          done
-          for f in src-tauri/target/release/bundle/nsis/*.exe; do
-            mv "$f" "${f%.exe}-${label}.exe"
-          done
-          for f in src-tauri/target/release/bundle/appimage/*.AppImage; do
-            mv "$f" "${f%.AppImage}-${label}.AppImage"
-          done
-          for f in src-tauri/target/release/bundle/deb/*.deb; do
-            mv "$f" "${f%.deb}-${label}.deb"
-          done
-          for f in src-tauri/target/release/bundle/rpm/*.rpm; do
-            mv "$f" "${f%.rpm}-${label}.rpm"
-          done
-
       - name: Label bundle filenames (Windows)
         if: matrix.os == 'windows-latest'
         shell: powershell
@@ -1109,17 +1082,6 @@ jobs:
           RUST_BACKTRACE: "1"
         run: pnpm tauri build -- --features no-openmp
 
-      - name: Label bundle filenames (macOS)
-        if: startsWith(matrix.os, 'macos-') && matrix.variant == 'default'
-        shell: bash
-        run: |
-          set -euo pipefail
-          label="${VARIANT_LABEL}"
-          shopt -s nullglob
-          for f in src-tauri/target/release/bundle/dmg/*.dmg; do
-            mv "$f" "${f%.dmg}-${label}.dmg"
-          done
-
       # ========================================
       # Upload artifacts
       # ========================================
@@ -1132,7 +1094,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: falkoe-${{ matrix.os }}-${{ env.VARIANT_LABEL }}
+          name: ${{ env.ARTIFACT_NAME }}
           overwrite: true
           path: |
             src-tauri/target/release/bundle
@@ -1143,7 +1105,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: falkoe-${{ matrix.os }}-${{ env.VARIANT_LABEL }}
+          name: ${{ env.ARTIFACT_NAME }}
           overwrite: true
           path: |
             src-tauri/target/release/bundle
@@ -1154,7 +1116,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: falkoe-${{ matrix.os }}-${{ env.VARIANT_LABEL }}
+          name: ${{ env.ARTIFACT_NAME }}
           overwrite: true
           path: |
             src-tauri/target/release/bundle
