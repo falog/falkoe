@@ -236,7 +236,21 @@ pub fn export_practice_video(
                 seg_out.to_string_lossy().to_string(),
             ];
 
-            run_ffmpeg(&app, &args)?;
+            run_ffmpeg(&app, &args).with_context(|| {
+                if let Some(ref srt) = subtitle_srt_path {
+                    let meta = fs::metadata(srt).ok();
+                    let readable = fs::File::open(srt).is_ok();
+                    format!(
+                        "segment {i}: ffmpeg failed (subtitle_srt={:?}, exists={}, readable={}, size={})",
+                        srt,
+                        meta.is_some(),
+                        readable,
+                        meta.map(|m| m.len()).unwrap_or(0)
+                    )
+                } else {
+                    format!("segment {i}: ffmpeg failed")
+                }
+            })?;
             clip_paths.push(seg_out);
         }
 
