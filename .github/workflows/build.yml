@@ -962,18 +962,47 @@ jobs:
       # Upload artifacts
       # ========================================
 
-      - name: Upload artifacts (with retry)
+      # upload-artifact occasionally fails with transient network errors.
+      # Retry a few times before failing the job.
+      - name: Upload artifacts (main branch) (attempt 1)
+        id: upload_artifacts_1
         if: github.ref == 'refs/heads/main' && !matrix.canary
-        uses: nick-fields/retry@v3
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
         with:
-          timeout_minutes: 10
-          max_attempts: 3
-          retry_on: error
-          command: |
-            gh actions/upload-artifact@v4 \
-              --name "${{ env.ARTIFACT_NAME }}" \
-              --overwrite \
-              src-tauri/target/release/bundle
+          name: ${{ env.ARTIFACT_NAME }}
+          overwrite: true
+          path: |
+            src-tauri/target/release/bundle
+
+      - name: Upload artifacts (main branch) (attempt 2)
+        id: upload_artifacts_2
+        if: github.ref == 'refs/heads/main' && !matrix.canary && steps.upload_artifacts_1.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          overwrite: true
+          path: |
+            src-tauri/target/release/bundle
+
+      - name: Upload artifacts (main branch) (attempt 3)
+        id: upload_artifacts_3
+        if: github.ref == 'refs/heads/main' && !matrix.canary && steps.upload_artifacts_2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          overwrite: true
+          path: |
+            src-tauri/target/release/bundle
+
+      - name: Fail if artifact upload failed
+        if: github.ref == 'refs/heads/main' && !matrix.canary && steps.upload_artifacts_3.outcome == 'failure'
+        shell: bash
+        run: |
+          echo "[error] upload-artifact failed after 3 attempts"
+          exit 1
 
       - name: Upload to GitHub Release (tags)
         if: startsWith(github.ref, 'refs/tags/') && !matrix.canary
