@@ -20,7 +20,7 @@ const waitForAccentWords = async (path: string, timeoutMs: number) => {
       const parsed = JSON.parse(txt) as AccentOut;
       return parsed.words ?? null;
     } catch {
-      await sleep(200);
+      await sleep(300);
     }
   }
   return null;
@@ -63,6 +63,7 @@ export default function RecordingItem({
   const audioRef = useRef<HTMLAudioElement>(null);
   const [pitch, setPitch] = useState<PitchAnalysis | null>(null);
   const [accentWords, setAccentWords] = useState<WordPitch[] | null>(null);
+  const [accentError, setAccentError] = useState<string | null>(null);
   const [pitchLoading, setPitchLoading] = useState(false);
   const [pitchError, setPitchError] = useState<string | null>(null);
   const pitchRequestedRef = useRef(false);
@@ -88,6 +89,7 @@ export default function RecordingItem({
     pitchRequestedRef.current = false;
     setPitch(null);
     setAccentWords(null);
+    setAccentError(null);
     setPitchLoading(false);
     setPitchError(null);
   }, [rec.path]);
@@ -110,8 +112,13 @@ export default function RecordingItem({
           // Prefer accent overlay generated during transcription (Japanese only).
           try {
             const accentPath = rec.path.replace(/\.wav$/i, ".accent.json");
-            const words = await waitForAccentWords(accentPath, 5000);
+            const words = await waitForAccentWords(accentPath, 60000);
             setAccentWords(words);
+            setAccentError(
+              words === null
+                ? `アクセント情報 (${accentPath.split(/[\\/]/).pop() ?? "accent.json"}) を1分待ちましたが読み込めませんでした。`
+                : null
+            );
           } catch {
             // ignore; fall back to pitch.words/segments
           }
@@ -131,8 +138,13 @@ export default function RecordingItem({
         // If available, load accent overlay generated during transcription (Japanese only).
         try {
           const accentPath = rec.path.replace(/\.wav$/i, ".accent.json");
-          const words = await waitForAccentWords(accentPath, 5000);
+          const words = await waitForAccentWords(accentPath, 60000);
           setAccentWords(words);
+          setAccentError(
+            words === null
+              ? `アクセント情報 (${accentPath.split(/[\\/]/).pop() ?? "accent.json"}) を1分待ちましたが読み込めませんでした。`
+              : null
+          );
         } catch {
           // ignore
         }
@@ -268,12 +280,21 @@ export default function RecordingItem({
           )}
 
           {!pitchLoading && !pitchError && pitch && (
-            <PitchAlignmentChart
-              analysis={pitch}
-              words={isJapanese ? (accentWords ?? undefined) : undefined}
-              showLabels={isJapanese}
-              playheadTime={playheadTime}
-            />
+            <>
+              {isJapanese && accentError && (
+                <div style={{ marginBottom: 6 }}>
+                  <Typography.Text type="warning">
+                    {accentError}
+                  </Typography.Text>
+                </div>
+              )}
+              <PitchAlignmentChart
+                analysis={pitch}
+                words={isJapanese ? (accentWords ?? undefined) : undefined}
+                showLabels={isJapanese}
+                playheadTime={playheadTime}
+              />
+            </>
           )}
         </div>
       )}

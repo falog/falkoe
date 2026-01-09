@@ -26,7 +26,7 @@ const waitForAccentWords = async (path: string, timeoutMs: number) => {
       return parsed.words ?? null;
     } catch {
       // file may not exist yet or may be mid-write; retry
-      await sleep(200);
+      await sleep(300);
     }
   }
   return null;
@@ -76,6 +76,7 @@ export function ModelTranscriptSection({
   const hasModelText = Boolean(modelText?.trim());
   const [pitch, setPitch] = useState<PitchAnalysis | null>(null);
   const [accentWords, setAccentWords] = useState<WordPitch[] | null>(null);
+  const [accentError, setAccentError] = useState<string | null>(null);
   const [pitchLoading, setPitchLoading] = useState(false);
   const [pitchError, setPitchError] = useState<string | null>(null);
   const pitchRequestedRef = useRef(false);
@@ -90,6 +91,7 @@ export function ModelTranscriptSection({
     pitchRequestedRef.current = false;
     setPitch(null);
     setAccentWords(null);
+    setAccentError(null);
     setPitchLoading(false);
     setPitchError(null);
     setIsPlaying(false);
@@ -201,8 +203,15 @@ export function ModelTranscriptSection({
               cacheSubdir,
               `${cacheStem}.accent.json`
             );
-            const words = await waitForAccentWords(accentPath, 5000);
-            if (!cancelled) setAccentWords(words);
+            const words = await waitForAccentWords(accentPath, 60000);
+            if (!cancelled) {
+              setAccentWords(words);
+              setAccentError(
+                words === null
+                  ? `アクセント情報 (${accentPath.split(/[\\/]/).pop() ?? "accent.json"}) を1分待ちましたが読み込めませんでした。`
+                  : null
+              );
+            }
           }
           return;
         } catch {
@@ -226,8 +235,15 @@ export function ModelTranscriptSection({
             cacheSubdir,
             `${cacheStem}.accent.json`
           );
-          const words = await waitForAccentWords(accentPath, 5000);
-          if (!cancelled) setAccentWords(words);
+          const words = await waitForAccentWords(accentPath, 60000);
+          if (!cancelled) {
+            setAccentWords(words);
+            setAccentError(
+              words === null
+                ? `アクセント情報 (${accentPath.split(/[\\/]/).pop() ?? "accent.json"}) を1分待ちましたが読み込めませんでした。`
+                : null
+            );
+          }
         }
       } catch (e) {
         if (!cancelled) setPitchError(String(e));
@@ -318,6 +334,13 @@ export function ModelTranscriptSection({
                   {isPlaying ? "停止" : "再生"}
                 </Button>
               </Space>
+              {!pitchLoading && !pitchError && isJapanese && accentError && (
+                <div style={{ marginBottom: 6 }}>
+                  <Typography.Text type="warning">
+                    {accentError}
+                  </Typography.Text>
+                </div>
+              )}
               <PitchAlignmentChart
                 analysis={pitch}
                 words={isJapanese ? accentWords : undefined}
