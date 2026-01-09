@@ -1123,7 +1123,13 @@ jobs:
             version="${version#v}"
           fi
           if [[ -z "$version" ]]; then
-            version="$(node -p "require('./package.json').version" | tr -d '\r\n' || true)"
+            # Avoid relying on `node` being available in PATH at this point.
+            # Use python3 (available on GitHub runners) to read package.json.
+            version="$(python3 -c 'import json; print(json.load(open("package.json","r",encoding="utf-8")).get("version", "") or "")' 2>/dev/null || true)"
+
+            # Normalize potential CRLF/newline.
+            version="${version//$'\r'/}"
+            version="${version//$'\n'/}"
           fi
           if [[ -z "$version" ]]; then
             echo "[error] Failed to determine version (neither tag nor package.json)" >&2
