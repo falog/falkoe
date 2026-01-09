@@ -1,5 +1,12 @@
 import { spawn, spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  renameSync,
+  rmSync,
+} from "node:fs";
 import path from "node:path";
 
 const rawArgs = process.argv.slice(2);
@@ -295,6 +302,167 @@ function buildWindowsTranscribeHelpers(args) {
   }
 }
 
+function buildUnixTranscribeHelpers(args) {
+  if (process.platform === "win32") return;
+
+  const subcmd = args[0];
+  const isDev = subcmd === "dev";
+  const isPackaging = subcmd === "build" || subcmd === "bundle";
+  if (!isDev && !isPackaging) return;
+
+  // Opt-in to avoid slowing down normal dev/builds.
+  const wantHelpers =
+    process.env.FALKOE_BUNDLE_TRANSCRIBE_HELPERS === "1" ||
+    process.env.FALKOE_BUNDLE_TRANSCRIBE_HELPERS === "true";
+  if (!wantHelpers) return;
+
+  const cwd = process.cwd();
+  const srcTauriDir = path.resolve(cwd, "src-tauri");
+  const resourcesBin = path.resolve(srcTauriDir, "resources", "bin");
+  mkdirSync(resourcesBin, { recursive: true });
+
+  const cargoTargetBase = process.env.CARGO_TARGET_DIR
+    ? path.resolve(process.env.CARGO_TARGET_DIR)
+    : path.resolve(srcTauriDir, "target");
+
+  const allowMissing =
+    process.env.FALKOE_ALLOW_MISSING_BUNDLED_TOOLS === "1" ||
+    process.env.FALKOE_ALLOW_MISSING_BUNDLED_TOOLS === "true";
+
+  const wantVulkanHelper =
+    process.env.FALKOE_BUILD_VULKAN_HELPER === "1" ||
+    process.env.FALKOE_BUILD_VULKAN_HELPER === "true";
+  const requireVulkanHelper =
+    process.env.FALKOE_REQUIRE_VULKAN_HELPER === "1" ||
+    process.env.FALKOE_REQUIRE_VULKAN_HELPER === "true";
+
+  const wantMetalHelper =
+    process.env.FALKOE_BUILD_METAL_HELPER === "1" ||
+    process.env.FALKOE_BUILD_METAL_HELPER === "true";
+  const requireMetalHelper =
+    process.env.FALKOE_REQUIRE_METAL_HELPER === "1" ||
+    process.env.FALKOE_REQUIRE_METAL_HELPER === "true";
+
+  const variants = [];
+
+  // Always build a CPU helper if helpers are enabled.
+  variants.push({
+    tag: "cpu",
+    outName: "falkoe-transcribe-cpu",
+    features: process.platform === "darwin" ? ["no-openmp"] : [],
+  });
+
+  // Optional GPU helpers.
+  if (process.platform === "linux" && wantVulkanHelper) {
+    variants.push({
+      tag: "vulkan",
+      outName: "falkoe-transcribe-vulkan",
+      features: ["whisper-vulkan"],
+    });
+  }
+  if (process.platform === "darwin" && wantMetalHelper) {
+    variants.push({
+      tag: "metal",
+      outName: "falkoe-transcribe-metal",
+      features: ["whisper-metal", "no-openmp"],
+    });
+  }
+
+  for (const v of variants) {
+    const targetDir = path.resolve(cargoTargetBase, `transcribe-${v.tag}`);
+    const profileDir = isPackaging ? "release" : "debug";
+    const builtExe = path.resolve(targetDir, profileDir, "transcribe_wav_json");
+    const destExe = path.resolve(resourcesBin, v.outName);
+
+    const env = { ...process.env };
+    env.CARGO_TARGET_DIR = targetDir;
+
+    // Avoid accidentally building for the build machine.
+    env.GGML_NATIVE = "OFF";
+
+    // Keep behavior consistent with the app build on macOS.
+    if (process.platform === "darwin") {
+      env.GGML_NO_OPENMP = env.GGML_NO_OPENMP ?? "1";
+      env.WHISPER_NO_OPENMP = env.WHISPER_NO_OPENMP ?? "1";
+    }
+
+    const cargoArgs = [
+      "build",
+      "--bin",
+      "transcribe_wav_json",
+      ...(v.features.length ? ["--features", v.features.join(",")] : []),
+      ...(isPackaging ? ["--release"] : []),
+    ];
+
+    const res = spawnSync("cargo", cargoArgs, {
+      cwd: srcTauriDir,
+      stdio: "inherit",
+      env,
+      shell: false,
+    });
+
+    if (res.status !== 0) {
+      if (v.tag === "vulkan" && !requireVulkanHelper) {
+        console.warn(
+          [
+            "[tauri wrapper] Optional Vulkan helper build failed.",
+            "  Continuing without Vulkan helper.",
+          ].join("\n")
+        );
+        continue;
+      }
+      if (v.tag === "metal" && !requireMetalHelper) {
+        console.warn(
+          [
+            "[tauri wrapper] Optional Metal helper build failed.",
+            "  Continuing without Metal helper.",
+          ].join("\n")
+        );
+        continue;
+      }
+
+      const requiredMsg =
+        v.tag === "vulkan"
+          ? "To require Vulkan helper, set FALKOE_REQUIRE_VULKAN_HELPER=1."
+          : v.tag === "metal"
+            ? "To require Metal helper, set FALKOE_REQUIRE_METAL_HELPER=1."
+            : "";
+
+      const msg = [
+        `[tauri wrapper] Failed to build transcribe helper (${v.tag}).`,
+        requiredMsg,
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      if (allowMissing) {
+        console.warn(msg);
+        continue;
+      }
+      console.error(msg);
+      process.exit(res.status ?? 1);
+    }
+
+    if (!existsSync(builtExe)) {
+      const msg = `[tauri wrapper] Expected helper binary not found: ${builtExe}`;
+      if (allowMissing && (v.tag === "vulkan" || v.tag === "metal")) {
+        console.warn(msg);
+        continue;
+      }
+      console.error(msg);
+      process.exit(1);
+    }
+
+    const tmpDest = `${destExe}.tmp`;
+    rmSync(tmpDest, { force: true });
+    cpSync(builtExe, tmpDest, { force: true });
+    rmSync(destExe, { force: true });
+    renameSync(tmpDest, destExe);
+    chmodSync(destExe, 0o755);
+    console.log(`[tauri wrapper] Built transcribe helper -> ${destExe}`);
+  }
+}
+
 // In dev, Tauri may resolve bundled resources from src-tauri/target/debug/resources.
 // Sync resources on each dev start so replaced audio/index.json are picked up.
 if (args[0] === "dev") {
@@ -326,6 +494,8 @@ if (args[0] === "dev") {
 }
 
 buildWindowsTranscribeHelpers(args);
+
+buildUnixTranscribeHelpers(args);
 
 checkWindowsBundledTools(args);
 

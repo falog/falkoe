@@ -19,6 +19,14 @@ jobs:
       # Keep this in the matrix to avoid fragile expression logic.
       VARIANT_LABEL: ${{ matrix.label }}
 
+      # Optional: bundle transcribe helper binaries (CPU + optional GPU) into the same package.
+      # These are set per-matrix entry to keep step logic simple.
+      FALKOE_BUNDLE_TRANSCRIBE_HELPERS: ${{ matrix.bundle_transcribe_helpers || '' }}
+      FALKOE_BUILD_VULKAN_HELPER: ${{ matrix.build_vulkan_helper || '' }}
+      FALKOE_REQUIRE_VULKAN_HELPER: ${{ matrix.require_vulkan_helper || '' }}
+      FALKOE_BUILD_METAL_HELPER: ${{ matrix.build_metal_helper || '' }}
+      FALKOE_REQUIRE_METAL_HELPER: ${{ matrix.require_metal_helper || '' }}
+
     strategy:
       fail-fast: false
       matrix:
@@ -28,6 +36,10 @@ jobs:
             variant: default
             label: cpu
             canary: false
+            needs_vulkan_deps: "1"
+            bundle_transcribe_helpers: "1"
+            build_vulkan_helper: "1"
+            require_vulkan_helper: "1"
           - os: windows-latest
             variant: default
             label: cpu
@@ -36,12 +48,9 @@ jobs:
             variant: default
             label: cpu
             canary: false
-
-          # Optional GPU build (macOS only): whisper.cpp Metal backend
-          - os: macos-14
-            variant: whisper-metal
-            label: gpu-metal
-            canary: false
+            bundle_transcribe_helpers: "1"
+            build_metal_helper: "1"
+            require_metal_helper: "1"
 
           # Canary builds (macos-latest): catch breakages on new macOS/Xcode early.
           # Not uploaded to GitHub Releases.
@@ -49,24 +58,9 @@ jobs:
             variant: default
             label: cpu-canary
             canary: true
-          - os: macos-latest
-            variant: whisper-metal
-            label: gpu-metal-canary
-            canary: true
-
-          # Optional GPU build (Linux only): whisper.cpp Vulkan backend
-          # Keep this as a separate artifact (not uploaded to GitHub Releases by default)
-          # to avoid filename collisions with the default packages.
-          - os: ubuntu-latest
-            variant: whisper-vulkan
-            label: gpu-vulkan
-            canary: false
-
-          # Optional GPU build (Windows only): whisper.cpp Vulkan backend
-          - os: windows-latest
-            variant: whisper-vulkan
-            label: gpu-vulkan
-            canary: false
+            bundle_transcribe_helpers: "1"
+            build_metal_helper: "1"
+            require_metal_helper: "1"
 
     steps:
       - name: Checkout
@@ -92,8 +86,9 @@ jobs:
             mecab \
             mecab-ipadic-utf8
 
-          # Optional: Vulkan backend build deps for whisper.cpp
-          if [[ "${{ matrix.variant }}" == "whisper-vulkan" ]]; then
+          # Vulkan backend build deps for whisper.cpp / transcribe helper
+          # (CPU packages can optionally bundle a Vulkan helper as well.)
+          if [[ "${{ matrix.needs_vulkan_deps || '' }}" == "1" ]]; then
             sudo apt install -y \
               cmake \
               libvulkan-dev
@@ -112,8 +107,8 @@ jobs:
         run: |
           choco install -y ffmpeg
 
-      - name: Install Vulkan SDK (Windows, default/whisper-vulkan)
-        if: matrix.os == 'windows-latest' && (matrix.variant == 'default' || matrix.variant == 'whisper-vulkan')
+      - name: Install Vulkan SDK (Windows)
+        if: matrix.os == 'windows-latest' && matrix.variant == 'default'
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
@@ -1041,32 +1036,6 @@ jobs:
           New-Item -ItemType Directory -Force $dst | Out-Null
           Copy-Item -Recurse -Force "$src\*" $dst
 
-      - name: Build Tauri app (Linux Vulkan)
-        if: matrix.os == 'ubuntu-latest' && matrix.variant == 'whisper-vulkan'
-        run: pnpm tauri build -- --features whisper-vulkan
-
-      - name: Build Tauri app (Windows Vulkan)
-        if: matrix.os == 'windows-latest' && matrix.variant == 'whisper-vulkan'
-        shell: powershell
-        env:
-          # Work around MSBuild/CMake failures caused by very deep paths.
-          # (e.g. FTK1011 unable to create .tlog files under CMake TryCompile dirs)
-          CARGO_TARGET_DIR: D:\t
-        run: |
-          $ErrorActionPreference = 'Stop'
-          New-Item -ItemType Directory -Force 'D:\t' | Out-Null
-
-          pnpm tauri build -- --features whisper-vulkan
-
-          # Copy bundles back to the default location expected by later steps.
-          $src = 'D:\t\release\bundle'
-          $dst = 'src-tauri\target\release\bundle'
-          if (-not (Test-Path $src)) {
-            throw "Expected bundle directory not found: $src"
-          }
-          New-Item -ItemType Directory -Force $dst | Out-Null
-          Copy-Item -Recurse -Force "$src\*" $dst
-
       # ========================================
       # Label bundle filenames (CPU/GPU)
       # ========================================
@@ -1140,19 +1109,8 @@ jobs:
           RUST_BACKTRACE: "1"
         run: pnpm tauri build -- --features no-openmp
 
-      - name: Build Tauri app (macOS Metal)
-        if: startsWith(matrix.os, 'macos-') && matrix.variant == 'whisper-metal'
-        env:
-          MACOSX_DEPLOYMENT_TARGET: "11.0"
-          CMAKE_OSX_DEPLOYMENT_TARGET: "11.0"
-          CMAKE_ARGS: "-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0"
-          GGML_NO_OPENMP: "1"
-          WHISPER_NO_OPENMP: "1"
-          RUST_BACKTRACE: "1"
-        run: pnpm tauri build -- --features whisper-metal,no-openmp
-
       - name: Label bundle filenames (macOS)
-        if: startsWith(matrix.os, 'macos-') && (matrix.variant == 'default' || matrix.variant == 'whisper-metal')
+        if: startsWith(matrix.os, 'macos-') && matrix.variant == 'default'
         shell: bash
         run: |
           set -euo pipefail

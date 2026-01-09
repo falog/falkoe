@@ -15,38 +15,46 @@ use super::paths::sentence_audio_dir;
 use super::transcript::save_transcript_json;
 use super::types::{FinalResult, Segment};
 
-fn should_isolate_transcribe() -> bool {
-    // Default to isolation on Windows to avoid whole-app crashes from native code.
-    // Can be disabled by setting FALKOE_ISOLATE_TRANSCRIBE=0.
-    if cfg!(target_os = "windows") {
-        match std::env::var("FALKOE_ISOLATE_TRANSCRIBE") {
-            Ok(v) if v == "0" || v.eq_ignore_ascii_case("false") => false,
-            _ => true,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TranscribeBackendPref {
+    Auto,
+    CpuOnly,
+    Vulkan,
+    Metal,
+}
+
+fn parse_backend_pref() -> TranscribeBackendPref {
+    match std::env::var("FALKOE_WHISPER_BACKEND") {
+        Ok(v) if v.eq_ignore_ascii_case("cpu") || v.eq_ignore_ascii_case("default") => {
+            TranscribeBackendPref::CpuOnly
         }
-    } else {
-        matches!(
-            std::env::var("FALKOE_ISOLATE_TRANSCRIBE"),
-            Ok(v) if v == "1" || v.eq_ignore_ascii_case("true")
-        )
+        Ok(v) if v.eq_ignore_ascii_case("vulkan") || v.eq_ignore_ascii_case("gpu") => {
+            TranscribeBackendPref::Vulkan
+        }
+        Ok(v) if v.eq_ignore_ascii_case("metal") => TranscribeBackendPref::Metal,
+        _ => TranscribeBackendPref::Auto,
     }
+}
+
+fn helper_dirs(resource_dir: &std::path::Path) -> [std::path::PathBuf; 4] {
+    // Keep this consistent with resolve_bundled_tool() used by ffmpeg/mecab/etc.
+    // Depending on how Tauri is launched (dev vs bundle), resources may live under:
+    // - <resource_dir>/bin
+    // - <resource_dir>/resources/bin
+    // - or directly under <resource_dir>
+    [
+        resource_dir.join("bin"),
+        resource_dir.to_path_buf(),
+        resource_dir.join("resources").join("bin"),
+        resource_dir.join("resources"),
+    ]
 }
 
 #[cfg(all(target_os = "windows", any(target_arch = "x86", target_arch = "x86_64")))]
 fn transcribe_helper_candidates(
     resource_dir: &std::path::Path,
 ) -> Vec<(std::path::PathBuf, &'static str)> {
-    // Keep this consistent with resolve_bundled_tool() used by ffmpeg/mecab/etc.
-    // Depending on how Tauri is launched (dev vs bundle), resources may live under:
-    // - <resource_dir>/bin
-    // - <resource_dir>/resources/bin
-    // - or directly under <resource_dir>
-    let dirs = [
-        resource_dir.join("bin"),
-        resource_dir.to_path_buf(),
-        resource_dir.join("resources").join("bin"),
-        resource_dir.join("resources"),
-    ];
-
+    let dirs = helper_dirs(resource_dir);
     let mut out = Vec::new();
     for d in dirs {
         out.push((d.join("falkoe-transcribe-vulkan.exe"), "vulkan"));
@@ -56,42 +64,64 @@ fn transcribe_helper_candidates(
     out
 }
 
-#[cfg(all(target_os = "windows", any(target_arch = "x86", target_arch = "x86_64")))]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum TranscribeBackendPref {
-    Auto,
-    CpuOnly,
-    Vulkan,
-}
+#[cfg(not(all(target_os = "windows", any(target_arch = "x86", target_arch = "x86_64"))))]
+fn transcribe_helper_candidates(
+    resource_dir: &std::path::Path,
+) -> Vec<(std::path::PathBuf, &'static str)> {
+    let dirs = helper_dirs(resource_dir);
+    let mut out = Vec::new();
+    for d in dirs {
+        // CPU helper (portable default)
+        out.push((d.join("falkoe-transcribe-cpu"), "cpu"));
 
-#[cfg(all(target_os = "windows", any(target_arch = "x86", target_arch = "x86_64")))]
-fn parse_backend_pref() -> TranscribeBackendPref {
-    match std::env::var("FALKOE_WHISPER_BACKEND") {
-        Ok(v) if v.eq_ignore_ascii_case("cpu") || v.eq_ignore_ascii_case("default") => {
-            TranscribeBackendPref::CpuOnly
-        }
-        Ok(v) if v.eq_ignore_ascii_case("vulkan") || v.eq_ignore_ascii_case("gpu") => {
-            TranscribeBackendPref::Vulkan
-        }
-        _ => TranscribeBackendPref::Auto,
+        // Optional GPU helpers
+        out.push((d.join("falkoe-transcribe-vulkan"), "vulkan"));
+        out.push((d.join("falkoe-transcribe-metal"), "metal"));
     }
+    out
 }
 
-#[cfg(all(target_os = "windows", any(target_arch = "x86", target_arch = "x86_64")))]
+fn has_any_transcribe_helper(app: &AppHandle) -> bool {
+    let Ok(resource_dir) = app.path().resource_dir() else {
+        return false;
+    };
+    transcribe_helper_candidates(&resource_dir)
+        .into_iter()
+        .any(|(p, _)| p.is_file())
+}
+
+fn should_isolate_transcribe(app: &AppHandle) -> bool {
+    // Isolation via subprocess avoids taking down the whole app if native code crashes.
+    // Behavior:
+    // - Windows: default on
+    // - Others: default off unless helpers are bundled (or explicitly enabled)
+    match std::env::var("FALKOE_ISOLATE_TRANSCRIBE") {
+        Ok(v) if v == "0" || v.eq_ignore_ascii_case("false") => return false,
+        Ok(v) if v == "1" || v.eq_ignore_ascii_case("true") => return true,
+        _ => {}
+    }
+
+    if cfg!(target_os = "windows") {
+        return true;
+    }
+
+    // If user requested a GPU backend, we must use a helper if available.
+    // (In-process CPU path cannot satisfy this.)
+    let pref = parse_backend_pref();
+    if matches!(pref, TranscribeBackendPref::Vulkan | TranscribeBackendPref::Metal) {
+        return true;
+    }
+
+    // If helpers are bundled, prefer subprocess even on non-Windows.
+    has_any_transcribe_helper(app)
+}
+
 fn resolve_transcribe_helper(
     app: &AppHandle,
     pref: TranscribeBackendPref,
 ) -> Result<(std::path::PathBuf, &'static str)> {
     let resource_dir = app.path().resource_dir()?;
 
-    let has_avx2 = std::is_x86_feature_detected!("avx2");
-    let has_avx = std::is_x86_feature_detected!("avx");
-    if !has_avx {
-        bail!("CPU does not support AVX; transcription helper requires AVX");
-    }
-
-    // Prefer AVX2 helper when CPU supports it.
-    // Candidate list is ordered by directory preference.
     let candidates = transcribe_helper_candidates(&resource_dir);
     let mut tried: Vec<std::path::PathBuf> = Vec::new();
 
@@ -99,38 +129,67 @@ fn resolve_transcribe_helper(
     for _ in 0..10 {
         tried.clear();
 
-        // 0) Optional Vulkan helper (built with --features whisper-vulkan)
+        // 0) Optional GPU helpers
         if pref != TranscribeBackendPref::CpuOnly {
-            for (p, kind) in candidates.iter().filter(|(_, k)| *k == "vulkan") {
-                tried.push(p.clone());
-                if p.is_file() {
-                    // Auto prefers Vulkan when available; force Vulkan also lands here.
-                    return Ok((p.clone(), "vulkan"));
+            if matches!(pref, TranscribeBackendPref::Vulkan | TranscribeBackendPref::Auto) {
+                for (p, _) in candidates.iter().filter(|(_, k)| *k == "vulkan") {
+                    tried.push(p.clone());
+                    if p.is_file() {
+                        return Ok((p.clone(), "vulkan"));
+                    }
+                }
+                if pref == TranscribeBackendPref::Vulkan {
+                    std::thread::sleep(Duration::from_millis(200));
+                    continue;
                 }
             }
 
-            if pref == TranscribeBackendPref::Vulkan {
-                // Forced Vulkan requested but not present.
-                std::thread::sleep(Duration::from_millis(200));
-                continue;
-            }
-        }
-
-        // 1) Try AVX2 if supported
-        if has_avx2 {
-            for (p, kind) in candidates.iter().filter(|(_, k)| *k == "avx2") {
-                tried.push(p.clone());
-                if p.is_file() {
-                    return Ok((p.clone(), "avx2"));
+            if matches!(pref, TranscribeBackendPref::Metal | TranscribeBackendPref::Auto) {
+                for (p, _) in candidates.iter().filter(|(_, k)| *k == "metal") {
+                    tried.push(p.clone());
+                    if p.is_file() {
+                        return Ok((p.clone(), "metal"));
+                    }
+                }
+                if pref == TranscribeBackendPref::Metal {
+                    std::thread::sleep(Duration::from_millis(200));
+                    continue;
                 }
             }
         }
 
-        // 2) Fall back to AVX
-        for (p, kind) in candidates.iter().filter(|(_, k)| *k == "avx") {
-            tried.push(p.clone());
-            if p.is_file() {
-                return Ok((p.clone(), "avx"));
+        // 1) CPU helpers
+        #[cfg(all(target_os = "windows", any(target_arch = "x86", target_arch = "x86_64")))]
+        {
+            let has_avx2 = std::is_x86_feature_detected!("avx2");
+            let has_avx = std::is_x86_feature_detected!("avx");
+            if !has_avx {
+                bail!("CPU does not support AVX; transcription helper requires AVX");
+            }
+
+            if has_avx2 {
+                for (p, _) in candidates.iter().filter(|(_, k)| *k == "avx2") {
+                    tried.push(p.clone());
+                    if p.is_file() {
+                        return Ok((p.clone(), "avx2"));
+                    }
+                }
+            }
+            for (p, _) in candidates.iter().filter(|(_, k)| *k == "avx") {
+                tried.push(p.clone());
+                if p.is_file() {
+                    return Ok((p.clone(), "avx"));
+                }
+            }
+        }
+
+        #[cfg(not(all(target_os = "windows", any(target_arch = "x86", target_arch = "x86_64"))))]
+        {
+            for (p, _) in candidates.iter().filter(|(_, k)| *k == "cpu") {
+                tried.push(p.clone());
+                if p.is_file() {
+                    return Ok((p.clone(), "cpu"));
+                }
             }
         }
 
@@ -140,16 +199,20 @@ fn resolve_transcribe_helper(
     crate::logging::log_line(
         app,
         format!(
-            "[whisper] transcribe(subprocess): helper missing; resource_dir={} tried={} (showing up to 8) avx2={} avx=true",
+            "[whisper] transcribe(subprocess): helper missing; resource_dir={} tried={} (showing up to 8)",
             resource_dir.display(),
             tried.len(),
-            has_avx2
         ),
     );
     for p in tried.iter().take(8) {
         crate::logging::log_line(
             app,
-            format!("[whisper] transcribe(subprocess): tried path exists={} is_file={} path={}", p.exists(), p.is_file(), p.display()),
+            format!(
+                "[whisper] transcribe(subprocess): tried path exists={} is_file={} path={}",
+                p.exists(),
+                p.is_file(),
+                p.display()
+            ),
         );
     }
 
@@ -166,23 +229,16 @@ fn resolve_transcribe_helper(
     );
 }
 
-#[cfg(all(target_os = "windows", any(target_arch = "x86", target_arch = "x86_64")))]
 fn make_transcribe_command(
     app: &AppHandle,
     wav_path: &str,
     model_path: &std::path::Path,
     whisper_lang: Option<&'static str>,
 ) -> Result<(Command, &'static str)> {
-    // On Windows, run transcription in a separate helper binary to avoid
-    // taking down the whole app if native code crashes.
-    // We ship two variants:
-    // - AVX   : minimum supported (Sandy Bridge class)
-    // - AVX2  : faster on newer CPUs
     let pref = parse_backend_pref();
     make_transcribe_command_with_pref(app, wav_path, model_path, whisper_lang, pref)
 }
 
-#[cfg(all(target_os = "windows", any(target_arch = "x86", target_arch = "x86_64")))]
 fn make_transcribe_command_with_pref(
     app: &AppHandle,
     wav_path: &str,
@@ -190,10 +246,31 @@ fn make_transcribe_command_with_pref(
     whisper_lang: Option<&'static str>,
     pref: TranscribeBackendPref,
 ) -> Result<(Command, &'static str)> {
-    // On Windows, run transcription in a separate helper binary to avoid
-    // taking down the whole app if native code crashes.
+    // Prefer bundled helper binaries when available.
+    // If none are present, fall back to the existing self-spawn path.
+    let (helper, picked) = match resolve_transcribe_helper(app, pref) {
+        Ok(v) => v,
+        Err(_) => {
+            let exe = std::env::current_exe()?;
+            let mut cmd = Command::new(&exe);
+            cmd.arg("__transcribe_wav_json");
+            cmd.arg(wav_path);
+            cmd.arg("--model");
+            cmd.arg(model_path);
+            crate::logging::log_line(
+                app,
+                format!(
+                    "[whisper] transcribe(subprocess): helper missing; falling back to self (backend_pref={pref:?})",
+                ),
+            );
+            return Ok((cmd, "self"));
+        }
+    };
+
+    #[cfg(all(target_os = "windows", any(target_arch = "x86", target_arch = "x86_64")))]
     let has_avx2 = std::is_x86_feature_detected!("avx2");
-    let (helper, picked) = resolve_transcribe_helper(app, pref)?;
+    #[cfg(not(all(target_os = "windows", any(target_arch = "x86", target_arch = "x86_64"))))]
+    let has_avx2 = false;
 
     crate::logging::log_line(
         app,
@@ -211,23 +288,6 @@ fn make_transcribe_command_with_pref(
     cmd.arg("--model");
     cmd.arg(model_path);
     Ok((cmd, picked))
-}
-
-#[cfg(not(all(target_os = "windows", any(target_arch = "x86", target_arch = "x86_64"))))]
-fn make_transcribe_command(
-    _app: &AppHandle,
-    wav_path: &str,
-    model_path: &std::path::Path,
-    _whisper_lang: Option<&'static str>,
-) -> Result<(Command, &'static str)> {
-    // Non-Windows (and non-x86 Windows): keep the existing self-spawn path.
-    let exe = std::env::current_exe()?;
-    let mut cmd = Command::new(&exe);
-    cmd.arg("__transcribe_wav_json");
-    cmd.arg(wav_path);
-    cmd.arg("--model");
-    cmd.arg(model_path);
-    Ok((cmd, "self"))
 }
 
 fn transcribe_in_subprocess(
@@ -406,7 +466,7 @@ fn run_whisper_for_wav(app: &AppHandle, wav_path: &str, sentence_hash: &str, lan
     crate::logging::log_line(app, "[whisper] transcribe: begin");
     let whisper_lang = whisper_language(lang);
 
-    let transcript_res = if should_isolate_transcribe() {
+    let transcript_res = if should_isolate_transcribe(app) {
         transcribe_in_subprocess(app, wav_path, &model_path, whisper_lang)
     } else {
         Ok(super::transcribe(wav_path, &model_path, whisper_lang)?)
