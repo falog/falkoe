@@ -51,22 +51,29 @@ fn make_transcribe_command(
         bail!("CPU does not support AVX; transcription helper requires AVX");
     }
 
-    let pick = if has_avx2 {
-        "falkoe-transcribe-avx2.exe"
-    } else {
-        "falkoe-transcribe-avx.exe"
-    };
+    let helper_avx = bin_dir.join("falkoe-transcribe-avx.exe");
+    let helper_avx2 = bin_dir.join("falkoe-transcribe-avx2.exe");
 
-    let helper = bin_dir.join(pick);
-    if !helper.is_file() {
-        bail!("transcribe helper not found: {}", helper.display());
-    }
+    // In dev builds we may only ship the AVX helper for faster build cycles.
+    // Prefer AVX2 when available AND present, otherwise fall back to AVX.
+    let (helper, picked) = if has_avx2 && helper_avx2.is_file() {
+        (helper_avx2, "avx2")
+    } else if helper_avx.is_file() {
+        (helper_avx, "avx")
+    } else {
+        bail!(
+            "transcribe helper not found: tried {} and {}",
+            helper_avx2.display(),
+            helper_avx.display()
+        );
+    };
 
     crate::logging::log_line(
         app,
         format!(
-            "[whisper] transcribe(subprocess): helper={} avx2={} avx=true lang={:?}",
+            "[whisper] transcribe(subprocess): helper={} picked={} avx2={} avx=true lang={:?}",
             helper.display(),
+            picked,
             has_avx2,
             whisper_lang
         ),
