@@ -848,11 +848,44 @@ jobs:
 
           # タグがない場合はpackage.jsonから取得
           if [[ -z "$version" ]]; then
-            if command -v node >/dev/null 2>&1; then
-              version="$(node -p "require('./package.json').version" 2>/dev/null || true)"
-            else
-              version="$(python3 -c 'import json; print(json.load(open("package.json","r",encoding="utf-8")).get("version",""))' 2>/dev/null || true)"
-            fi
+            # Prefer Rust crate version for non-tag builds.
+            # (Avoid relying on node being available, and keep versioning consistent with src-tauri.)
+            version="$(python3 - <<'PY'
+import re
+from pathlib import Path
+
+p = Path('src-tauri/Cargo.toml')
+txt = p.read_text(encoding='utf-8')
+
+try:
+    import tomllib  # py>=3.11
+except Exception:
+    try:
+        import tomli as tomllib  # type: ignore
+    except Exception:
+        tomllib = None
+
+v = ''
+if tomllib is not None:
+    data = tomllib.loads(txt)
+    v = str(data.get('package', {}).get('version', '') or '')
+else:
+    # Minimal fallback: first version= under [package]
+    in_pkg = False
+    for line in txt.splitlines():
+        s = line.strip()
+        if s.startswith('['):
+            in_pkg = (s == '[package]')
+            continue
+        if in_pkg:
+            m = re.match(r'version\s*=\s*"([^"]+)"', s)
+            if m:
+                v = m.group(1)
+                break
+
+print(v)
+PY
+ 2>/dev/null || true)"
             # Normalize potential CRLF/newline.
             version="$(printf '%s' "$version" | tr -d '\r\n')"
           fi
