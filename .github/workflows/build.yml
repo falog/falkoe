@@ -112,8 +112,8 @@ jobs:
         run: |
           choco install -y ffmpeg
 
-      - name: Install Vulkan SDK (Windows, whisper-vulkan)
-        if: matrix.os == 'windows-latest' && matrix.variant == 'whisper-vulkan'
+      - name: Install Vulkan SDK (Windows, default/whisper-vulkan)
+        if: matrix.os == 'windows-latest' && (matrix.variant == 'default' || matrix.variant == 'whisper-vulkan')
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
@@ -1012,9 +1012,34 @@ jobs:
       # Build
       # ========================================
 
-      - name: Build Tauri app (Linux/Windows CPU)
-        if: ${{ !startsWith(matrix.os, 'macos-') && matrix.variant == 'default' }}
+      - name: Build Tauri app (Linux CPU)
+        if: matrix.os == 'ubuntu-latest' && matrix.variant == 'default'
         run: pnpm tauri build
+
+      - name: Build Tauri app (Windows CPU + bundled Vulkan helper)
+        if: matrix.os == 'windows-latest' && matrix.variant == 'default'
+        shell: powershell
+        env:
+          # Work around MSBuild/CMake failures caused by very deep paths.
+          CARGO_TARGET_DIR: D:\t
+          # Always bundle Vulkan transcribe helper into the CPU installer.
+          # This requires Vulkan SDK (including glslc), installed in a prior step.
+          FALKOE_BUILD_VULKAN_HELPER: "1"
+          FALKOE_REQUIRE_VULKAN_HELPER: "1"
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force 'D:\t' | Out-Null
+
+          pnpm tauri build
+
+          # Copy bundles back to the default location expected by later steps.
+          $src = 'D:\t\release\bundle'
+          $dst = 'src-tauri\target\release\bundle'
+          if (-not (Test-Path $src)) {
+            throw "Expected bundle directory not found: $src"
+          }
+          New-Item -ItemType Directory -Force $dst | Out-Null
+          Copy-Item -Recurse -Force "$src\*" $dst
 
       - name: Build Tauri app (Linux Vulkan)
         if: matrix.os == 'ubuntu-latest' && matrix.variant == 'whisper-vulkan'
