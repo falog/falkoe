@@ -268,6 +268,12 @@ fn log_mecab_failure(app: Option<&AppHandle>, msg: impl AsRef<str>) {
     }
 }
 
+fn log_mecab_failure_detail(app: Option<&AppHandle>, msg: impl AsRef<str>) {
+    if debug_enabled() {
+        log_mecab_failure(app, msg);
+    }
+}
+
 fn run_mecab(text: &str, rt: &MecabRuntime, app: Option<&AppHandle>) -> Option<Vec<MecabToken>> {
     // First, try POS mode (more accurate exclude decisions).
     if let Some(tokens) = run_mecab_with_pos(text, rt, app) {
@@ -307,9 +313,10 @@ fn run_mecab(text: &str, rt: &MecabRuntime, app: Option<&AppHandle>) -> Option<V
             } else {
                 ""
             };
-            log_mecab_failure(
+            log_mecab_failure(app, format!("[mecab] spawn failed: {e}{hint}"));
+            log_mecab_failure_detail(
                 app,
-                format!("[mecab] spawn failed cmd={:?} dicdir={:?}: {e}{hint}", rt.cmd, rt.dicdir),
+                format!("[mecab][debug] spawn failed cmd={:?} dicdir={:?}: {e}{hint}", rt.cmd, rt.dicdir),
             );
             return None;
         }
@@ -325,19 +332,25 @@ fn run_mecab(text: &str, rt: &MecabRuntime, app: Option<&AppHandle>) -> Option<V
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         if !stderr.trim().is_empty() {
-            log_mecab_failure(
+            log_mecab_failure(app, "[mecab] non-zero exit");
+            log_mecab_failure_detail(
                 app,
                 format!(
-                    "[mecab] non-zero exit cmd={:?}: status={:?} stderr={}",
+                    "[mecab][debug] non-zero exit cmd={:?}: status={:?} stderr={}",
                     rt.cmd,
                     output.status.code(),
                     crate::logging::truncate_for_log(stderr.trim(), 2000)
                 ),
             );
         } else {
-            log_mecab_failure(
+            log_mecab_failure(app, "[mecab] non-zero exit");
+            log_mecab_failure_detail(
                 app,
-                format!("[mecab] non-zero exit cmd={:?}: status={:?}", rt.cmd, output.status.code()),
+                format!(
+                    "[mecab][debug] non-zero exit cmd={:?}: status={:?}",
+                    rt.cmd,
+                    output.status.code()
+                ),
             );
         }
         return None;
@@ -389,9 +402,10 @@ fn run_mecab_with_pos(text: &str, rt: &MecabRuntime, app: Option<&AppHandle>) ->
             } else {
                 ""
             };
-            log_mecab_failure(
+            log_mecab_failure(app, format!("[mecab] spawn failed: {e}{hint}"));
+            log_mecab_failure_detail(
                 app,
-                format!("[mecab] spawn failed cmd={:?} dicdir={:?}: {e}{hint}", rt.cmd, rt.dicdir),
+                format!("[mecab][debug] spawn failed cmd={:?} dicdir={:?}: {e}{hint}", rt.cmd, rt.dicdir),
             );
             return None;
         }
@@ -407,19 +421,25 @@ fn run_mecab_with_pos(text: &str, rt: &MecabRuntime, app: Option<&AppHandle>) ->
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         if !stderr.trim().is_empty() {
-            log_mecab_failure(
+            log_mecab_failure(app, "[mecab] non-zero exit");
+            log_mecab_failure_detail(
                 app,
                 format!(
-                    "[mecab] non-zero exit cmd={:?}: status={:?} stderr={}",
+                    "[mecab][debug] non-zero exit cmd={:?}: status={:?} stderr={}",
                     rt.cmd,
                     output.status.code(),
                     crate::logging::truncate_for_log(stderr.trim(), 2000)
                 ),
             );
         } else {
-            log_mecab_failure(
+            log_mecab_failure(app, "[mecab] non-zero exit");
+            log_mecab_failure_detail(
                 app,
-                format!("[mecab] non-zero exit cmd={:?}: status={:?}", rt.cmd, output.status.code()),
+                format!(
+                    "[mecab][debug] non-zero exit cmd={:?}: status={:?}",
+                    rt.cmd,
+                    output.status.code()
+                ),
             );
         }
         return None;
@@ -478,19 +498,21 @@ fn mecab_timed_tokens_inner(
     text: &str,
     whisper_words: &[WordLike],
 ) -> Option<Vec<TimedToken>> {
-    if let Some(app) = app {
-        let bundled_cmd = resolve_bundled_tool(app, "mecab");
-        let bundled_dic = resolve_bundled_dicdir(app);
-        let bundled_rc = resolve_bundled_mecabrc(app);
-        let env_cmd = env_mecab_path();
-        let env_dic = env_mecab_dicdir();
-        crate::logging::log_line(
-            app,
-            format!(
-                "[mecab] probe env_cmd={:?} env_dicdir={:?} bundled_cmd={:?} bundled_dicdir={:?} bundled_mecabrc={:?}",
-                env_cmd, env_dic, bundled_cmd, bundled_dic, bundled_rc
-            ),
-        );
+    if debug_enabled() {
+        if let Some(app) = app {
+            let bundled_cmd = resolve_bundled_tool(app, "mecab");
+            let bundled_dic = resolve_bundled_dicdir(app);
+            let bundled_rc = resolve_bundled_mecabrc(app);
+            let env_cmd = env_mecab_path();
+            let env_dic = env_mecab_dicdir();
+            crate::logging::log_line(
+                app,
+                format!(
+                    "[mecab][debug] probe env_cmd={:?} env_dicdir={:?} bundled_cmd={:?} bundled_dicdir={:?} bundled_mecabrc={:?}",
+                    env_cmd, env_dic, bundled_cmd, bundled_dic, bundled_rc
+                ),
+            );
+        }
     }
 
     if debug_enabled() {

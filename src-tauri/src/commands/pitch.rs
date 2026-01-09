@@ -29,6 +29,12 @@ pub fn analyze_pitch(
     pitch_ceiling: Option<f32>,
     include_segments: Option<bool>,
 ) -> Result<PitchAnalysis, String> {
+    fn debug_external_tools_enabled() -> bool {
+        std::env::var("FALKOE_DEBUG_EXTERNAL_TOOLS")
+            .ok()
+            .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+    }
+
     (|| -> Result<PitchAnalysis> {
         let wav_path = Path::new(&wav_path);
         let time_step = time_step.unwrap_or(0.01).max(0.001);
@@ -50,18 +56,26 @@ pub fn analyze_pitch(
         ) {
             Ok(v) => (Some("praat".to_string()), v),
             Err(e_praat) => {
-                eprintln!(
-                    "[pitch] Praat extraction failed; trying WORLD helper: {}",
-                    e_praat
-                );
+                if debug_external_tools_enabled() {
+                    eprintln!(
+                        "[pitch] Praat extraction failed; trying WORLD helper: {}",
+                        e_praat
+                    );
+                } else {
+                    eprintln!("[pitch] Praat extraction failed; trying WORLD helper");
+                }
                 match extract_f0_with_world(&app, wav_path, time_step, pitch_floor, pitch_ceiling)
                 {
                     Ok(v) => (Some("world".to_string()), v),
                     Err(e_world) => {
-                        eprintln!(
-                            "[pitch] WORLD extraction failed; falling back to YIN: {}",
-                            e_world
-                        );
+                        if debug_external_tools_enabled() {
+                            eprintln!(
+                                "[pitch] WORLD extraction failed; falling back to YIN: {}",
+                                e_world
+                            );
+                        } else {
+                            eprintln!("[pitch] WORLD extraction failed; falling back to YIN");
+                        }
                         let (samples, sr) = read_wav_mono_f32(wav_path)?;
                         (
                             Some("yin".to_string()),

@@ -102,6 +102,12 @@ pub(crate) fn extract_f0_with_world(
     pitch_floor: f32,
     pitch_ceiling: f32,
 ) -> Result<Vec<Option<f32>>> {
+    fn debug_external_tools_enabled() -> bool {
+        std::env::var("FALKOE_DEBUG_EXTERNAL_TOOLS")
+            .ok()
+            .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+    }
+
     let cmd_candidates = resolve_world_cmd_candidates(app);
 
     // Keep artifacts under app-owned storage (avoid /tmp).
@@ -155,19 +161,35 @@ pub(crate) fn extract_f0_with_world(
                 if out.status.success() {
                     return parse_tsv_two_cols(&out_path, expected_len);
                 }
-                let stderr = String::from_utf8_lossy(&out.stderr);
-                last_err = Some(anyhow::anyhow!(
-                    "WORLD helper failed (cmd={:?}) stderr: {}",
-                    cmd,
-                    stderr.lines().rev().take(20).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n")
-                ));
+                if debug_external_tools_enabled() {
+                    let stderr = String::from_utf8_lossy(&out.stderr);
+                    last_err = Some(anyhow::anyhow!(
+                        "WORLD helper failed (cmd={:?}) stderr: {}",
+                        cmd,
+                        stderr
+                            .lines()
+                            .rev()
+                            .take(20)
+                            .collect::<Vec<_>>()
+                            .into_iter()
+                            .rev()
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    ));
+                } else {
+                    last_err = Some(anyhow::anyhow!("WORLD helper failed"));
+                }
                 continue;
             }
             Err(e) => {
-                last_err = Some(anyhow::Error::new(e).context(format!(
-                    "failed to spawn WORLD helper: {:?}",
-                    cmd
-                )));
+                if debug_external_tools_enabled() {
+                    last_err = Some(anyhow::Error::new(e).context(format!(
+                        "failed to spawn WORLD helper: {:?}",
+                        cmd
+                    )));
+                } else {
+                    last_err = Some(anyhow::Error::new(e).context("failed to spawn WORLD helper"));
+                }
                 continue;
             }
         }

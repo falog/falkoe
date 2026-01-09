@@ -97,6 +97,12 @@ pub(crate) fn extract_f0_with_praat(
     pitch_floor: f32,
     pitch_ceiling: f32,
 ) -> Result<Vec<Option<f32>>> {
+    fn debug_external_tools_enabled() -> bool {
+        std::env::var("FALKOE_DEBUG_EXTERNAL_TOOLS")
+            .ok()
+            .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+    }
+
     let script = resolve_praat_script(app)?;
 
     if !script.exists() {
@@ -188,7 +194,11 @@ pub(crate) fn extract_f0_with_praat(
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
-                errors.push(format!("- cmd={:?}\n  error={}", praat, e));
+                if debug_external_tools_enabled() {
+                    errors.push(format!("- cmd={:?}\n  error={}", praat, e));
+                } else {
+                    errors.push(format!("- error={}", e));
+                }
                 continue;
             }
         };
@@ -203,15 +213,19 @@ pub(crate) fn extract_f0_with_praat(
                     if status.success() {
                         ok = true;
                     } else {
-                        #[cfg_attr(target_os = "windows", allow(unused_mut))]
-                        let mut line = format!("- cmd={:?}\n  status={}", praat, status);
-                        #[cfg(not(target_os = "windows"))]
-                        {
-                            if status.code() == Some(255) {
-                                line.push_str("\n  hint=Praat may be a GUI build failing in headless mode. Install a console/headless Praat (praatcon) or ensure a graphical session is available.");
+                        if debug_external_tools_enabled() {
+                            #[cfg_attr(target_os = "windows", allow(unused_mut))]
+                            let mut line = format!("- cmd={:?}\n  status={}", praat, status);
+                            #[cfg(not(target_os = "windows"))]
+                            {
+                                if status.code() == Some(255) {
+                                    line.push_str("\n  hint=Praat may be a GUI build failing in headless mode. Install a console/headless Praat (praatcon) or ensure a graphical session is available.");
+                                }
                             }
+                            errors.push(line);
+                        } else {
+                            errors.push(format!("- status={}", status));
                         }
-                        errors.push(line);
                     }
                     break;
                 }
@@ -223,7 +237,11 @@ pub(crate) fn extract_f0_with_praat(
                     std::thread::sleep(std::time::Duration::from_millis(50));
                 }
                 Err(e) => {
-                    errors.push(format!("- cmd={:?}\n  error={}", praat, e));
+                    if debug_external_tools_enabled() {
+                        errors.push(format!("- cmd={:?}\n  error={}", praat, e));
+                    } else {
+                        errors.push(format!("- error={}", e));
+                    }
                     break;
                 }
             }
@@ -232,7 +250,11 @@ pub(crate) fn extract_f0_with_praat(
         if timed_out {
             let _ = child.kill();
             let _ = child.wait();
-            errors.push(format!("- cmd={:?}\n  error=timeout", praat));
+            if debug_external_tools_enabled() {
+                errors.push(format!("- cmd={:?}\n  error=timeout", praat));
+            } else {
+                errors.push("- error=timeout".to_string());
+            }
         }
 
         if ok {
@@ -250,17 +272,21 @@ pub(crate) fn extract_f0_with_praat(
             }
         }
 
-        let combined = if errors.is_empty() {
-            "(no candidates tried)".to_string()
-        } else {
-            errors.join("\n")
-        };
-        bail!(
-            "praat failed (script={}, wav={})\n{}",
-            script.display(),
-            wav_path.display(),
-            combined
-        );
+        if debug_external_tools_enabled() {
+            let combined = if errors.is_empty() {
+                "(no candidates tried)".to_string()
+            } else {
+                errors.join("\n")
+            };
+            bail!(
+                "praat failed (script={}, wav={})\n{}",
+                script.display(),
+                wav_path.display(),
+                combined
+            );
+        }
+
+        bail!("Praatによるピッチ抽出に失敗しました");
     }
 
     let tsv = fs::read_to_string(&out_path)?;
