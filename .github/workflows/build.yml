@@ -71,12 +71,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.canary || false }}
     env:
-      # Distinguish canary artifacts from release artifacts.
-      # (Canary builds are not uploaded to GitHub Releases.)
       ARTIFACT_NAME: ${{ matrix.artifact_name }}
-
-      # Optional: bundle transcribe helper binaries (CPU + optional GPU) into the same package.
-      # These are set per-matrix entry to keep step logic simple.
       FALKOE_BUNDLE_TRANSCRIBE_HELPERS: ${{ matrix.bundle_transcribe_helpers || '' }}
       FALKOE_BUILD_VULKAN_HELPER: ${{ matrix.build_vulkan_helper || '' }}
       FALKOE_REQUIRE_VULKAN_HELPER: ${{ matrix.require_vulkan_helper || '' }}
@@ -108,8 +103,7 @@ jobs:
             build_metal_helper: "1"
             require_metal_helper: "1"
 
-          # Canary builds (macos-latest): catch breakages on new macOS/Xcode early.
-          # Not uploaded to GitHub Releases.
+          # Canary builds (macos-latest)
           - os: macos-latest
             variant: default
             canary: true
@@ -149,39 +143,25 @@ jobs:
             mecab \
             mecab-ipadic-utf8
 
-          # Vulkan backend build deps for whisper.cpp / transcribe helper
-          # (CPU packages can optionally bundle a Vulkan helper as well.)
           if [[ "${{ matrix.needs_vulkan_deps || '' }}" == "1" ]]; then
-            sudo apt install -y \
-              cmake \
-              libvulkan-dev
-
-            # ggml-vulkan build expects `glslc` (shader compiler). Package names vary by distro.
-            sudo apt install -y glslc || \
-              sudo apt install -y shaderc || \
-              sudo apt install -y shaderc-tools
-
+            sudo apt install -y cmake libvulkan-dev
+            sudo apt install -y glslc || sudo apt install -y shaderc || sudo apt install -y shaderc-tools
             command -v glslc
           fi
 
       - name: Install tools (Windows)
         if: matrix.os == 'windows-latest'
         shell: powershell
-        run: |
-          choco install -y ffmpeg
+        run: choco install -y ffmpeg
 
       - name: Install Vulkan SDK (Windows)
         if: matrix.os == 'windows-latest' && matrix.variant == 'default'
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          # Provides Vulkan headers/libs and glslc (shader compiler) used by ggml-vulkan build.
-          # NOTE: Chocolatey `vulkan-sdk` frequently breaks due to upstream URL changes.
-          # Use winget (preinstalled on windows-latest) for a more stable install.
           winget --version
           winget install --id KhronosGroup.VulkanSDK -e --silent --accept-package-agreements --accept-source-agreements
 
-          # Best-effort: locate the installed SDK folder and set VULKAN_SDK + PATH for subsequent steps.
           $sdk = Get-ChildItem -Path 'C:\VulkanSDK' -Directory -ErrorAction SilentlyContinue |
             Sort-Object Name -Descending |
             Select-Object -First 1
@@ -192,7 +172,6 @@ jobs:
           "VULKAN_SDK=$($sdk.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "PATH=$($sdk.FullName)\\Bin;$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-          # Sanity check
           & "$($sdk.FullName)\\Bin\\glslc.exe" --version
 
       - name: Setup MSYS2 (Windows)
@@ -210,12 +189,7 @@ jobs:
         shell: msys2 {0}
         run: |
           set -euo pipefail
-          pacman -S --noconfirm --needed \
-            mingw-w64-x86_64-mecab \
-            mingw-w64-x86_64-gettext
-
-          # NOTE: MSYS2 does not currently provide an IPADIC dictionary package.
-          # We will bundle a dictionary during the "Bundle MeCab (Windows)" step.
+          pacman -S --noconfirm --needed mingw-w64-x86_64-mecab mingw-w64-x86_64-gettext
           echo "[info] mecab packages:" 
           pacman -Q | grep -i mecab || true
           echo "[info] mecab location:" 
@@ -225,8 +199,7 @@ jobs:
         if: startsWith(matrix.os, 'macos-')
         run: |
           brew update
-          brew install ffmpeg
-          brew install mecab mecab-ipadic
+          brew install ffmpeg mecab mecab-ipadic
 
       # ========================================
       # バンドル処理: ffmpeg
@@ -258,11 +231,11 @@ jobs:
 
           conf="$(src-tauri/resources/bin/ffmpeg -buildconf 2>/dev/null || true)"
           if ! grep -q -- '--enable-gpl' <<<"$conf"; then
-            echo "[error] bundled ffmpeg is not a GPL build (--enable-gpl missing)"
+            echo "[error] bundled ffmpeg is not a GPL build"
             exit 1
           fi
           if grep -q -- '--enable-nonfree' <<<"$conf"; then
-            echo "[error] bundled ffmpeg is nonfree (--enable-nonfree present); abort"
+            echo "[error] bundled ffmpeg is nonfree; abort"
             exit 1
           fi
 
@@ -287,13 +260,12 @@ jobs:
           Expand-Archive -Path $zip -DestinationPath $out -Force
 
           $ffmpegExe = Get-ChildItem -Path $out -Recurse -File -Filter 'ffmpeg.exe' | Select-Object -First 1
-          if (-not $ffmpegExe) { throw 'ffmpeg.exe not found in extracted archive' }
+          if (-not $ffmpegExe) { throw 'ffmpeg.exe not found' }
           $ffmpegDir = $ffmpegExe.Directory.FullName
 
-          # Verify license-related build flags
           $ver = (& $ffmpegExe.FullName -version 2>&1 | Out-String)
-          if ($ver -notmatch '--enable-gpl') { throw 'Bundled ffmpeg is not a GPL build (--enable-gpl missing)' }
-          if ($ver -match '--enable-nonfree') { throw 'Bundled ffmpeg is nonfree (--enable-nonfree present); abort' }
+          if ($ver -notmatch '--enable-gpl') { throw 'Bundled ffmpeg is not a GPL build' }
+          if ($ver -match '--enable-nonfree') { throw 'Bundled ffmpeg is nonfree; abort' }
 
           Copy-Item -Force $ffmpegExe.FullName 'src-tauri/resources/bin/ffmpeg.exe'
           Get-ChildItem -Path $ffmpegDir -Filter '*.dll' -File -ErrorAction SilentlyContinue |
@@ -322,17 +294,18 @@ jobs:
 
           conf="$(src-tauri/resources/bin/ffmpeg -buildconf 2>/dev/null || true)"
           if ! grep -q -- '--enable-gpl' <<<"$conf"; then
-            echo "[error] bundled ffmpeg is not a GPL build (--enable-gpl missing)"
+            echo "[error] bundled ffmpeg is not a GPL build"
             exit 1
           fi
           if grep -q -- '--enable-nonfree' <<<"$conf"; then
-            echo "[error] bundled ffmpeg is nonfree (--enable-nonfree present); abort"
+            echo "[error] bundled ffmpeg is nonfree; abort"
             exit 1
           fi
 
       # ========================================
-      # バンドル処理: WORLD helper (optional)
+      # バンドル処理: WORLD helper
       # ========================================
+
       - name: Build + bundle WORLD helper (Linux)
         if: matrix.os == 'ubuntu-latest'
         shell: bash
@@ -372,7 +345,7 @@ jobs:
           Write-Host "[info] bundled WORLD helper: world_pitch.exe"
 
       # ========================================
-      # Praat
+      # バンドル処理: Praat
       # ========================================
 
       - name: Bundle Praat (Linux)
@@ -430,7 +403,7 @@ jobs:
           if (-not $praatExe) {
             $praatExe = Get-ChildItem -Path $out -Recurse -File -Filter 'praat.exe' | Select-Object -First 1
           }
-          if (-not $praatExe) { throw 'Praat.exe not found in extracted archive' }
+          if (-not $praatExe) { throw 'Praat.exe not found' }
 
           Copy-Item -Force $praatExe.FullName 'src-tauri/resources/bin/praat.exe'
           Write-Host "[info] bundled praat.exe"
@@ -451,7 +424,6 @@ jobs:
           mkdir -p "$mnt"
 
           hdiutil attach "$tmpdir/praat.dmg" -mountpoint "$mnt" -nobrowse -quiet
-          # The DMG usually contains Praat.app (or Praat).
           if [[ -d "$mnt/Praat.app" && -f "$mnt/Praat.app/Contents/MacOS/Praat" ]]; then
             rm -rf src-tauri/resources/bin/Praat.app
             cp -R "$mnt/Praat.app" src-tauri/resources/bin/Praat.app
@@ -465,8 +437,6 @@ jobs:
           fi
           hdiutil detach "$mnt" -quiet
 
-          # Tauri (tauri-build) walks bundled resources during build.
-          # Ensure everything we copied is readable to avoid EACCES (os error 13).
           if [[ -d src-tauri/resources/bin/Praat.app ]]; then
             chmod -R a+rX src-tauri/resources/bin/Praat.app || true
           fi
@@ -474,7 +444,6 @@ jobs:
             chmod a+rX src-tauri/resources/bin/praat.bin || true
           fi
 
-          # Keep a stable entrypoint at src-tauri/resources/bin/praat
           cat > src-tauri/resources/bin/praat <<'SH'
           #!/usr/bin/env bash
           set -euo pipefail
@@ -495,8 +464,6 @@ jobs:
             chmod +x src-tauri/resources/bin/praat.bin
           fi
 
-          # Best-effort: avoid Gatekeeper quarantine kills in CI.
-          # (If the attribute doesn't exist, these no-op.)
           if command -v xattr >/dev/null 2>&1; then
             xattr -dr com.apple.quarantine src-tauri/resources/bin/Praat.app 2>/dev/null || true
             xattr -d com.apple.quarantine src-tauri/resources/bin/praat.bin 2>/dev/null || true
@@ -517,7 +484,6 @@ jobs:
           mkdir -p src-tauri/resources/bin
           mkdir -p src-tauri/resources/mecab/ipadic
 
-          # mecab実行ファイル
           if ! command -v mecab >/dev/null 2>&1; then
             echo "[error] mecab not found"
             exit 1
@@ -527,7 +493,6 @@ jobs:
           chmod +x src-tauri/resources/bin/mecab
           echo "[info] bundled mecab binary"
 
-          # 辞書ファイル
           dic_dir=""
           for candidate in \
             /var/lib/mecab/dic/ipadic-utf8 \
@@ -546,10 +511,8 @@ jobs:
             exit 1
           fi
 
-          # シンボリックリンクを解決して実ファイルをコピー
           cp -RL "$dic_dir"/* src-tauri/resources/mecab/ipadic/
 
-          # 必須ファイルの確認
           for file in dicrc sys.dic unk.dic; do
             if [[ ! -f "src-tauri/resources/mecab/ipadic/$file" ]]; then
               echo "[error] failed to copy $file"
@@ -567,8 +530,6 @@ jobs:
           mkdir -p src-tauri/resources/bin
           mkdir -p src-tauri/resources/mecab/ipadic
 
-          # MSYS2 does not provide an IPADIC dictionary package.
-          # We download a shared IPADIC(UTF-8) dictionary artifact built on Ubuntu.
           if [[ ! -f src-tauri/resources/mecab/ipadic/dicrc ]]; then
             echo "[error] bundled ipadic dictionary is missing (dicrc not found)." >&2
             echo "[info] expected at: src-tauri/resources/mecab/ipadic" >&2
@@ -578,7 +539,6 @@ jobs:
 
           pacman -S --noconfirm --needed mingw-w64-x86_64-mecab mingw-w64-x86_64-gettext
 
-          # mecab実行ファイル
           if ! command -v mecab >/dev/null 2>&1; then
             echo "[error] mecab not found on PATH"
             exit 1
@@ -588,11 +548,9 @@ jobs:
           echo "[info] mecab path: $mecab_path"
           cp -f "$mecab_path" src-tauri/resources/bin/mecab.exe
 
-          # DLL依存関係
           mecab_dir="$(dirname "$mecab_path")"
           echo "[info] copying DLLs from $mecab_dir"
 
-          # 必要なDLLを直接コピー（lddよりも確実）
           cp -f "$mecab_dir"/libmecab*.dll src-tauri/resources/bin/ 2>/dev/null || true
           cp -f "$mecab_dir"/libiconv-2.dll src-tauri/resources/bin/ 2>/dev/null || true
           cp -f "$mecab_dir"/libintl-8.dll src-tauri/resources/bin/ 2>/dev/null || true
@@ -601,17 +559,14 @@ jobs:
           cp -f "$mecab_dir"/libstdc++*.dll src-tauri/resources/bin/ 2>/dev/null || true
           cp -f "$mecab_dir"/libwinpthread*.dll src-tauri/resources/bin/ 2>/dev/null || true
 
-          # Fail early if critical deps are missing in the bundled directory.
           for dll in libmecab-2.dll libiconv-2.dll libintl-8.dll libcharset-1.dll; do
             if [[ ! -f "src-tauri/resources/bin/$dll" ]]; then
               echo "[error] missing required MeCab DLL in bundle: $dll"
-              echo "[info] Hint: ensure MSYS2 deps are installed and copied from $mecab_dir"
               exit 1
             fi
           done
 
-          echo "[info] bundled mecab.exe and DLLs (including libiconv/libintl)"
-
+          echo "[info] bundled mecab.exe and DLLs"
           echo "[info] bundled ipadic dictionary (shared artifact)"
 
       - name: Bundle MeCab (macOS)
@@ -622,7 +577,6 @@ jobs:
           mkdir -p src-tauri/resources/bin
           mkdir -p src-tauri/resources/mecab/ipadic
 
-          # mecab実行ファイル
           if ! command -v mecab >/dev/null 2>&1; then
             echo "[error] mecab not found"
             exit 1
@@ -632,7 +586,6 @@ jobs:
           chmod +x src-tauri/resources/bin/mecab
           echo "[info] bundled mecab binary"
 
-          # 辞書ファイル
           if ! command -v mecab-config >/dev/null 2>&1; then
             echo "[error] mecab-config not found"
             exit 1
@@ -643,35 +596,26 @@ jobs:
 
           if [[ ! -d "$dic_dir" ]]; then
             echo "[error] ipadic directory not found at $dic_dir"
-            echo "[info] available dictionaries:"
             ls -la "$(mecab-config --dicdir)" || true
             exit 1
           fi
 
-          # 辞書ディレクトリの内容を確認
           echo "[info] ipadic contents:"
           ls -la "$dic_dir" || true
 
-          # 必須ファイルの存在確認
-          required_files=("dicrc" "sys.dic" "unk.dic")
-          for file in "${required_files[@]}"; do
+          for file in dicrc sys.dic unk.dic; do
             if [[ ! -f "$dic_dir/$file" ]]; then
               echo "[error] required file not found: $dic_dir/$file"
               exit 1
             fi
           done
 
-          # クリーンコピー（シンボリックリンクを解決して実ファイルをコピー）
           rm -rf src-tauri/resources/mecab/ipadic/*
-
-          # -Lオプションでシンボリックリンクを辿って実ファイルをコピー
           cp -RL "$dic_dir"/* src-tauri/resources/mecab/ipadic/
 
-          # コピー結果の確認
           echo "[info] bundled files:"
           ls -la src-tauri/resources/mecab/ipadic/ || true
 
-          # 必須ファイルの最終確認
           for file in dicrc sys.dic unk.dic; do
             if [[ ! -f "src-tauri/resources/mecab/ipadic/$file" ]]; then
               echo "[error] failed to copy $file"
@@ -695,18 +639,13 @@ jobs:
           echo "[info] bundled praat scripts directory listing:"
           ls -la src-tauri/resources/praat || true
 
-          # Required for all platforms in release builds
           test -e src-tauri/resources/bin/ffmpeg
-
-          # Praat binary should be bundled (per project policy)
           test -e src-tauri/resources/bin/praat
 
-          # On macOS, we bundle Praat.app and expose a wrapper at bin/praat.
           if [[ "${RUNNER_OS:-}" == "macOS" ]]; then
             test -x src-tauri/resources/bin/Praat.app/Contents/MacOS/Praat || test -x src-tauri/resources/bin/praat.bin
           fi
 
-          # MeCab is optional in principle, but we bundle it in CI.
           test -e src-tauri/resources/bin/mecab
           test -e src-tauri/resources/mecab/ipadic/dicrc
           test -e src-tauri/resources/mecab/ipadic/sys.dic
@@ -753,8 +692,7 @@ jobs:
           PY
 
           if [[ ! -s "$out" ]]; then
-            echo "[error] praat smoke test failed: output tsv missing/empty ($out)"
-            ls -la "$tmpdir" || true
+            echo "[error] praat smoke test failed: output tsv missing/empty"
             exit 1
           fi
           echo "[info] praat smoke test ok: $(wc -l < "$out") lines"
@@ -766,28 +704,17 @@ jobs:
           $ErrorActionPreference = 'Stop'
           Write-Host "[info] bundled tools directory listing:"
           Get-ChildItem -Path 'src-tauri/resources/bin' -File | Sort-Object Name | Format-Table Name,Length
-          Write-Host "[info] bundled praat scripts directory listing:"
-          Get-ChildItem -Path 'src-tauri/resources/praat' -File | Sort-Object Name | Format-Table Name,Length
 
-          # Required for all platforms in release builds
           if (!(Test-Path 'src-tauri/resources/bin/ffmpeg.exe')) { throw 'missing bundled ffmpeg.exe' }
-
-          # Praat binary should be bundled (per project policy)
           if (!(Test-Path 'src-tauri/resources/bin/praat.exe')) { throw 'missing bundled praat.exe' }
-
-          # MeCab is optional in principle, but we bundle it in CI.
           if (!(Test-Path 'src-tauri/resources/bin/mecab.exe')) { throw 'missing bundled mecab.exe' }
+
           foreach ($dll in @('libmecab-2.dll','libiconv-2.dll','libintl-8.dll','libcharset-1.dll')) {
             if (!(Test-Path (Join-Path 'src-tauri/resources/bin' $dll))) { throw "missing bundled MeCab DLL: $dll" }
           }
           foreach ($f in @('dicrc','sys.dic','unk.dic')) {
             if (!(Test-Path (Join-Path 'src-tauri/resources/mecab/ipadic' $f))) { throw "missing bundled MeCab dictionary file: $f" }
           }
-
-          Write-Host "[info] checksums (sha256):"
-          Get-FileHash 'src-tauri/resources/bin/ffmpeg.exe' -Algorithm SHA256 | Format-List
-          Get-FileHash 'src-tauri/resources/bin/praat.exe' -Algorithm SHA256 | Format-List
-          Get-FileHash 'src-tauri/resources/bin/mecab.exe' -Algorithm SHA256 | Format-List
 
       - name: Smoke test Praat (Windows)
         if: matrix.os == 'windows-latest'
@@ -802,22 +729,18 @@ jobs:
           $praat = Resolve-Path 'src-tauri/resources/bin/praat.exe'
           $script = Resolve-Path 'src-tauri/resources/praat/extract_pitch_to_tsv.praat'
 
-          Write-Host "[info] generating test wav with bundled ffmpeg"
+          Write-Host "[info] generating test wav"
           & $ffmpeg -hide_banner -loglevel error -y -f lavfi -i "sine=frequency=440:duration=1" -ac 1 -ar 16000 $wav
 
-          Write-Host "[info] running bundled praat --run"
+          Write-Host "[info] running bundled praat"
           $p = Start-Process -FilePath $praat -ArgumentList @('--run', $script, $wav, $out, '0.01', '75', '500') -PassThru
           $ok = $p.WaitForExit(15000)
           if (-not $ok) {
             try { $p.Kill() } catch {}
             throw 'Praat smoke test timed out'
           }
-          if ($p.ExitCode -ne 0) {
-            throw "Praat smoke test failed with exit code $($p.ExitCode)"
-          }
-
-          if (!(Test-Path $out)) { throw 'Praat smoke test failed: out.tsv not created' }
-          if ((Get-Item $out).Length -le 0) { throw 'Praat smoke test failed: out.tsv is empty' }
+          if ($p.ExitCode -ne 0) { throw "Praat failed with exit code $($p.ExitCode)" }
+          if (!(Test-Path $out) -or (Get-Item $out).Length -le 0) { throw 'Praat output missing/empty' }
           Write-Host "[info] praat smoke test ok"
 
       - name: Setup pnpm
@@ -852,7 +775,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # tauri-build walks bundled resources; fail early if any are unreadable.
           if [[ ! -d src-tauri/resources ]]; then
             echo "[error] src-tauri/resources not found"
             exit 1
@@ -862,182 +784,26 @@ jobs:
           ls -la src-tauri/resources || true
           ls -la src-tauri/resources/bin || true
           if [[ -d src-tauri/resources/bin/Praat.app ]]; then
-            ls -la src-tauri/resources/bin/Praat.app || true
-            ls -la src-tauri/resources/bin/Praat.app/Contents || true
             ls -la src-tauri/resources/bin/Praat.app/Contents/MacOS || true
           fi
-          # Show any symlinks under resources/bin (symlinks can point outside and break tauri-build)
           find src-tauri/resources/bin -maxdepth 6 -type l -print 2>/dev/null || true
 
-          echo "[info] scanning for unreadable files (before chmod)"
-          python3 - <<'PY'
-          import os
-          import sys
-
-          root = "src-tauri/resources"
-          root_real = os.path.realpath(root)
-
-          issues = []
-
-          def add(kind: str, path: str, detail: str = ""):
-            issues.append((kind, path, detail))
-
-          def onerror(err):
-            add("walk_error", getattr(err, "filename", ""), repr(err))
-
-          for dirpath, dirnames, filenames in os.walk(root, onerror=onerror, followlinks=False):
-            # Directory access matters too (need +x to traverse).
-            if not os.access(dirpath, os.R_OK | os.X_OK):
-              add("unreadable_dir", dirpath, "need R+X")
-
-            for name in filenames:
-              p = os.path.join(dirpath, name)
-              try:
-                # lstat first so we can reason about symlinks
-                st = os.lstat(p)
-              except OSError as e:
-                add("lstat_failed", p, repr(e))
-                continue
-
-              if os.path.islink(p):
-                # Diagnose where the link points, but don't fail just for being outside.
-                target_real = os.path.realpath(p)
-                if not (target_real == root_real or target_real.startswith(root_real + os.sep)):
-                  add("symlink_outside_root", p, f"-> {target_real}")
-                # Try opening through the symlink to catch actual PermissionError.
-                try:
-                  with open(p, "rb") as f:
-                    f.read(1)
-                except PermissionError as e:
-                  add("unreadable_via_symlink", p, repr(e))
-                except FileNotFoundError as e:
-                  add("broken_symlink", p, repr(e))
-                except OSError as e:
-                  # Other errors are still valuable signal.
-                  add("symlink_open_failed", p, repr(e))
-                continue
-
-              # Regular file: ensure we can actually open it.
-              try:
-                with open(p, "rb") as f:
-                  f.read(1)
-              except PermissionError as e:
-                add("unreadable_file", p, repr(e))
-              except OSError as e:
-                add("open_failed", p, repr(e))
-
-          for kind, path, detail in issues[:200]:
-            if detail:
-              print(f"{kind}: {path} {detail}")
-            else:
-              print(f"{kind}: {path}")
-
-          if issues:
-            print(f"[info] pre-chmod issues found: {len(issues)} (showing up to 200)", file=sys.stderr)
-          PY
-
-          echo "[info] normalizing permissions under src-tauri/resources"
-          # Some bundled assets can end up copied as read-only.
-          # If the build runs multiple times in the same workspace, overwrites can hit EACCES.
+          echo "[info] normalizing permissions"
           chmod -R u+rwX,go+rX src-tauri/resources || true
-
-          echo "[info] scanning for unreadable files (after chmod)"
-          python3 - <<'PY'
-          import os
-          import sys
-
-          root = "src-tauri/resources"
-          root_real = os.path.realpath(root)
-
-          issues = []
-
-          def add(kind: str, path: str, detail: str = ""):
-            issues.append((kind, path, detail))
-
-          def onerror(err):
-            add("walk_error", getattr(err, "filename", ""), repr(err))
-
-          for dirpath, dirnames, filenames in os.walk(root, onerror=onerror, followlinks=False):
-            if not os.access(dirpath, os.R_OK | os.X_OK):
-              add("unreadable_dir", dirpath, "need R+X")
-
-            for name in filenames:
-              p = os.path.join(dirpath, name)
-              try:
-                os.lstat(p)
-              except OSError as e:
-                add("lstat_failed", p, repr(e))
-                continue
-
-              if os.path.islink(p):
-                target_real = os.path.realpath(p)
-                if not (target_real == root_real or target_real.startswith(root_real + os.sep)):
-                  # Keep as diagnostic, but don't fail CI solely due to this.
-                  add("symlink_outside_root", p, f"-> {target_real}")
-                try:
-                  with open(p, "rb") as f:
-                    f.read(1)
-                except PermissionError as e:
-                  add("unreadable_via_symlink", p, repr(e))
-                except FileNotFoundError as e:
-                  add("broken_symlink", p, repr(e))
-                except OSError as e:
-                  add("symlink_open_failed", p, repr(e))
-                continue
-
-              try:
-                with open(p, "rb") as f:
-                  f.read(1)
-              except PermissionError as e:
-                add("unreadable_file", p, repr(e))
-              except OSError as e:
-                add("open_failed", p, repr(e))
-
-          # Fail only on issues that can actually cause EACCES during resource walking.
-          fail_kinds = {
-            "walk_error",
-            "unreadable_dir",
-            "lstat_failed",
-            "unreadable_file",
-            "open_failed",
-            "unreadable_via_symlink",
-            "broken_symlink",
-          }
-          fail_issues = [i for i in issues if i[0] in fail_kinds]
-
-          if fail_issues:
-            print(f"[error] still found unreadable entries under {root}: {len(fail_issues)} (showing up to 200)", file=sys.stderr)
-            for kind, path, detail in fail_issues[:200]:
-              if detail:
-                print(f"{kind}: {path} {detail}")
-              else:
-                print(f"{kind}: {path}")
-            sys.exit(1)
-
-          # Non-fatal diagnostics
-          diag = [i for i in issues if i[0] == "symlink_outside_root"]
-          if diag:
-            print(f"[warn] symlinks pointing outside resources detected: {len(diag)} (showing up to 50)", file=sys.stderr)
-            for kind, path, detail in diag[:50]:
-              print(f"{kind}: {path} {detail}")
-          PY
 
       # ========================================
       # Build
       # ========================================
 
-      - name: Build Tauri app (Linux CPU)
-        if: matrix.os == 'ubuntu-latest' && matrix.variant == 'default'
+      - name: Build Tauri app (Linux)
+        if: matrix.os == 'ubuntu-latest'
         run: pnpm tauri build
 
-      - name: Build Tauri app (Windows CPU + bundled Vulkan helper)
-        if: matrix.os == 'windows-latest' && matrix.variant == 'default'
+      - name: Build Tauri app (Windows)
+        if: matrix.os == 'windows-latest'
         shell: powershell
         env:
-          # Work around MSBuild/CMake failures caused by very deep paths.
           CARGO_TARGET_DIR: D:\t
-          # Always bundle Vulkan transcribe helper into the CPU installer.
-          # This requires Vulkan SDK (including glslc), installed in a prior step.
           FALKOE_BUILD_VULKAN_HELPER: "1"
           FALKOE_REQUIRE_VULKAN_HELPER: "1"
         run: |
@@ -1046,63 +812,14 @@ jobs:
 
           pnpm tauri build
 
-          # Copy bundles back to the default location expected by later steps.
           $src = 'D:\t\release\bundle'
           $dst = 'src-tauri\target\release\bundle'
-          if (-not (Test-Path $src)) {
-            throw "Expected bundle directory not found: $src"
-          }
+          if (-not (Test-Path $src)) { throw "Expected bundle directory not found: $src" }
           New-Item -ItemType Directory -Force $dst | Out-Null
           Copy-Item -Recurse -Force "$src\*" $dst
 
-      - name: Label bundle filenames (Windows)
-        if: matrix.os == 'windows-latest'
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          # Prefer the git tag version for release builds so filenames match the release tag.
-          # Fall back to package.json for main/canary builds.
-          $version = $null
-          if ($env:GITHUB_REF -like 'refs/tags/*') {
-            $version = $env:GITHUB_REF_NAME
-            if ($version -and $version.StartsWith('v')) {
-              $version = $version.Substring(1)
-            }
-          }
-          if (-not $version) {
-            $version = (node -p "require('./package.json').version").Trim()
-          }
-          if (-not $version) {
-            throw "Failed to determine version (neither tag nor package.json)."
-          }
-          $arch = 'x64'
-          $locale = 'ja-JP'
-
-          $targets = @(
-            @{ pattern = 'src-tauri/target/release/bundle/msi/*.msi'; ext = '.msi' },
-            @{ pattern = 'src-tauri/target/release/bundle/nsis/*.exe'; ext = '.exe' }
-          )
-
-          foreach ($t in $targets) {
-            $files = @(Get-ChildItem -Path $t.pattern -ErrorAction SilentlyContinue)
-            if ($files.Count -eq 0) { continue }
-
-            if ($files.Count -eq 1) {
-              $newName = "Falkoe_${version}_${arch}_${locale}$($t.ext)"
-              Rename-Item -Path $files[0].FullName -NewName $newName
-              continue
-            }
-
-            $i = 1
-            foreach ($f in $files) {
-              $newName = "Falkoe_${version}_${arch}_${locale}_$i$($t.ext)"
-              Rename-Item -Path $f.FullName -NewName $newName
-              $i++
-            }
-          }
-
       - name: Build Tauri app (macOS)
-        if: startsWith(matrix.os, 'macos-') && matrix.variant == 'default'
+        if: startsWith(matrix.os, 'macos-')
         env:
           MACOSX_DEPLOYMENT_TARGET: "11.0"
           CMAKE_OSX_DEPLOYMENT_TARGET: "11.0"
@@ -1112,119 +829,151 @@ jobs:
           RUST_BACKTRACE: "1"
         run: pnpm tauri build -- --features no-openmp
 
-      - name: Label bundle filenames (Linux/macOS)
-        if: matrix.os != 'windows-latest'
+      # ========================================
+      # バージョン取得（統一ロジック）
+      # ========================================
+
+      - name: Determine version
+        id: version
         shell: bash
         run: |
           set -euo pipefail
 
-          # Prefer tag version for releases; fall back to package.json for branch builds.
           version=""
+          # タグビルドの場合は、タグから優先的にバージョンを取得
           if [[ "${GITHUB_REF:-}" == refs/tags/* ]]; then
             version="${GITHUB_REF_NAME:-}"
             version="${version#v}"
           fi
-          if [[ -z "$version" ]]; then
-            # Avoid relying on `node` being available in PATH at this point.
-            # Use python3 (available on GitHub runners) to read package.json.
-            version="$(python3 -c 'import json; print(json.load(open("package.json","r",encoding="utf-8")).get("version", "") or "")' 2>/dev/null || true)"
 
-            # Normalize potential CRLF/newline.
-            version="${version//$'\r'/}"
-            version="${version//$'\n'/}"
-          fi
+          # タグがない場合はpackage.jsonから取得
           if [[ -z "$version" ]]; then
-            echo "[error] Failed to determine version (neither tag nor package.json)" >&2
+            if command -v node >/dev/null 2>&1; then
+              version="$(node -p "require('./package.json').version" 2>/dev/null || true)"
+            else
+              version="$(python3 -c 'import json; print(json.load(open("package.json","r",encoding="utf-8")).get("version",""))' 2>/dev/null || true)"
+            fi
+            version="${version//\r'/}"
+            version="${version//\n'/}"
+          fi
+
+          if [[ -z "$version" ]]; then
+            echo "[error] Failed to determine version" >&2
             exit 1
           fi
 
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "[info] Version: $version"
+
+      # ========================================
+      # バンドル名のリネーム（統一処理）
+      # ========================================
+
+      - name: Rename bundles (Linux/macOS)
+        if: matrix.os != 'windows-latest' && !matrix.canary
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="${{ steps.version.outputs.version }}"
           arch="$(uname -m)"
           case "$arch" in
-            x86_64) arch="x64" ;;
-            amd64) arch="x64" ;;
+            x86_64|amd64) arch="x64" ;;
             aarch64) arch="arm64" ;;
           esac
-
           locale="ja-JP"
 
-          rename_group() {
+          rename_files() {
             local dir="$1"
-            local glob="$2"
+            local pattern="$2"
             local ext="$3"
-
+            
             shopt -s nullglob
-            local files=( "$dir"/$glob )
+            local files=( "$dir"/$pattern )
             shopt -u nullglob
-
+            
             if (( ${#files[@]} == 0 )); then
               return 0
             fi
-
+            
             if (( ${#files[@]} == 1 )); then
               local new_name="Falkoe_${version}_${arch}_${locale}${ext}"
               mv -f "${files[0]}" "${dir}/${new_name}"
+              echo "[info] Renamed: ${new_name}"
               return 0
             fi
-
+            
             local i=1
             for f in "${files[@]}"; do
               local new_name="Falkoe_${version}_${arch}_${locale}_${i}${ext}"
               mv -f "$f" "${dir}/${new_name}"
+              echo "[info] Renamed: ${new_name}"
               i=$((i+1))
             done
           }
 
           base="src-tauri/target/release/bundle"
-          rename_group "$base/appimage" "*.AppImage" ".AppImage"
-          rename_group "$base/deb" "*.deb" ".deb"
-          rename_group "$base/rpm" "*.rpm" ".rpm"
-          rename_group "$base/dmg" "*.dmg" ".dmg"
+          rename_files "$base/appimage" "*.AppImage" ".AppImage"
+          rename_files "$base/deb" "*.deb" ".deb"
+          rename_files "$base/rpm" "*.rpm" ".rpm"
+          rename_files "$base/dmg" "*.dmg" ".dmg"
+
+      - name: Rename bundles (Windows)
+        if: matrix.os == 'windows-latest' && !matrix.canary
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $version = "${{ steps.version.outputs.version }}"
+          $arch = 'x64'
+          $locale = 'ja-JP'
+
+          function Rename-Bundles {
+            param(
+              [string]$Pattern,
+              [string]$Extension
+            )
+            
+            $files = @(Get-ChildItem -Path $Pattern -ErrorAction SilentlyContinue)
+            if ($files.Count -eq 0) { return }
+            
+            if ($files.Count -eq 1) {
+              $newName = "Falkoe_${version}_${arch}_${locale}${Extension}"
+              $dir = $files[0].DirectoryName
+              Rename-Item -Path $files[0].FullName -NewName $newName
+              Write-Host "[info] Renamed: $newName"
+              return
+            }
+            
+            $i = 1
+            foreach ($f in $files) {
+              $newName = "Falkoe_${version}_${arch}_${locale}_${i}${Extension}"
+              $dir = $f.DirectoryName
+              Rename-Item -Path $f.FullName -NewName $newName
+              Write-Host "[info] Renamed: $newName"
+              $i++
+            }
+          }
+
+          Rename-Bundles -Pattern 'src-tauri/target/release/bundle/msi/*.msi' -Extension '.msi'
+          Rename-Bundles -Pattern 'src-tauri/target/release/bundle/nsis/*.exe' -Extension '.exe'
 
       # ========================================
       # Upload artifacts
       # ========================================
 
-      # upload-artifact occasionally fails with transient network errors (e.g. ECONNRESET).
-      # Retry a few times before failing the job.
-      - name: Upload artifacts (main branch) (attempt 1)
-        id: upload_artifacts_1
-        if: github.ref == 'refs/heads/main'
-        continue-on-error: true
-        uses: actions/upload-artifact@v4
+      - name: Upload artifacts (with retry)
+        if: github.ref == 'refs/heads/main' && !matrix.canary
+        uses: nick-fields/retry@v3
         with:
-          name: ${{ env.ARTIFACT_NAME }}
-          overwrite: true
-          path: |
-            src-tauri/target/release/bundle
-
-      - name: Upload artifacts (main branch) (attempt 2)
-        id: upload_artifacts_2
-        if: github.ref == 'refs/heads/main' && steps.upload_artifacts_1.outcome == 'failure'
-        continue-on-error: true
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.ARTIFACT_NAME }}
-          overwrite: true
-          path: |
-            src-tauri/target/release/bundle
-
-      - name: Upload artifacts (main branch) (attempt 3)
-        id: upload_artifacts_3
-        if: github.ref == 'refs/heads/main' && steps.upload_artifacts_2.outcome == 'failure'
-        continue-on-error: true
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.ARTIFACT_NAME }}
-          overwrite: true
-          path: |
-            src-tauri/target/release/bundle
-
-      - name: Fail if artifact upload failed
-        if: github.ref == 'refs/heads/main' && !matrix.canary && steps.upload_artifacts_3.outcome == 'failure'
-        shell: bash
-        run: |
-          echo "[error] upload-artifact failed after 3 attempts"
-          exit 1
+          timeout_minutes: 10
+          max_attempts: 3
+          retry_on: error
+          command: |
+            gh actions/upload-artifact@v4 \
+              --name "${{ env.ARTIFACT_NAME }}" \
+              --overwrite \
+              src-tauri/target/release/bundle
 
       - name: Upload to GitHub Release (tags)
         if: startsWith(github.ref, 'refs/tags/') && !matrix.canary
@@ -1237,5 +986,4 @@ jobs:
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/rpm/*.rpm
             src-tauri/target/release/bundle/dmg/*.dmg
-            src-tauri/target/release/bundle/macos/*.app
           fail_on_unmatched_files: false
