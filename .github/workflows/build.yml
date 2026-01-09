@@ -1041,9 +1041,20 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = (node -p "require('./package.json').version").Trim()
+          # Prefer the git tag version for release builds so filenames match the release tag.
+          # Fall back to package.json for main/canary builds.
+          $version = $null
+          if ($env:GITHUB_REF -like 'refs/tags/*') {
+            $version = $env:GITHUB_REF_NAME
+            if ($version -and $version.StartsWith('v')) {
+              $version = $version.Substring(1)
+            }
+          }
           if (-not $version) {
-            throw "Failed to read version from package.json"
+            $version = (node -p "require('./package.json').version").Trim()
+          }
+          if (-not $version) {
+            throw "Failed to determine version (neither tag nor package.json)."
           }
           $arch = 'x64'
           $locale = 'ja-JP'
@@ -1081,6 +1092,68 @@ jobs:
           WHISPER_NO_OPENMP: "1"
           RUST_BACKTRACE: "1"
         run: pnpm tauri build -- --features no-openmp
+
+      - name: Label bundle filenames (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Prefer tag version for releases; fall back to package.json for branch builds.
+          version=""
+          if [[ "${GITHUB_REF:-}" == refs/tags/* ]]; then
+            version="${GITHUB_REF_NAME:-}"
+            version="${version#v}"
+          fi
+          if [[ -z "$version" ]]; then
+            version="$(node -p "require('./package.json').version" | tr -d '\r\n' || true)"
+          fi
+          if [[ -z "$version" ]]; then
+            echo "[error] Failed to determine version (neither tag nor package.json)" >&2
+            exit 1
+          fi
+
+          arch="$(uname -m)"
+          case "$arch" in
+            x86_64) arch="x64" ;;
+            amd64) arch="x64" ;;
+            aarch64) arch="arm64" ;;
+          esac
+
+          locale="ja-JP"
+
+          rename_group() {
+            local dir="$1"
+            local glob="$2"
+            local ext="$3"
+
+            shopt -s nullglob
+            local files=( "$dir"/$glob )
+            shopt -u nullglob
+
+            if (( ${#files[@]} == 0 )); then
+              return 0
+            fi
+
+            if (( ${#files[@]} == 1 )); then
+              local new_name="Falkoe_${version}_${arch}_${locale}${ext}"
+              mv -f "${files[0]}" "${dir}/${new_name}"
+              return 0
+            fi
+
+            local i=1
+            for f in "${files[@]}"; do
+              local new_name="Falkoe_${version}_${arch}_${locale}_${i}${ext}"
+              mv -f "$f" "${dir}/${new_name}"
+              i=$((i+1))
+            done
+          }
+
+          base="src-tauri/target/release/bundle"
+          rename_group "$base/appimage" "*.AppImage" ".AppImage"
+          rename_group "$base/deb" "*.deb" ".deb"
+          rename_group "$base/rpm" "*.rpm" ".rpm"
+          rename_group "$base/dmg" "*.dmg" ".dmg"
 
       # ========================================
       # Upload artifacts
