@@ -853,8 +853,8 @@ jobs:
             else
               version="$(python3 -c 'import json; print(json.load(open("package.json","r",encoding="utf-8")).get("version",""))' 2>/dev/null || true)"
             fi
-            version="${version//\r'/}"
-            version="${version//\n'/}"
+            # Normalize potential CRLF/newline.
+            version="$(printf '%s' "$version" | tr -d '\r\n')"
           fi
 
           if [[ -z "$version" ]]; then
