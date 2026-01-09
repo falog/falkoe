@@ -1099,15 +1099,33 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $label = "${env:VARIANT_LABEL}"
-          $patterns = @(
-            'src-tauri/target/release/bundle/msi/*.msi',
-            'src-tauri/target/release/bundle/nsis/*.exe'
+          $version = (node -p "require('./package.json').version").Trim()
+          if (-not $version) {
+            throw "Failed to read version from package.json"
+          }
+          $arch = 'x64'
+          $locale = 'ja-JP'
+
+          $targets = @(
+            @{ pattern = 'src-tauri/target/release/bundle/msi/*.msi'; ext = '.msi' },
+            @{ pattern = 'src-tauri/target/release/bundle/nsis/*.exe'; ext = '.exe' }
           )
-          foreach ($pattern in $patterns) {
-            Get-ChildItem -Path $pattern -ErrorAction SilentlyContinue | ForEach-Object {
-              $newName = "$($_.BaseName)-$label$($_.Extension)"
-              Rename-Item -Path $_.FullName -NewName $newName
+
+          foreach ($t in $targets) {
+            $files = @(Get-ChildItem -Path $t.pattern -ErrorAction SilentlyContinue)
+            if ($files.Count -eq 0) { continue }
+
+            if ($files.Count -eq 1) {
+              $newName = "Falkoe_${version}_${arch}_${locale}$($t.ext)"
+              Rename-Item -Path $files[0].FullName -NewName $newName
+              continue
+            }
+
+            $i = 1
+            foreach ($f in $files) {
+              $newName = "Falkoe_${version}_${arch}_${locale}_$i$($t.ext)"
+              Rename-Item -Path $f.FullName -NewName $newName
+              $i++
             }
           }
 
