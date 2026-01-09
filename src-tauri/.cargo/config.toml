@@ -17,17 +17,6 @@ WHISPER_NO_FMA = "1"
 # Accelerate フレームワークは使用
 GGML_NO_ACCELERATE = "0"
 
-[target.x86_64-pc-windows-msvc.env]
-# Avoid shipping binaries that require AVX2/FMA/F16C.
-# Some users have older CPUs (e.g. Sandy Bridge) that support AVX but not AVX2,
-# and will crash with STATUS_ILLEGAL_INSTRUCTION (0xC000001D).
-# Force MSVC to compile C/C++ code with AVX (not AVX2).
-CMAKE_C_FLAGS = "/arch:AVX"
-CMAKE_CXX_FLAGS = "/arch:AVX"
-CMAKE_C_FLAGS_RELEASE = "/arch:AVX"
-CMAKE_CXX_FLAGS_RELEASE = "/arch:AVX"
-
-# Build a "fat" CPU backend set and pick the best one at runtime.
-# This enables AVX2 acceleration automatically on capable CPUs, while keeping
-# older CPUs working via the baseline backend.
-GGML_CPU_ALL_VARIANTS = "ON"
+#[target.x86_64-pc-windows-msvc.env]
+# NOTE: Whisper CPU instruction-set tuning is handled by the Windows tauri wrapper
+# (scripts/tauri.mjs), which builds separate AVX and AVX2 helper binaries.

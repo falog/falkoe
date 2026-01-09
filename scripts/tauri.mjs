@@ -1,5 +1,5 @@
-import { spawn } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { cpSync, existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
 
 const rawArgs = process.argv.slice(2);
@@ -22,6 +22,11 @@ function checkWindowsBundledTools(args) {
   const resourcesMecab = path.resolve(cwd, "src-tauri", "resources", "mecab");
 
   const ffmpegExe = path.join(resourcesBin, "ffmpeg.exe");
+  const transcribeAvxExe = path.join(resourcesBin, "falkoe-transcribe-avx.exe");
+  const transcribeAvx2Exe = path.join(
+    resourcesBin,
+    "falkoe-transcribe-avx2.exe"
+  );
   const praatconExe = path.join(resourcesBin, "praatcon.exe");
   const praatExe = path.join(resourcesBin, "praat.exe");
   const mecabExe = path.join(resourcesBin, "mecab.exe");
@@ -114,6 +119,119 @@ function checkWindowsBundledTools(args) {
       );
     }
   }
+
+  // Transcribe helpers are required for Windows transcription.
+  if (isPackaging) {
+    const missingTranscribe = [];
+    if (!existsSync(transcribeAvxExe)) missingTranscribe.push(transcribeAvxExe);
+    if (!existsSync(transcribeAvx2Exe))
+      missingTranscribe.push(transcribeAvx2Exe);
+    if (missingTranscribe.length > 0 && !allowMissing) {
+      console.error(
+        [
+          "[tauri wrapper] Windows bundle note:",
+          "  Transcribe helper binaries are missing. Build will not be portable.",
+          "  Missing:",
+          ...missingTranscribe.map((p) => `  - ${p}`),
+        ].join("\n")
+      );
+      process.exit(1);
+    }
+  }
+}
+
+function buildWindowsTranscribeHelpers(args) {
+  if (process.platform !== "win32") return;
+
+  const subcmd = args[0];
+  const isDev = subcmd === "dev";
+  const isPackaging = subcmd === "build" || subcmd === "bundle";
+  if (!isDev && !isPackaging) return;
+
+  const cwd = process.cwd();
+  const srcTauriDir = path.resolve(cwd, "src-tauri");
+  const resourcesBin = path.resolve(srcTauriDir, "resources", "bin");
+  mkdirSync(resourcesBin, { recursive: true });
+
+  // Respect a preconfigured CARGO_TARGET_DIR (e.g. GitHub Actions sets a short
+  // path like D:\t to avoid MSBuild/CMake deep path issues).
+  const cargoTargetBase = process.env.CARGO_TARGET_DIR
+    ? path.resolve(process.env.CARGO_TARGET_DIR)
+    : path.resolve(srcTauriDir, "target");
+
+  // In dev we only build the AVX helper for speed.
+  const variants = isPackaging
+    ? [
+        { tag: "avx", outName: "falkoe-transcribe-avx.exe" },
+        { tag: "avx2", outName: "falkoe-transcribe-avx2.exe" },
+      ]
+    : [{ tag: "avx", outName: "falkoe-transcribe-avx.exe" }];
+
+  for (const v of variants) {
+    const targetDir = path.resolve(cargoTargetBase, `transcribe-${v.tag}`);
+    const profileDir = isPackaging ? "release" : "debug";
+    const builtExe = path.resolve(
+      targetDir,
+      profileDir,
+      "transcribe_wav_json.exe"
+    );
+    const destExe = path.resolve(resourcesBin, v.outName);
+
+    const env = { ...process.env };
+    env.CARGO_TARGET_DIR = targetDir;
+
+    // Ensure we don't accidentally build for the build machine.
+    env.GGML_NATIVE = "OFF";
+
+    // Baseline AVX build (Sandy Bridge class).
+    env.GGML_AVX = "ON";
+    env.GGML_AVX2 = v.tag === "avx2" ? "ON" : "OFF";
+    env.GGML_BMI2 = "OFF";
+    env.GGML_AVX512 = "OFF";
+    env.GGML_AVX512_VBMI = "OFF";
+    env.GGML_AVX512_VNNI = "OFF";
+    env.GGML_AVX512_BF16 = "OFF";
+    env.GGML_AVX_VNNI = "OFF";
+    // FMA/F16C are implied for AVX2 on MSVC; keep explicit for baseline.
+    env.GGML_FMA = v.tag === "avx2" ? (env.GGML_FMA ?? "ON") : "OFF";
+    env.GGML_F16C = v.tag === "avx2" ? (env.GGML_F16C ?? "ON") : "OFF";
+
+    const cargoArgs = [
+      "build",
+      "--bin",
+      "transcribe_wav_json",
+      ...(isPackaging ? ["--release"] : []),
+    ];
+
+    const res = spawnSync("cargo", cargoArgs, {
+      cwd: srcTauriDir,
+      stdio: "inherit",
+      env,
+      shell: process.platform === "win32",
+    });
+
+    if (res.status !== 0) {
+      console.error(
+        `[tauri wrapper] Failed to build transcribe helper (${v.tag}).`
+      );
+      process.exit(res.status ?? 1);
+    }
+
+    if (!existsSync(builtExe)) {
+      console.error(
+        `[tauri wrapper] Expected helper exe not found: ${builtExe}`
+      );
+      process.exit(1);
+    }
+
+    // Replace atomically (best-effort) so the file is never half-written.
+    const tmpDest = `${destExe}.tmp`;
+    rmSync(tmpDest, { force: true });
+    cpSync(builtExe, tmpDest, { force: true });
+    rmSync(destExe, { force: true });
+    renameSync(tmpDest, destExe);
+    console.log(`[tauri wrapper] Built transcribe helper -> ${destExe}`);
+  }
 }
 
 // In dev, Tauri may resolve bundled resources from src-tauri/target/debug/resources.
@@ -145,6 +263,8 @@ if (args[0] === "dev") {
     );
   }
 }
+
+buildWindowsTranscribeHelpers(args);
 
 checkWindowsBundledTools(args);
 
