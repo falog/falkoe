@@ -5,6 +5,7 @@ use std::fs;
 use std::path::Path;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::process::Command;
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
 use super::ffmpeg::ffmpeg_convert_to_wav;
@@ -31,6 +32,97 @@ fn should_isolate_transcribe() -> bool {
 }
 
 #[cfg(all(target_os = "windows", any(target_arch = "x86", target_arch = "x86_64")))]
+fn transcribe_helper_candidates(resource_dir: &std::path::Path) -> Vec<(std::path::PathBuf, &'static str)> {
+    // Keep this consistent with resolve_bundled_tool() used by ffmpeg/mecab/etc.
+    // Depending on how Tauri is launched (dev vs bundle), resources may live under:
+    // - <resource_dir>/bin
+    // - <resource_dir>/resources/bin
+    // - or directly under <resource_dir>
+    let dirs = [
+        resource_dir.join("bin"),
+        resource_dir.to_path_buf(),
+        resource_dir.join("resources").join("bin"),
+        resource_dir.join("resources"),
+    ];
+
+    let mut out = Vec::new();
+    for d in dirs {
+        out.push((d.join("falkoe-transcribe-avx2.exe"), "avx2"));
+        out.push((d.join("falkoe-transcribe-avx.exe"), "avx"));
+    }
+    out
+}
+
+#[cfg(all(target_os = "windows", any(target_arch = "x86", target_arch = "x86_64")))]
+fn resolve_transcribe_helper(app: &AppHandle) -> Result<(std::path::PathBuf, &'static str)> {
+    let resource_dir = app.path().resource_dir()?;
+
+    let has_avx2 = std::is_x86_feature_detected!("avx2");
+    let has_avx = std::is_x86_feature_detected!("avx");
+    if !has_avx {
+        bail!("CPU does not support AVX; transcription helper requires AVX");
+    }
+
+    // Prefer AVX2 helper when CPU supports it.
+    // Candidate list is ordered by directory preference.
+    let candidates = transcribe_helper_candidates(&resource_dir);
+    let mut tried: Vec<std::path::PathBuf> = Vec::new();
+
+    // Avoid rare startup races where resources are being synced/copied.
+    for _ in 0..10 {
+        tried.clear();
+
+        // 1) Try AVX2 if supported
+        if has_avx2 {
+            for (p, kind) in candidates.iter().filter(|(_, k)| *k == "avx2") {
+                tried.push(p.clone());
+                if p.is_file() {
+                    return Ok((p.clone(), "avx2"));
+                }
+            }
+        }
+
+        // 2) Fall back to AVX
+        for (p, kind) in candidates.iter().filter(|(_, k)| *k == "avx") {
+            tried.push(p.clone());
+            if p.is_file() {
+                return Ok((p.clone(), "avx"));
+            }
+        }
+
+        std::thread::sleep(Duration::from_millis(200));
+    }
+
+    crate::logging::log_line(
+        app,
+        format!(
+            "[whisper] transcribe(subprocess): helper missing; resource_dir={} tried={} (showing up to 8) avx2={} avx=true",
+            resource_dir.display(),
+            tried.len(),
+            has_avx2
+        ),
+    );
+    for p in tried.iter().take(8) {
+        crate::logging::log_line(
+            app,
+            format!("[whisper] transcribe(subprocess): tried path exists={} is_file={} path={}", p.exists(), p.is_file(), p.display()),
+        );
+    }
+
+    let tried_joined = tried
+        .iter()
+        .take(12)
+        .map(|p| p.display().to_string())
+        .collect::<Vec<_>>()
+        .join("; ");
+    bail!(
+        "transcribe helper not found: tried {}{}",
+        tried_joined,
+        if tried.len() > 12 { " (and more)" } else { "" }
+    );
+}
+
+#[cfg(all(target_os = "windows", any(target_arch = "x86", target_arch = "x86_64")))]
 fn make_transcribe_command(
     app: &AppHandle,
     wav_path: &str,
@@ -42,31 +134,8 @@ fn make_transcribe_command(
     // We ship two variants:
     // - AVX   : minimum supported (Sandy Bridge class)
     // - AVX2  : faster on newer CPUs
-    let resource_dir = app.path().resource_dir()?;
-    let bin_dir = resource_dir.join("bin");
-
     let has_avx2 = std::is_x86_feature_detected!("avx2");
-    let has_avx = std::is_x86_feature_detected!("avx");
-    if !has_avx {
-        bail!("CPU does not support AVX; transcription helper requires AVX");
-    }
-
-    let helper_avx = bin_dir.join("falkoe-transcribe-avx.exe");
-    let helper_avx2 = bin_dir.join("falkoe-transcribe-avx2.exe");
-
-    // In dev builds we may only ship the AVX helper for faster build cycles.
-    // Prefer AVX2 when available AND present, otherwise fall back to AVX.
-    let (helper, picked) = if has_avx2 && helper_avx2.is_file() {
-        (helper_avx2, "avx2")
-    } else if helper_avx.is_file() {
-        (helper_avx, "avx")
-    } else {
-        bail!(
-            "transcribe helper not found: tried {} and {}",
-            helper_avx2.display(),
-            helper_avx.display()
-        );
-    };
+    let (helper, picked) = resolve_transcribe_helper(app)?;
 
     crate::logging::log_line(
         app,
