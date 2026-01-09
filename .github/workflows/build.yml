@@ -853,7 +853,13 @@ jobs:
             version="$(awk '
               $0=="[package]" { in_pkg=1; next }
               /^\[/ { in_pkg=0 }
-              in_pkg && match($0, /^version[[:space:]]*=[[:space:]]*"([^"]+)"/, m) { print m[1]; exit }
+              in_pkg && $0 ~ /^version[[:space:]]*=/ {
+                line=$0
+                sub(/^[^"]*"/, "", line)
+                sub(/".*$/, "", line)
+                print line
+                exit
+              }
             ' src-tauri/Cargo.toml | head -n 1)"
             # Normalize potential CRLF/newline.
             version="$(printf '%s' "$version" | tr -d '\r\n')"
