@@ -30,63 +30,79 @@ fn should_isolate_transcribe() -> bool {
     }
 }
 
+#[cfg(all(target_os = "windows", any(target_arch = "x86", target_arch = "x86_64")))]
+fn make_transcribe_command(
+    app: &AppHandle,
+    wav_path: &str,
+    model_path: &std::path::Path,
+    whisper_lang: Option<&'static str>,
+) -> Result<Command> {
+    // On Windows, run transcription in a separate helper binary to avoid
+    // taking down the whole app if native code crashes.
+    // We ship two variants:
+    // - AVX   : minimum supported (Sandy Bridge class)
+    // - AVX2  : faster on newer CPUs
+    let resource_dir = app.path().resource_dir()?;
+    let bin_dir = resource_dir.join("bin");
+
+    let has_avx2 = std::is_x86_feature_detected!("avx2");
+    let has_avx = std::is_x86_feature_detected!("avx");
+    if !has_avx {
+        bail!("CPU does not support AVX; transcription helper requires AVX");
+    }
+
+    let pick = if has_avx2 {
+        "falkoe-transcribe-avx2.exe"
+    } else {
+        "falkoe-transcribe-avx.exe"
+    };
+
+    let helper = bin_dir.join(pick);
+    if !helper.is_file() {
+        bail!("transcribe helper not found: {}", helper.display());
+    }
+
+    crate::logging::log_line(
+        app,
+        format!(
+            "[whisper] transcribe(subprocess): helper={} avx2={} avx=true lang={:?}",
+            helper.display(),
+            has_avx2,
+            whisper_lang
+        ),
+    );
+
+    let mut cmd = Command::new(&helper);
+    cmd.arg(wav_path);
+    cmd.arg("--model");
+    cmd.arg(model_path);
+    Ok(cmd)
+}
+
+#[cfg(not(all(target_os = "windows", any(target_arch = "x86", target_arch = "x86_64"))))]
+fn make_transcribe_command(
+    _app: &AppHandle,
+    wav_path: &str,
+    model_path: &std::path::Path,
+    _whisper_lang: Option<&'static str>,
+) -> Result<Command> {
+    // Non-Windows (and non-x86 Windows): keep the existing self-spawn path.
+    let exe = std::env::current_exe()?;
+    let mut cmd = Command::new(&exe);
+    cmd.arg("__transcribe_wav_json");
+    cmd.arg(wav_path);
+    cmd.arg("--model");
+    cmd.arg(model_path);
+    Ok(cmd)
+}
+
 fn transcribe_in_subprocess(
     app: &AppHandle,
     wav_path: &str,
     model_path: &std::path::Path,
     whisper_lang: Option<&'static str>,
 ) -> Result<super::types::Transcript> {
-    let mut cmd = if cfg!(target_os = "windows") {
-        // On Windows, run transcription in a separate helper binary to avoid
-        // taking down the whole app if native code crashes.
-        // We ship two variants:
-        // - AVX   : minimum supported (Sandy Bridge class)
-        // - AVX2  : faster on newer CPUs
-        let resource_dir = app.path().resource_dir()?;
-        let bin_dir = resource_dir.join("bin");
-
-        let has_avx2 = std::is_x86_feature_detected!("avx2");
-        let has_avx = std::is_x86_feature_detected!("avx");
-        if !has_avx {
-            bail!("CPU does not support AVX; transcription helper requires AVX");
-        }
-
-        let pick = if has_avx2 {
-            "falkoe-transcribe-avx2.exe"
-        } else {
-            "falkoe-transcribe-avx.exe"
-        };
-
-        let helper = bin_dir.join(pick);
-        if !helper.is_file() {
-            bail!("transcribe helper not found: {}", helper.display());
-        }
-
-        crate::logging::log_line(
-            app,
-            format!(
-                "[whisper] transcribe(subprocess): helper={} avx2={} avx=true lang={:?}",
-                helper.display(),
-                has_avx2,
-                whisper_lang
-            ),
-        );
-
-        let mut cmd = Command::new(&helper);
-        cmd.arg(wav_path);
-        cmd.arg("--model");
-        cmd.arg(model_path);
-        cmd
-    } else {
-        // Non-Windows: keep the existing self-spawn path.
-        let exe = std::env::current_exe()?;
-        let mut cmd = Command::new(&exe);
-        cmd.arg("__transcribe_wav_json");
-        cmd.arg(wav_path);
-        cmd.arg("--model");
-        cmd.arg(model_path);
-        cmd
-    };
+    let mut cmd = make_transcribe_command(app, wav_path, model_path, whisper_lang)?;
     if let Some(l) = whisper_lang {
         cmd.arg("--lang");
         cmd.arg(l);
