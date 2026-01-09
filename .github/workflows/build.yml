@@ -11,7 +11,63 @@ permissions:
   contents: write
 
 jobs:
+  prepare_mecab_ipadic:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install MeCab + IPADIC (UTF-8)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt update
+          sudo apt install -y mecab mecab-ipadic-utf8
+
+      - name: Collect IPADIC dictionary files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          out_dir="/tmp/mecab_ipadic_artifact"
+          rm -rf "$out_dir"
+          mkdir -p "$out_dir"
+
+          dic_dir=""
+          for candidate in \
+            /var/lib/mecab/dic/ipadic-utf8 \
+            /usr/share/mecab/dic/ipadic-utf8 \
+            /var/lib/mecab/dic/ipadic \
+            /usr/share/mecab/dic/ipadic
+          do
+            if [[ -d "$candidate" && -f "$candidate/dicrc" ]]; then
+              dic_dir="$candidate"
+              break
+            fi
+          done
+
+          if [[ -z "$dic_dir" ]]; then
+            echo "[error] ipadic dicdir not found" >&2
+            exit 1
+          fi
+
+          cp -RL "$dic_dir"/* "$out_dir/"
+
+          for file in dicrc sys.dic unk.dic; do
+            if [[ ! -f "$out_dir/$file" ]]; then
+              echo "[error] missing required dic file: $file" >&2
+              exit 1
+            fi
+          done
+
+          echo "[info] collected ipadic from: $dic_dir"
+          ls -lh "$out_dir" | head -n 30
+
+      - name: Upload IPADIC dictionary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mecab-ipadic-utf8
+          path: /tmp/mecab_ipadic_artifact
+
   build:
+    needs: prepare_mecab_ipadic
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.canary || false }}
     env:
@@ -65,6 +121,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Download IPADIC dictionary (shared)
+        if: matrix.os == 'windows-latest'
+        uses: actions/download-artifact@v4
+        with:
+          name: mecab-ipadic-utf8
+          path: src-tauri/resources/mecab/ipadic
 
       # ========================================
       # 依存関係インストール
@@ -151,16 +214,8 @@ jobs:
             mingw-w64-x86_64-mecab \
             mingw-w64-x86_64-gettext
 
-          # Prefer IPADIC to keep tokenization closer to Linux (e.g. numeric grouping, feature columns).
-          # Require ipadic (or ipadic-utf8) so Windows behavior matches Linux.
-          if pacman -S --noconfirm --needed mingw-w64-x86_64-mecab-ipadic; then
-            echo "[info] installed mingw-w64-x86_64-mecab-ipadic"
-          elif pacman -S --noconfirm --needed mingw-w64-x86_64-mecab-ipadic-utf8; then
-            echo "[info] installed mingw-w64-x86_64-mecab-ipadic-utf8"
-          else
-            echo "[error] Failed to install an IPADIC dictionary package (expected one of: mingw-w64-x86_64-mecab-ipadic, mingw-w64-x86_64-mecab-ipadic-utf8)" >&2
-            exit 1
-          fi
+          # NOTE: MSYS2 does not currently provide an IPADIC dictionary package.
+          # We will bundle a dictionary during the "Bundle MeCab (Windows)" step.
           echo "[info] mecab packages:" 
           pacman -Q | grep -i mecab || true
           echo "[info] mecab location:" 
@@ -474,7 +529,12 @@ jobs:
 
           # 辞書ファイル
           dic_dir=""
-          for candidate in /var/lib/mecab/dic/ipadic /usr/share/mecab/dic/ipadic; do
+          for candidate in \
+            /var/lib/mecab/dic/ipadic-utf8 \
+            /usr/share/mecab/dic/ipadic-utf8 \
+            /var/lib/mecab/dic/ipadic \
+            /usr/share/mecab/dic/ipadic
+          do
             if [[ -d "$candidate" && -f "$candidate/dicrc" ]]; then
               dic_dir="$candidate"
               break
@@ -507,16 +567,16 @@ jobs:
           mkdir -p src-tauri/resources/bin
           mkdir -p src-tauri/resources/mecab/ipadic
 
-          # Ensure a dictionary package is present. Prefer IPADIC to align behavior with Linux.
-          pacman -S --noconfirm --needed mingw-w64-x86_64-mecab mingw-w64-x86_64-gettext
-          if pacman -S --noconfirm --needed mingw-w64-x86_64-mecab-ipadic; then
-            echo "[info] using mecab-ipadic"
-          elif pacman -S --noconfirm --needed mingw-w64-x86_64-mecab-ipadic-utf8; then
-            echo "[info] using mecab-ipadic-utf8"
-          else
-            echo "[error] Failed to install an IPADIC dictionary package (expected one of: mingw-w64-x86_64-mecab-ipadic, mingw-w64-x86_64-mecab-ipadic-utf8)" >&2
+          # MSYS2 does not provide an IPADIC dictionary package.
+          # We download a shared IPADIC(UTF-8) dictionary artifact built on Ubuntu.
+          if [[ ! -f src-tauri/resources/mecab/ipadic/dicrc ]]; then
+            echo "[error] bundled ipadic dictionary is missing (dicrc not found)." >&2
+            echo "[info] expected at: src-tauri/resources/mecab/ipadic" >&2
+            ls -la src-tauri/resources/mecab/ipadic || true
             exit 1
           fi
+
+          pacman -S --noconfirm --needed mingw-w64-x86_64-mecab mingw-w64-x86_64-gettext
 
           # mecab実行ファイル
           if ! command -v mecab >/dev/null 2>&1; then
@@ -552,72 +612,7 @@ jobs:
 
           echo "[info] bundled mecab.exe and DLLs (including libiconv/libintl)"
 
-          # 辞書ファイル（IPA辞書）
-          dic_dir=""
-          echo "[info] searching for mecab dictionary..."
-
-          if command -v mecab-config >/dev/null 2>&1; then
-            dic_root="$(mecab-config --dicdir)"
-            echo "[info] mecab-config --dicdir: $dic_root"
-            for candidate in "$dic_root/ipadic" "$dic_root/ipadic-utf8"; do
-              echo "[info] checking: $candidate"
-              if [[ -d "$candidate" ]]; then
-                dic_dir="$candidate"
-                break
-              fi
-            done
-          fi
-
-          if [[ -z "$dic_dir" || ! -d "$dic_dir" ]]; then
-            echo "[info] searching fallback locations..."
-            for candidate in \
-              /mingw64/lib/mecab/dic/ipadic \
-              /mingw64/share/mecab/dic/ipadic \
-              /mingw64/lib/mecab/dic/ipadic-utf8 \
-              /mingw64/share/mecab/dic/ipadic-utf8
-            do
-              echo "[info] checking candidate: $candidate"
-              if [[ -d "$candidate" ]]; then
-                dic_dir="$candidate"
-                echo "[info] found dictionary at: $dic_dir"
-                break
-              fi
-            done
-          fi
-
-          if [[ -z "$dic_dir" || ! -f "$dic_dir/dicrc" ]]; then
-            echo "[error] ipadic not found or invalid"
-            echo "[info] searched locations:"
-            ls -la /mingw64/lib/mecab/dic 2>/dev/null || echo "[info] /mingw64/lib/mecab/dic not found"
-            ls -la /mingw64/share/mecab/dic 2>/dev/null || echo "[info] /mingw64/share/mecab/dic not found"
-            echo "[info] Checking installed mecab packages:"
-            pacman -Q | grep -i mecab || echo "[info] no mecab packages found"
-            exit 1
-          fi
-
-          # Sanity check: ensure we didn't pick up NAIST dictionary.
-          if [[ -f "$dic_dir/naist-jdic.csv" ]]; then
-            echo "[error] selected dictionary appears to be NAIST (naist-jdic.csv present). Expected IPADIC to match Linux behavior." >&2
-            exit 1
-          fi
-
-          # シンボリックリンクを解決して実ファイルをコピー
-          echo "[info] copying dictionary from $dic_dir to src-tauri/resources/mecab/ipadic/"
-          rm -rf src-tauri/resources/mecab/ipadic/*
-          cp -RL "$dic_dir"/* src-tauri/resources/mecab/ipadic/
-
-          echo "[info] dictionary files copied:"
-          ls -lh src-tauri/resources/mecab/ipadic/ | head -n 20
-
-          # 必須ファイルの確認
-          for file in dicrc sys.dic unk.dic; do
-            if [[ ! -f "src-tauri/resources/mecab/ipadic/$file" ]]; then
-              echo "[error] failed to copy $file"
-              exit 1
-            fi
-          done
-
-          echo "[info] bundled ipadic from $dic_dir"
+          echo "[info] bundled ipadic dictionary (shared artifact)"
 
       - name: Bundle MeCab (macOS)
         if: startsWith(matrix.os, 'macos-')
