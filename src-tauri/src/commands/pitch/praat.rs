@@ -46,17 +46,15 @@ fn resolve_praat_cmd_candidates(app: &AppHandle) -> Vec<PathBuf> {
         out.push(p);
     }
 
-    // On Windows, GUI Praat (praat.exe) can pop up a black window during pitch analysis.
-    // To avoid that UX, only try praatcon on Windows and fall back to WORLD/YIN otherwise.
-    if !cfg!(target_os = "windows") {
-        if let Some(p) = resolve_bundled_tool(app, "praat") {
-            out.push(p);
-        }
+    // Windows でも praat.exe を候補に含める (CREATE_NO_WINDOW で黒画面抑制)
+    if let Some(p) = resolve_bundled_tool(app, "praat") {
+        out.push(p);
     }
 
     // Then try PATH (console first).
     if cfg!(target_os = "windows") {
         out.push(PathBuf::from("praatcon.exe"));
+        out.push(PathBuf::from("praat.exe"));
     } else {
         out.push(PathBuf::from("praatcon"));
         out.push(PathBuf::from("praat"));
@@ -196,6 +194,7 @@ pub(crate) fn extract_f0_with_praat(
         #[cfg(target_os = "windows")]
         {
             cmd.creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS);
+            cmd.stdin(Stdio::null());
         }
 
         let mut child = match cmd.spawn() {
