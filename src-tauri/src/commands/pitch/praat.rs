@@ -38,18 +38,22 @@ fn resolve_bundled_tool(app: &AppHandle, base_name: &str) -> Option<PathBuf> {
 fn resolve_praat_cmd_candidates(app: &AppHandle) -> Vec<PathBuf> {
     let mut out = Vec::new();
 
-    // Prefer bundled console build.
+    // Prefer console build.
     if let Some(p) = resolve_bundled_tool(app, "praatcon") {
         out.push(p);
     }
-    if let Some(p) = resolve_bundled_tool(app, "praat") {
-        out.push(p);
+
+    // On Windows, GUI Praat (praat.exe) can pop up a black window during pitch analysis.
+    // To avoid that UX, only try praatcon on Windows and fall back to WORLD/YIN otherwise.
+    if !cfg!(target_os = "windows") {
+        if let Some(p) = resolve_bundled_tool(app, "praat") {
+            out.push(p);
+        }
     }
 
     // Then try PATH (console first).
     if cfg!(target_os = "windows") {
         out.push(PathBuf::from("praatcon.exe"));
-        out.push(PathBuf::from("praat.exe"));
     } else {
         out.push(PathBuf::from("praatcon"));
         out.push(PathBuf::from("praat"));

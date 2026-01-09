@@ -140,7 +140,6 @@ jobs:
           update: true
           install: >-
             mingw-w64-x86_64-mecab
-            mingw-w64-x86_64-mecab-naist-jdic
             mingw-w64-x86_64-gettext
 
       - name: Verify MeCab installation (Windows)
@@ -153,12 +152,14 @@ jobs:
             mingw-w64-x86_64-gettext
 
           # Prefer IPADIC to keep tokenization closer to Linux (e.g. numeric grouping, feature columns).
-          # Fall back to naist-jdic if the ipadic package isn't available for this MSYS2 snapshot.
+          # Require ipadic (or ipadic-utf8) so Windows behavior matches Linux.
           if pacman -S --noconfirm --needed mingw-w64-x86_64-mecab-ipadic; then
             echo "[info] installed mingw-w64-x86_64-mecab-ipadic"
+          elif pacman -S --noconfirm --needed mingw-w64-x86_64-mecab-ipadic-utf8; then
+            echo "[info] installed mingw-w64-x86_64-mecab-ipadic-utf8"
           else
-            echo "[warn] mingw-w64-x86_64-mecab-ipadic not available; falling back to naist-jdic" >&2
-            pacman -S --noconfirm --needed mingw-w64-x86_64-mecab-naist-jdic
+            echo "[error] Failed to install an IPADIC dictionary package (expected one of: mingw-w64-x86_64-mecab-ipadic, mingw-w64-x86_64-mecab-ipadic-utf8)" >&2
+            exit 1
           fi
           echo "[info] mecab packages:" 
           pacman -Q | grep -i mecab || true
@@ -510,9 +511,11 @@ jobs:
           pacman -S --noconfirm --needed mingw-w64-x86_64-mecab mingw-w64-x86_64-gettext
           if pacman -S --noconfirm --needed mingw-w64-x86_64-mecab-ipadic; then
             echo "[info] using mecab-ipadic"
+          elif pacman -S --noconfirm --needed mingw-w64-x86_64-mecab-ipadic-utf8; then
+            echo "[info] using mecab-ipadic-utf8"
           else
-            echo "[warn] mecab-ipadic not available; using naist-jdic" >&2
-            pacman -S --noconfirm --needed mingw-w64-x86_64-mecab-naist-jdic
+            echo "[error] Failed to install an IPADIC dictionary package (expected one of: mingw-w64-x86_64-mecab-ipadic, mingw-w64-x86_64-mecab-ipadic-utf8)" >&2
+            exit 1
           fi
 
           # mecab実行ファイル
@@ -556,7 +559,7 @@ jobs:
           if command -v mecab-config >/dev/null 2>&1; then
             dic_root="$(mecab-config --dicdir)"
             echo "[info] mecab-config --dicdir: $dic_root"
-            for candidate in "$dic_root/ipadic" "$dic_root/ipadic-utf8" "$dic_root/naist-jdic"; do
+            for candidate in "$dic_root/ipadic" "$dic_root/ipadic-utf8"; do
               echo "[info] checking: $candidate"
               if [[ -d "$candidate" ]]; then
                 dic_dir="$candidate"
@@ -571,9 +574,7 @@ jobs:
               /mingw64/lib/mecab/dic/ipadic \
               /mingw64/share/mecab/dic/ipadic \
               /mingw64/lib/mecab/dic/ipadic-utf8 \
-              /mingw64/share/mecab/dic/ipadic-utf8 \
-              /mingw64/lib/mecab/dic/naist-jdic \
-              /mingw64/share/mecab/dic/naist-jdic
+              /mingw64/share/mecab/dic/ipadic-utf8
             do
               echo "[info] checking candidate: $candidate"
               if [[ -d "$candidate" ]]; then
@@ -591,6 +592,12 @@ jobs:
             ls -la /mingw64/share/mecab/dic 2>/dev/null || echo "[info] /mingw64/share/mecab/dic not found"
             echo "[info] Checking installed mecab packages:"
             pacman -Q | grep -i mecab || echo "[info] no mecab packages found"
+            exit 1
+          fi
+
+          # Sanity check: ensure we didn't pick up NAIST dictionary.
+          if [[ -f "$dic_dir/naist-jdic.csv" ]]; then
+            echo "[error] selected dictionary appears to be NAIST (naist-jdic.csv present). Expected IPADIC to match Linux behavior." >&2
             exit 1
           fi
 
