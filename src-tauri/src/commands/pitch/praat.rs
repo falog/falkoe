@@ -12,6 +12,9 @@ use std::os::windows::process::CommandExt;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+#[cfg(target_os = "windows")]
+const DETACHED_PROCESS: u32 = 0x0000_0008;
+
 fn resolve_bundled_tool(app: &AppHandle, base_name: &str) -> Option<PathBuf> {
     let resource_dir = app.path().resource_dir().ok()?;
     let exe_name = if cfg!(target_os = "windows") {
@@ -192,7 +195,7 @@ pub(crate) fn extract_f0_with_praat(
         // Avoid spawning a black console window on Windows.
         #[cfg(target_os = "windows")]
         {
-            cmd.creation_flags(CREATE_NO_WINDOW);
+            cmd.creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS);
         }
 
         let mut child = match cmd.spawn() {

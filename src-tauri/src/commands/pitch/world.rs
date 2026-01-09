@@ -12,6 +12,11 @@ use std::os::windows::process::CommandExt;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+// Some console-subsystem executables can still flash a window depending on how they are spawned.
+// DETACHED_PROCESS makes the child not attach to any console.
+#[cfg(target_os = "windows")]
+const DETACHED_PROCESS: u32 = 0x0000_0008;
+
 fn resolve_bundled_tool(app: &AppHandle, base_name: &str) -> Option<PathBuf> {
     let resource_dir = app.path().resource_dir().ok()?;
     let exe_name = if cfg!(target_os = "windows") {
@@ -139,8 +144,13 @@ pub(crate) fn extract_f0_with_world(
         #[cfg(target_os = "windows")]
         {
             // Prevent a console window from popping up when launching helper binaries.
-            command.creation_flags(CREATE_NO_WINDOW);
+            command.creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS);
         }
+
+        // Ensure the process doesn't inherit any stdio that might trigger console allocation.
+        command.stdin(std::process::Stdio::null());
+        command.stdout(std::process::Stdio::null());
+        command.stderr(std::process::Stdio::null());
 
         let out = command
             .args([
