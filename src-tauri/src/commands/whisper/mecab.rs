@@ -295,7 +295,11 @@ fn run_mecab(text: &str, rt: &MecabRuntime, app: Option<&AppHandle>) -> Option<V
         // Otherwise we can break system installations by pointing dicdir to a non-existent bundled path.
         if let Some(app) = app {
             if let Some(rc) = resolve_bundled_mecabrc(app) {
-                cmd.arg("-r").arg(for_external_tool_path(&rc));
+                let rc = for_external_tool_path(&rc);
+                // Some MeCab builds still consult MECABRC internally even if -r is passed.
+                // Set both for maximum compatibility.
+                cmd.env("MECABRC", &rc);
+                cmd.arg("-r").arg(rc);
             }
         }
         cmd.arg("-d").arg(for_external_tool_path(dicdir));
@@ -384,7 +388,9 @@ fn run_mecab_with_pos(text: &str, rt: &MecabRuntime, app: Option<&AppHandle>) ->
         // Only override mecabrc when we also control the dictionary dir.
         if let Some(app) = app {
             if let Some(rc) = resolve_bundled_mecabrc(app) {
-                cmd.arg("-r").arg(for_external_tool_path(&rc));
+                let rc = for_external_tool_path(&rc);
+                cmd.env("MECABRC", &rc);
+                cmd.arg("-r").arg(rc);
             }
         }
         cmd.arg("-d").arg(for_external_tool_path(dicdir));

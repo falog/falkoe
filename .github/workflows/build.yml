@@ -150,8 +150,16 @@ jobs:
           set -euo pipefail
           pacman -S --noconfirm --needed \
             mingw-w64-x86_64-mecab \
-            mingw-w64-x86_64-mecab-naist-jdic \
             mingw-w64-x86_64-gettext
+
+          # Prefer IPADIC to keep tokenization closer to Linux (e.g. numeric grouping, feature columns).
+          # Fall back to naist-jdic if the ipadic package isn't available for this MSYS2 snapshot.
+          if pacman -S --noconfirm --needed mingw-w64-x86_64-mecab-ipadic; then
+            echo "[info] installed mingw-w64-x86_64-mecab-ipadic"
+          else
+            echo "[warn] mingw-w64-x86_64-mecab-ipadic not available; falling back to naist-jdic" >&2
+            pacman -S --noconfirm --needed mingw-w64-x86_64-mecab-naist-jdic
+          fi
           echo "[info] mecab packages:" 
           pacman -Q | grep -i mecab || true
           echo "[info] mecab location:" 
@@ -497,6 +505,15 @@ jobs:
           set -euo pipefail
           mkdir -p src-tauri/resources/bin
           mkdir -p src-tauri/resources/mecab/ipadic
+
+          # Ensure a dictionary package is present. Prefer IPADIC to align behavior with Linux.
+          pacman -S --noconfirm --needed mingw-w64-x86_64-mecab mingw-w64-x86_64-gettext
+          if pacman -S --noconfirm --needed mingw-w64-x86_64-mecab-ipadic; then
+            echo "[info] using mecab-ipadic"
+          else
+            echo "[warn] mecab-ipadic not available; using naist-jdic" >&2
+            pacman -S --noconfirm --needed mingw-w64-x86_64-mecab-naist-jdic
+          fi
 
           # mecab実行ファイル
           if ! command -v mecab >/dev/null 2>&1; then
