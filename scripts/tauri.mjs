@@ -27,6 +27,10 @@ function checkWindowsBundledTools(args) {
     resourcesBin,
     "falkoe-transcribe-avx2.exe"
   );
+  const transcribeVulkanExe = path.join(
+    resourcesBin,
+    "falkoe-transcribe-vulkan.exe"
+  );
   const praatconExe = path.join(resourcesBin, "praatcon.exe");
   const praatExe = path.join(resourcesBin, "praat.exe");
   const mecabExe = path.join(resourcesBin, "mecab.exe");
@@ -137,6 +141,18 @@ function checkWindowsBundledTools(args) {
       );
       process.exit(1);
     }
+
+    // Vulkan helper is optional. If present, Falkoe can prefer it and fall back to CPU.
+    if (!existsSync(transcribeVulkanExe)) {
+      console.warn(
+        [
+          "[tauri wrapper] Windows bundle note:",
+          "  Optional Vulkan transcribe helper is not bundled:",
+          `  - ${transcribeVulkanExe}`,
+          "  Falkoe will use CPU helper binaries.",
+        ].join("\n")
+      );
+    }
   }
 }
 
@@ -167,6 +183,16 @@ function buildWindowsTranscribeHelpers(args) {
       ]
     : [{ tag: "avx", outName: "falkoe-transcribe-avx.exe" }];
 
+  // Optional: Vulkan-enabled helper (requires Vulkan SDK / glslc at build time).
+  // Opt-in to avoid breaking CI/dev machines that don't have it installed.
+  const wantVulkanHelper =
+    process.env.FALKOE_BUILD_VULKAN_HELPER === "1" ||
+    process.env.FALKOE_BUILD_VULKAN_HELPER === "true";
+  if (isPackaging && wantVulkanHelper) {
+    // Build it as baseline AVX for maximum compatibility.
+    variants.push({ tag: "vulkan", outName: "falkoe-transcribe-vulkan.exe" });
+  }
+
   for (const v of variants) {
     const targetDir = path.resolve(cargoTargetBase, `transcribe-${v.tag}`);
     const profileDir = isPackaging ? "release" : "debug";
@@ -182,6 +208,14 @@ function buildWindowsTranscribeHelpers(args) {
 
     // Ensure we don't accidentally build for the build machine.
     env.GGML_NATIVE = "OFF";
+
+    // Optional GPU backend (Vulkan) build.
+    // If this fails on your environment, you can set FALKOE_ALLOW_MISSING_BUNDLED_TOOLS=1
+    // to package CPU-only builds.
+    const cargoFeatures = [];
+    if (v.tag === "vulkan") {
+      cargoFeatures.push("whisper-vulkan");
+    }
 
     // Baseline AVX build (Sandy Bridge class).
     env.GGML_AVX = "ON";
@@ -200,6 +234,7 @@ function buildWindowsTranscribeHelpers(args) {
       "build",
       "--bin",
       "transcribe_wav_json",
+      ...(cargoFeatures.length ? ["--features", cargoFeatures.join(",")] : []),
       ...(isPackaging ? ["--release"] : []),
     ];
 
@@ -211,6 +246,22 @@ function buildWindowsTranscribeHelpers(args) {
     });
 
     if (res.status !== 0) {
+      const requireVulkanHelper =
+        process.env.FALKOE_REQUIRE_VULKAN_HELPER === "1" ||
+        process.env.FALKOE_REQUIRE_VULKAN_HELPER === "true";
+
+      if (v.tag === "vulkan" && !requireVulkanHelper) {
+        console.warn(
+          [
+            `[tauri wrapper] Optional Vulkan helper build failed (tag=${v.tag}).`,
+            "  This usually means Vulkan SDK (including glslc) is not installed.",
+            "  Continuing with CPU helpers only.",
+            "  To require Vulkan helper, set FALKOE_REQUIRE_VULKAN_HELPER=1.",
+          ].join("\n")
+        );
+        continue;
+      }
+
       console.error(
         `[tauri wrapper] Failed to build transcribe helper (${v.tag}).`
       );
@@ -218,6 +269,16 @@ function buildWindowsTranscribeHelpers(args) {
     }
 
     if (!existsSync(builtExe)) {
+      if (v.tag === "vulkan") {
+        console.warn(
+          [
+            `[tauri wrapper] Optional Vulkan helper exe not found: ${builtExe}`,
+            "  Continuing with CPU helpers only.",
+          ].join("\n")
+        );
+        continue;
+      }
+
       console.error(
         `[tauri wrapper] Expected helper exe not found: ${builtExe}`
       );

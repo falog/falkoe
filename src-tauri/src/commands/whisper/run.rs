@@ -32,7 +32,9 @@ fn should_isolate_transcribe() -> bool {
 }
 
 #[cfg(all(target_os = "windows", any(target_arch = "x86", target_arch = "x86_64")))]
-fn transcribe_helper_candidates(resource_dir: &std::path::Path) -> Vec<(std::path::PathBuf, &'static str)> {
+fn transcribe_helper_candidates(
+    resource_dir: &std::path::Path,
+) -> Vec<(std::path::PathBuf, &'static str)> {
     // Keep this consistent with resolve_bundled_tool() used by ffmpeg/mecab/etc.
     // Depending on how Tauri is launched (dev vs bundle), resources may live under:
     // - <resource_dir>/bin
@@ -47,6 +49,7 @@ fn transcribe_helper_candidates(resource_dir: &std::path::Path) -> Vec<(std::pat
 
     let mut out = Vec::new();
     for d in dirs {
+        out.push((d.join("falkoe-transcribe-vulkan.exe"), "vulkan"));
         out.push((d.join("falkoe-transcribe-avx2.exe"), "avx2"));
         out.push((d.join("falkoe-transcribe-avx.exe"), "avx"));
     }
@@ -54,7 +57,31 @@ fn transcribe_helper_candidates(resource_dir: &std::path::Path) -> Vec<(std::pat
 }
 
 #[cfg(all(target_os = "windows", any(target_arch = "x86", target_arch = "x86_64")))]
-fn resolve_transcribe_helper(app: &AppHandle) -> Result<(std::path::PathBuf, &'static str)> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TranscribeBackendPref {
+    Auto,
+    CpuOnly,
+    Vulkan,
+}
+
+#[cfg(all(target_os = "windows", any(target_arch = "x86", target_arch = "x86_64")))]
+fn parse_backend_pref() -> TranscribeBackendPref {
+    match std::env::var("FALKOE_WHISPER_BACKEND") {
+        Ok(v) if v.eq_ignore_ascii_case("cpu") || v.eq_ignore_ascii_case("default") => {
+            TranscribeBackendPref::CpuOnly
+        }
+        Ok(v) if v.eq_ignore_ascii_case("vulkan") || v.eq_ignore_ascii_case("gpu") => {
+            TranscribeBackendPref::Vulkan
+        }
+        _ => TranscribeBackendPref::Auto,
+    }
+}
+
+#[cfg(all(target_os = "windows", any(target_arch = "x86", target_arch = "x86_64")))]
+fn resolve_transcribe_helper(
+    app: &AppHandle,
+    pref: TranscribeBackendPref,
+) -> Result<(std::path::PathBuf, &'static str)> {
     let resource_dir = app.path().resource_dir()?;
 
     let has_avx2 = std::is_x86_feature_detected!("avx2");
@@ -71,6 +98,23 @@ fn resolve_transcribe_helper(app: &AppHandle) -> Result<(std::path::PathBuf, &'s
     // Avoid rare startup races where resources are being synced/copied.
     for _ in 0..10 {
         tried.clear();
+
+        // 0) Optional Vulkan helper (built with --features whisper-vulkan)
+        if pref != TranscribeBackendPref::CpuOnly {
+            for (p, kind) in candidates.iter().filter(|(_, k)| *k == "vulkan") {
+                tried.push(p.clone());
+                if p.is_file() {
+                    // Auto prefers Vulkan when available; force Vulkan also lands here.
+                    return Ok((p.clone(), "vulkan"));
+                }
+            }
+
+            if pref == TranscribeBackendPref::Vulkan {
+                // Forced Vulkan requested but not present.
+                std::thread::sleep(Duration::from_millis(200));
+                continue;
+            }
+        }
 
         // 1) Try AVX2 if supported
         if has_avx2 {
@@ -128,14 +172,28 @@ fn make_transcribe_command(
     wav_path: &str,
     model_path: &std::path::Path,
     whisper_lang: Option<&'static str>,
-) -> Result<Command> {
+) -> Result<(Command, &'static str)> {
     // On Windows, run transcription in a separate helper binary to avoid
     // taking down the whole app if native code crashes.
     // We ship two variants:
     // - AVX   : minimum supported (Sandy Bridge class)
     // - AVX2  : faster on newer CPUs
+    let pref = parse_backend_pref();
+    make_transcribe_command_with_pref(app, wav_path, model_path, whisper_lang, pref)
+}
+
+#[cfg(all(target_os = "windows", any(target_arch = "x86", target_arch = "x86_64")))]
+fn make_transcribe_command_with_pref(
+    app: &AppHandle,
+    wav_path: &str,
+    model_path: &std::path::Path,
+    whisper_lang: Option<&'static str>,
+    pref: TranscribeBackendPref,
+) -> Result<(Command, &'static str)> {
+    // On Windows, run transcription in a separate helper binary to avoid
+    // taking down the whole app if native code crashes.
     let has_avx2 = std::is_x86_feature_detected!("avx2");
-    let (helper, picked) = resolve_transcribe_helper(app)?;
+    let (helper, picked) = resolve_transcribe_helper(app, pref)?;
 
     crate::logging::log_line(
         app,
@@ -152,7 +210,7 @@ fn make_transcribe_command(
     cmd.arg(wav_path);
     cmd.arg("--model");
     cmd.arg(model_path);
-    Ok(cmd)
+    Ok((cmd, picked))
 }
 
 #[cfg(not(all(target_os = "windows", any(target_arch = "x86", target_arch = "x86_64"))))]
@@ -161,7 +219,7 @@ fn make_transcribe_command(
     wav_path: &str,
     model_path: &std::path::Path,
     _whisper_lang: Option<&'static str>,
-) -> Result<Command> {
+) -> Result<(Command, &'static str)> {
     // Non-Windows (and non-x86 Windows): keep the existing self-spawn path.
     let exe = std::env::current_exe()?;
     let mut cmd = Command::new(&exe);
@@ -169,7 +227,7 @@ fn make_transcribe_command(
     cmd.arg(wav_path);
     cmd.arg("--model");
     cmd.arg(model_path);
-    Ok(cmd)
+    Ok((cmd, "self"))
 }
 
 fn transcribe_in_subprocess(
@@ -178,16 +236,16 @@ fn transcribe_in_subprocess(
     model_path: &std::path::Path,
     whisper_lang: Option<&'static str>,
 ) -> Result<super::types::Transcript> {
-    let mut cmd = make_transcribe_command(app, wav_path, model_path, whisper_lang)?;
+    let (mut cmd0, _picked0) = make_transcribe_command(app, wav_path, model_path, whisper_lang)?;
     if let Some(l) = whisper_lang {
-        cmd.arg("--lang");
-        cmd.arg(l);
+        cmd0.arg("--lang");
+        cmd0.arg(l);
     }
-    cmd.env("RUST_BACKTRACE", "1");
-    cmd.stdout(std::process::Stdio::piped());
-    cmd.stderr(std::process::Stdio::piped());
+    cmd0.env("RUST_BACKTRACE", "1");
+    cmd0.stdout(std::process::Stdio::piped());
+    cmd0.stderr(std::process::Stdio::piped());
 
-    let out = cmd.output()?;
+    let out = cmd0.output()?;
     let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
     if !out.status.success() {
         crate::logging::log_line(
@@ -198,6 +256,87 @@ fn transcribe_in_subprocess(
                 crate::logging::truncate_for_log(&stderr, 2000)
             ),
         );
+
+        // If Vulkan helper failed, retry once with CPU-only backend.
+        #[cfg(all(target_os = "windows", any(target_arch = "x86", target_arch = "x86_64")))]
+        {
+            if _picked0 == "vulkan" {
+                crate::logging::log_line(app, "[whisper] transcribe(subprocess): vulkan helper failed; retrying with CPU helper".to_string());
+
+                let (mut cmd1, _picked1) = make_transcribe_command_with_pref(
+                    app,
+                    wav_path,
+                    model_path,
+                    whisper_lang,
+                    TranscribeBackendPref::CpuOnly,
+                )?;
+                if let Some(l) = whisper_lang {
+                    cmd1.arg("--lang");
+                    cmd1.arg(l);
+                }
+                cmd1.env("RUST_BACKTRACE", "1");
+                cmd1.stdout(std::process::Stdio::piped());
+                cmd1.stderr(std::process::Stdio::piped());
+
+                let out2 = cmd1.output()?;
+                let stderr2 = String::from_utf8_lossy(&out2.stderr).trim().to_string();
+                if !out2.status.success() {
+                    crate::logging::log_line(
+                        app,
+                        format!(
+                            "[whisper] transcribe(subprocess): cpu retry failed status={:?} stderr={}",
+                            out2.status.code(),
+                            crate::logging::truncate_for_log(&stderr2, 2000)
+                        ),
+                    );
+                    bail!("transcribe subprocess failed");
+                }
+
+                if !stderr2.is_empty() {
+                    crate::logging::log_line(
+                        app,
+                        format!(
+                            "[whisper] transcribe(subprocess): stderr={}",
+                            crate::logging::truncate_for_log(&stderr2, 2000)
+                        ),
+                    );
+                }
+
+                let stdout2 = String::from_utf8_lossy(&out2.stdout);
+                let stdout2_trimmed = stdout2.trim();
+                // Parse JSON from retry stdout.
+                let parsed2: Result<super::types::Transcript> = (|| {
+                    if let Ok(t) = serde_json::from_str::<super::types::Transcript>(stdout2_trimmed) {
+                        return Ok(t);
+                    }
+                    let start = stdout2_trimmed.find('{');
+                    let end = stdout2_trimmed.rfind('}');
+                    if let (Some(s), Some(e)) = (start, end) {
+                        if s < e {
+                            let json_slice = &stdout2_trimmed[s..=e];
+                            let t = serde_json::from_str::<super::types::Transcript>(json_slice)?;
+                            return Ok(t);
+                        }
+                    }
+                    bail!("no JSON object found in stdout")
+                })();
+
+                return match parsed2 {
+                    Ok(t) => Ok(t),
+                    Err(e) => {
+                        crate::logging::log_line(
+                            app,
+                            format!(
+                                "[whisper] transcribe(subprocess): stdout(truncated)={}",
+                                crate::logging::truncate_for_log(stdout2_trimmed, 2000)
+                            ),
+                        );
+                        Err(e).with_context(|| "failed to parse transcribe subprocess stdout as JSON")
+                    }
+                };
+            }
+        }
+
         bail!("transcribe subprocess failed");
     }
 
