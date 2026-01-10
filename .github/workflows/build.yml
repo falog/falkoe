@@ -878,7 +878,8 @@ jobs:
       # ========================================
 
       - name: Rename bundles (Linux/macOS)
-        if: matrix.os != 'windows-latest' && !matrix.canary
+        # On tags, include macos-latest (canary matrix) in Release too, so allow rename.
+        if: matrix.os != 'windows-latest' && (!matrix.canary || startsWith(github.ref, 'refs/tags/'))
         shell: bash
         run: |
           set -euo pipefail
@@ -889,6 +890,11 @@ jobs:
             x86_64|amd64) arch="x86_64" ;;
             aarch64) arch="aarch64" ;;
           esac
+
+          os_suffix=""
+          if [[ "${{ matrix.os }}" == macos-* ]]; then
+            os_suffix="_${{ matrix.os }}"
+          fi
 
           rename_files() {
             local dir="$1"
@@ -904,7 +910,7 @@ jobs:
             fi
             
             if (( ${#files[@]} == 1 )); then
-              local new_name="Falkoe_${version}_${arch}${ext}"
+              local new_name="Falkoe_${version}_${arch}${os_suffix}${ext}"
               mv -f "${files[0]}" "${dir}/${new_name}"
               echo "[info] Renamed: ${new_name}"
               return 0
@@ -912,7 +918,7 @@ jobs:
             
             local i=1
             for f in "${files[@]}"; do
-              local new_name="Falkoe_${version}_${arch}_${i}${ext}"
+              local new_name="Falkoe_${version}_${arch}${os_suffix}_${i}${ext}"
               mv -f "$f" "${dir}/${new_name}"
               echo "[info] Renamed: ${new_name}"
               i=$((i+1))
@@ -972,7 +978,7 @@ jobs:
       # Retry a few times before failing the job.
       - name: Upload artifacts (main branch) (attempt 1)
         id: upload_artifacts_1
-        if: github.ref == 'refs/heads/main' && !matrix.canary
+        if: github.ref == 'refs/heads/main'
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
@@ -983,7 +989,7 @@ jobs:
 
       - name: Upload artifacts (main branch) (attempt 2)
         id: upload_artifacts_2
-        if: github.ref == 'refs/heads/main' && !matrix.canary && steps.upload_artifacts_1.outcome == 'failure'
+        if: github.ref == 'refs/heads/main' && steps.upload_artifacts_1.outcome == 'failure'
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
@@ -994,7 +1000,7 @@ jobs:
 
       - name: Upload artifacts (main branch) (attempt 3)
         id: upload_artifacts_3
-        if: github.ref == 'refs/heads/main' && !matrix.canary && steps.upload_artifacts_2.outcome == 'failure'
+        if: github.ref == 'refs/heads/main' && steps.upload_artifacts_2.outcome == 'failure'
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
@@ -1011,7 +1017,8 @@ jobs:
           exit 1
 
       - name: Upload to GitHub Release (tags)
-        if: startsWith(github.ref, 'refs/tags/') && !matrix.canary
+        # Include macos-latest (canary matrix) in tag releases as a second mac build.
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: |
