@@ -2,6 +2,8 @@ use crate::model::ensure_model;
 
 use anyhow::{bail, Context, Result};
 use std::fs;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use std::path::Path;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::process::Command;
@@ -253,6 +255,14 @@ fn make_transcribe_command_with_pref(
         Err(_) => {
             let exe = std::env::current_exe()?;
             let mut cmd = Command::new(&exe);
+
+            // Hide transient console windows on Windows (GUI app spawning CLI helper).
+            #[cfg(target_os = "windows")]
+            {
+                const CREATE_NO_WINDOW: u32 = 0x08000000;
+                cmd.creation_flags(CREATE_NO_WINDOW);
+            }
+
             cmd.arg("__transcribe_wav_json");
             cmd.arg(wav_path);
             cmd.arg("--model");
@@ -284,6 +294,14 @@ fn make_transcribe_command_with_pref(
     );
 
     let mut cmd = Command::new(&helper);
+
+    // Hide transient console windows on Windows (GUI app spawning CLI helper).
+    #[cfg(target_os = "windows")]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
     cmd.arg(wav_path);
     cmd.arg("--model");
     cmd.arg(model_path);
