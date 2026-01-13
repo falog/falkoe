@@ -38,6 +38,72 @@ fn parse_backend_pref() -> TranscribeBackendPref {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn windows_can_load_dll(dll_name: &str) -> bool {
+    use std::ffi::c_void;
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+
+    type HMODULE = *mut c_void;
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn LoadLibraryW(lp_lib_file_name: *const u16) -> HMODULE;
+        fn FreeLibrary(h_lib_module: HMODULE) -> i32;
+    }
+
+    let wide = OsStr::new(dll_name)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<u16>>();
+    unsafe {
+        let h = LoadLibraryW(wide.as_ptr());
+        if h.is_null() {
+            return false;
+        }
+        let _ = FreeLibrary(h);
+        true
+    }
+}
+
+#[cfg(target_os = "windows")]
+struct WindowsErrorModeGuard {
+    prev: u32,
+}
+
+#[cfg(target_os = "windows")]
+impl WindowsErrorModeGuard {
+    fn new_suppress_loader_dialogs() -> Self {
+        // Best-effort suppression of Windows error dialogs during child process launch.
+        // This helps avoid popups for missing DLLs (STATUS_DLL_NOT_FOUND) or crash dialogs.
+        const SEM_FAILCRITICALERRORS: u32 = 0x0001;
+        const SEM_NOGPFAULTERRORBOX: u32 = 0x0002;
+        const SEM_NOOPENFILEERRORBOX: u32 = 0x8000;
+
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn SetErrorMode(uMode: u32) -> u32;
+        }
+
+        let desired = SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX;
+        let prev = unsafe { SetErrorMode(desired) };
+        // Preserve any existing bits by OR-ing and re-applying.
+        let _ = unsafe { SetErrorMode(prev | desired) };
+
+        Self { prev }
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for WindowsErrorModeGuard {
+    fn drop(&mut self) {
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn SetErrorMode(uMode: u32) -> u32;
+        }
+        let _ = unsafe { SetErrorMode(self.prev) };
+    }
+}
+
 fn helper_dirs(resource_dir: &std::path::Path) -> [std::path::PathBuf; 4] {
     // Keep this consistent with resolve_bundled_tool() used by ffmpeg/mecab/etc.
     // Depending on how Tauri is launched (dev vs bundle), resources may live under:
@@ -124,6 +190,32 @@ fn resolve_transcribe_helper(
 ) -> Result<(std::path::PathBuf, &'static str)> {
     let resource_dir = app.path().resource_dir()?;
 
+    // On Windows, trying to start a Vulkan helper when the Vulkan loader is missing will
+    // trigger an OS-level error dialog (e.g. "vulkan-1.dll が見つからない").
+    // Avoid that by checking availability up-front and skipping Vulkan entirely.
+    #[cfg(target_os = "windows")]
+    let vulkan_loader_ok = windows_can_load_dll("vulkan-1.dll");
+    #[cfg(not(target_os = "windows"))]
+    let vulkan_loader_ok = true;
+
+    let effective_pref = if pref == TranscribeBackendPref::Vulkan && !vulkan_loader_ok {
+        crate::logging::log_line(
+            app,
+            "[whisper] transcribe(subprocess): skipping vulkan helper (vulkan-1.dll not found); falling back to CPU"
+                .to_string(),
+        );
+        TranscribeBackendPref::CpuOnly
+    } else {
+        if pref == TranscribeBackendPref::Auto && !vulkan_loader_ok {
+            crate::logging::log_line(
+                app,
+                "[whisper] transcribe(subprocess): vulkan-1.dll not found; will not try vulkan helper"
+                    .to_string(),
+            );
+        }
+        pref
+    };
+
     let candidates = transcribe_helper_candidates(&resource_dir);
     let mut tried: Vec<std::path::PathBuf> = Vec::new();
 
@@ -131,29 +223,31 @@ fn resolve_transcribe_helper(
     for _ in 0..10 {
         tried.clear();
 
-        // 0) Optional GPU helpers
-        if pref != TranscribeBackendPref::CpuOnly {
-            if matches!(pref, TranscribeBackendPref::Vulkan | TranscribeBackendPref::Auto) {
+            // 0) Optional GPU helpers
+            if effective_pref != TranscribeBackendPref::CpuOnly {
+                if vulkan_loader_ok
+                    && matches!(effective_pref, TranscribeBackendPref::Vulkan | TranscribeBackendPref::Auto)
+                {
                 for (p, _) in candidates.iter().filter(|(_, k)| *k == "vulkan") {
                     tried.push(p.clone());
                     if p.is_file() {
                         return Ok((p.clone(), "vulkan"));
                     }
                 }
-                if pref == TranscribeBackendPref::Vulkan {
+                    if effective_pref == TranscribeBackendPref::Vulkan {
                     std::thread::sleep(Duration::from_millis(200));
                     continue;
                 }
             }
 
-            if matches!(pref, TranscribeBackendPref::Metal | TranscribeBackendPref::Auto) {
+                if matches!(effective_pref, TranscribeBackendPref::Metal | TranscribeBackendPref::Auto) {
                 for (p, _) in candidates.iter().filter(|(_, k)| *k == "metal") {
                     tried.push(p.clone());
                     if p.is_file() {
                         return Ok((p.clone(), "metal"));
                     }
                 }
-                if pref == TranscribeBackendPref::Metal {
+                    if effective_pref == TranscribeBackendPref::Metal {
                     std::thread::sleep(Duration::from_millis(200));
                     continue;
                 }
@@ -167,6 +261,14 @@ fn resolve_transcribe_helper(
             let has_avx = std::is_x86_feature_detected!("avx");
             if !has_avx {
                 bail!("CPU does not support AVX; transcription helper requires AVX");
+            }
+
+            if !has_avx2 {
+                crate::logging::log_line(
+                    app,
+                    "[whisper] transcribe(subprocess): CPU has no AVX2; will not try avx2 helper"
+                        .to_string(),
+                );
             }
 
             if has_avx2 {
@@ -323,6 +425,8 @@ fn transcribe_in_subprocess(
     cmd0.stdout(std::process::Stdio::piped());
     cmd0.stderr(std::process::Stdio::piped());
 
+    #[cfg(target_os = "windows")]
+    let _err_mode = WindowsErrorModeGuard::new_suppress_loader_dialogs();
     let out = cmd0.output()?;
     let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
     if !out.status.success() {
@@ -356,6 +460,8 @@ fn transcribe_in_subprocess(
                 cmd1.stdout(std::process::Stdio::piped());
                 cmd1.stderr(std::process::Stdio::piped());
 
+                #[cfg(target_os = "windows")]
+                let _err_mode2 = WindowsErrorModeGuard::new_suppress_loader_dialogs();
                 let out2 = cmd1.output()?;
                 let stderr2 = String::from_utf8_lossy(&out2.stderr).trim().to_string();
                 if !out2.status.success() {
