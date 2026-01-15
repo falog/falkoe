@@ -7,10 +7,12 @@ import IpaListScreen from "./screens/IpaListScreen.tsx";
 import DevelopersMistakesScreen from "./screens/DevelopersMistakesScreen.tsx";
 import CommonMistakesScreen from "./screens/CommonMistakesScreen.tsx";
 import SettingsScreen from "./screens/SettingsScreen";
+import LanguageSelectScreen from "./screens/LanguageSelectScreen";
 import { Sentence } from "./components/ExampleList";
 import type { SpeechSource } from "./types/speech";
 import type { MistakeFocus } from "./data/commonMistakes";
 import { finishBackgroundTranscriptionByWavPath } from "./state/backgroundTranscription";
+import { getStoredUiLanguage } from "./i18n";
 
 type FinalResultPayload = {
   wav_path: string;
@@ -18,8 +20,15 @@ type FinalResultPayload = {
 
 const App = () => {
   const [screen, setScreen] = useState<
-    "word" | "record" | "history" | "ipa" | "mistakes" | "common" | "settings"
-  >("word");
+    | "language"
+    | "word"
+    | "record"
+    | "history"
+    | "ipa"
+    | "mistakes"
+    | "common"
+    | "settings"
+  >(() => (getStoredUiLanguage() ? "word" : "language"));
   const [screenBeforeSettings, setScreenBeforeSettings] =
     useState<
       Exclude<
@@ -41,8 +50,9 @@ const App = () => {
   const [source, setSource] = useState<SpeechSource | null>(null);
 
   const openSettings = () => {
-    if (screen !== "settings") {
-      setScreenBeforeSettings(screen);
+    const prev = screen;
+    if (prev !== "settings" && prev !== "language") {
+      setScreenBeforeSettings(prev);
     }
     setScreen("settings");
   };
@@ -65,6 +75,14 @@ const App = () => {
 
   return (
     <>
+      {screen === "language" && (
+        <LanguageSelectScreen
+          onDone={() => {
+            setScreen("word");
+          }}
+        />
+      )}
+
       {screen === "word" && (
         <WordInputScreen
           lang={lang}

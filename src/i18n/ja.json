@@ -1,0 +1,34 @@
+{
+  "app": {
+    "language": {
+      "title": "言語を選択",
+      "description": "アプリの表示言語を選んでください。後から設定で変更できます。",
+      "japanese": "日本語",
+      "english": "English",
+      "continue": "続ける"
+    }
+  },
+  "nav": {
+    "back": "← 戻る",
+    "history": "録音履歴",
+    "ipaList": "IPA 発音一覧",
+    "developersMistakes": "Developer’s mistakes",
+    "commonMistakes": "よくある間違い",
+    "settings": "設定"
+  },
+  "settings": {
+    "title": "設定",
+    "uiLanguage": {
+      "label": "表示言語",
+      "note": "表示言語はすぐに反映されます。"
+    },
+    "apply": "適用",
+    "updated": "モデル設定を更新しました。必要ならダウンロードします。",
+    "updateFailed": "設定の更新に失敗しました",
+    "model": {
+      "label": "音声認識モデル",
+      "note": "変更後、必要ならモデルをダウンロードします（初回は時間がかかります）。",
+      "status": "状態: {{status}}"
+    }
+  }
+}

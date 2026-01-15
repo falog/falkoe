@@ -1,0 +1,34 @@
+{
+  "app": {
+    "language": {
+      "title": "Choose language",
+      "description": "Select the display language. You can change it later in Settings.",
+      "japanese": "日本語",
+      "english": "English",
+      "continue": "Continue"
+    }
+  },
+  "nav": {
+    "back": "← Back",
+    "history": "History",
+    "ipaList": "IPA list",
+    "developersMistakes": "Developer’s mistakes",
+    "commonMistakes": "Common mistakes",
+    "settings": "Settings"
+  },
+  "settings": {
+    "title": "Settings",
+    "uiLanguage": {
+      "label": "Display language",
+      "note": "Changes apply immediately."
+    },
+    "apply": "Apply",
+    "updated": "Updated model settings. Will download if needed.",
+    "updateFailed": "Failed to update settings",
+    "model": {
+      "label": "Speech recognition model",
+      "note": "After changing, the model will be downloaded if needed (first time can take a while).",
+      "status": "Status: {{status}}"
+    }
+  }
+}

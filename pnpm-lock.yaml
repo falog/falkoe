@@ -26,6 +26,9 @@ importers:
       antd:
         specifier: ^6.1.0
         version: 6.1.1(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
+      i18next:
+        specifier: ^25.7.4
+        version: 25.7.4(typescript@5.8.3)
       orientation:
         specifier: ^0.2.0
         version: 0.2.0
@@ -38,6 +41,9 @@ importers:
       react-dom:
         specifier: ^19.1.0
         version: 19.2.3(react@19.2.3)
+      react-i18next:
+        specifier: ^16.5.3
+        version: 16.5.3(i18next@25.7.4(typescript@5.8.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@5.8.3)
       tauri-plugin-mic-recorder-api:
         specifier: ^2.0.0
         version: 2.0.0
@@ -944,6 +950,17 @@ packages:
     resolution: {integrity: sha512-3hN7NaskYvMDLQY55gnW3NQ+mesEAepTqlg+VEbj7zzqEMBVNhzcGYYeqFo/TlYz6eQiFcp1HcsCZO+nGgS8zg==}
     engines: {node: '>=6.9.0'}
 
+  html-parse-stringify@3.0.1:
+    resolution: {integrity: sha512-KknJ50kTInJ7qIScF3jeaFRpMpE8/lfiTdzf/twXyPBLAGrLRTmkz3AdTnKeh40X8k9L2fdYwEp/42WGXIRGcg==}
+
+  i18next@25.7.4:
+    resolution: {integrity: sha512-hRkpEblXXcXSNbw8mBNq9042OEetgyB/ahc/X17uV/khPwzV+uB8RHceHh3qavyrkPJvmXFKXME2Sy1E0KjAfw==}
+    peerDependencies:
+      typescript: ^5
+    peerDependenciesMeta:
+      typescript:
+        optional: true
+
   is-mobile@5.0.0:
     resolution: {integrity: sha512-Tz/yndySvLAEXh+Uk8liFCxOwVH6YutuR74utvOcu7I9Di+DwM0mtdPVZNaVvvBUM2OXxne/NhOs1zAO7riusQ==}
 
@@ -1000,6 +1017,22 @@ packages:
     resolution: {integrity: sha512-yELu4WmLPw5Mr/lmeEpox5rw3RETacE++JgHqQzd2dg+YbJuat3jH4ingc+WPZhxaoFzdv9y33G+F7Nl5O0GBg==}
     peerDependencies:
       react: ^19.2.3
+
+  react-i18next@16.5.3:
+    resolution: {integrity: sha512-fo+/NNch37zqxOzlBYrWMx0uy/yInPkRfjSuy4lqKdaecR17nvCHnEUt3QyzA8XjQ2B/0iW/5BhaHR3ZmukpGw==}
+    peerDependencies:
+      i18next: '>= 25.6.2'
+      react: '>= 16.8.0'
+      react-dom: '*'
+      react-native: '*'
+      typescript: ^5
+    peerDependenciesMeta:
+      react-dom:
+        optional: true
+      react-native:
+        optional: true
+      typescript:
+        optional: true
 
   react-is@18.3.1:
     resolution: {integrity: sha512-/LLMVyas0ljjAtoYiPqYiL8VWXzUUdThrmU5+n20DZv+a+ClRoevUzw5JxU+Ieh5/c87ytoTBV9G1FiKfNJdmg==}
@@ -1059,6 +1092,11 @@ packages:
     peerDependencies:
       browserslist: '>= 4.21.0'
 
+  use-sync-external-store@1.6.0:
+    resolution: {integrity: sha512-Pp6GSwGP/NrPIrxVFAIkOQeyw8lFenOHijQWkUTrDvrF4ALqylP2C/KCkeS9dpUM3KvYRQhna5vt7IL95+ZQ9w==}
+    peerDependencies:
+      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+
   vite@7.3.0:
     resolution: {integrity: sha512-dZwN5L1VlUBewiP6H9s2+B3e3Jg96D0vzN+Ry73sOefebhYr9f94wwkMNN/9ouoU8pV1BqA1d1zGk8928cx0rg==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -1098,6 +1136,10 @@ packages:
         optional: true
       yaml:
         optional: true
+
+  void-elements@3.1.0:
+    resolution: {integrity: sha512-Dhxzh5HZuiHQhbvTW9AMetFfBHDMYpo23Uo9btPXgdYP+3T5S+p+jgNy7spra+veYhBP2dCSgxR/i2Y02h5/6w==}
+    engines: {node: '>=0.10.0'}
 
   yallist@3.1.1:
     resolution: {integrity: sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g==}
@@ -2008,6 +2050,16 @@ snapshots:
 
   gensync@1.0.0-beta.2: {}
 
+  html-parse-stringify@3.0.1:
+    dependencies:
+      void-elements: 3.1.0
+
+  i18next@25.7.4(typescript@5.8.3):
+    dependencies:
+      '@babel/runtime': 7.28.4
+    optionalDependencies:
+      typescript: 5.8.3
+
   is-mobile@5.0.0: {}
 
   js-tokens@4.0.0: {}
@@ -2048,6 +2100,17 @@ snapshots:
     dependencies:
       react: 19.2.3
       scheduler: 0.27.0
+
+  react-i18next@16.5.3(i18next@25.7.4(typescript@5.8.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@5.8.3):
+    dependencies:
+      '@babel/runtime': 7.28.4
+      html-parse-stringify: 3.0.1
+      i18next: 25.7.4(typescript@5.8.3)
+      react: 19.2.3
+      use-sync-external-store: 1.6.0(react@19.2.3)
+    optionalDependencies:
+      react-dom: 19.2.3(react@19.2.3)
+      typescript: 5.8.3
 
   react-is@18.3.1: {}
 
@@ -2116,6 +2179,10 @@ snapshots:
       escalade: 3.2.0
       picocolors: 1.1.1
 
+  use-sync-external-store@1.6.0(react@19.2.3):
+    dependencies:
+      react: 19.2.3
+
   vite@7.3.0:
     dependencies:
       esbuild: 0.27.2
@@ -2126,5 +2193,7 @@ snapshots:
       tinyglobby: 0.2.15
     optionalDependencies:
       fsevents: 2.3.3
+
+  void-elements@3.1.0: {}
 
   yallist@3.1.1: {}
