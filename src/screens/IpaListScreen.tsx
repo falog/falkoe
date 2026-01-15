@@ -1,6 +1,7 @@
 import { Button, message, Space, Spin, Typography } from "antd";
 import { PlayCircleOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { loadIpaIndex, type IpaIndexEntry } from "../utils/ipaResources";
 import {
   playBundledAudio,
@@ -30,17 +31,6 @@ function categoryForEntry(
   return "others";
 }
 
-function titleForCategory(cat: "consonants" | "vowels" | "others"): string {
-  switch (cat) {
-    case "consonants":
-      return "Consonants（子音）";
-    case "vowels":
-      return "Vowels（母音）";
-    case "others":
-      return "Others（その他）";
-  }
-}
-
 export default function IpaListScreen({
   onBack,
   onOpenHistory,
@@ -48,6 +38,7 @@ export default function IpaListScreen({
   onOpenCommonMistakes,
   onOpenSettings,
 }: Props) {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [entries, setEntries] = useState<GroupedEntry[]>([]);
@@ -110,10 +101,10 @@ export default function IpaListScreen({
     } catch (e) {
       const msg = String((e as any)?.message ?? e);
       if (/user gesture|required/i.test(msg)) {
-        message.info("最初に画面を1回クリックして音声を有効化してください");
+        message.info(t("screens.ipaList.audioUnlockHint"));
       } else {
         //message.error(`再生に失敗: ${tok} (${msg})`);
-        message.info(`まだ音声がありません: ${tok}`);
+        message.info(`${t("screens.ipaList.noAudioForToken")}${tok}`);
       }
     }
   }
@@ -184,7 +175,7 @@ export default function IpaListScreen({
                           hoverAudio && void play(entry.ipa, hoverAudio)
                         }
                       >
-                        Pronounce
+                        {t("screens.ipaList.buttons.pronounce")}
                       </Button>
                       <Button
                         icon={<PlayCircleOutlined />}
@@ -193,7 +184,7 @@ export default function IpaListScreen({
                           explainAudio && void play(entry.ipa, explainAudio)
                         }
                       >
-                        Explain
+                        {t("screens.ipaList.buttons.explain")}
                       </Button>
                     </Space>
                   </div>
@@ -235,31 +226,42 @@ export default function IpaListScreen({
           onOpenCommonMistakes={onOpenCommonMistakes}
         />
         <Typography.Title level={4} style={{ margin: 0 }}>
-          IPA 発音一覧
+          {t("screens.ipaList.title")}
         </Typography.Title>
         <Typography.Text type="secondary">
-          Pronounce は通常発音、Explain は解説音声（ある場合）です。
+          {t("screens.ipaList.description")}
         </Typography.Text>
 
         {loading && (
           <Space>
             <Spin size="small" />
-            <Typography.Text type="secondary">読み込み中…</Typography.Text>
+            <Typography.Text type="secondary">
+              {t("screens.ipaList.loading")}
+            </Typography.Text>
           </Space>
         )}
 
         {error && (
-          <Typography.Text type="danger">読み込み失敗: {error}</Typography.Text>
+          <Typography.Text type="danger">
+            {t("screens.ipaList.loadFailed")}
+            {error}
+          </Typography.Text>
         )}
 
         {!loading && !error && (
           <Space orientation="vertical" style={{ width: "100%" }}>
             {renderSection(
               byCategory.consonants,
-              titleForCategory("consonants")
+              t("screens.ipaList.category.consonants")
             )}
-            {renderSection(byCategory.vowels, titleForCategory("vowels"))}
-            {renderSection(byCategory.others, titleForCategory("others"))}
+            {renderSection(
+              byCategory.vowels,
+              t("screens.ipaList.category.vowels")
+            )}
+            {renderSection(
+              byCategory.others,
+              t("screens.ipaList.category.others")
+            )}
           </Space>
         )}
       </Space>

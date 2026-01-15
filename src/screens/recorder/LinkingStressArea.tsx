@@ -1,5 +1,6 @@
 import { Radio, Space, Typography, message, theme } from "antd";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { tokenizeIpa } from "../../utils/ipaTokenize";
 import { playBundledAudio } from "../../utils/ipaPlayer";
 import type { RenderLinkingResult, DisplayMode } from "../../types/linking";
@@ -18,6 +19,7 @@ export default function LinkingStressArea({
   setLinkingDisplayMode,
   ipaIndex,
 }: Props) {
+  const { t } = useTranslation();
   const { token: antdToken } = theme.useToken();
 
   const [lastHoveredTok, setLastHoveredTok] = useState<string | null>(null);
@@ -46,9 +48,11 @@ export default function LinkingStressArea({
       const msg = String((e as any)?.message ?? e);
       if (event === "click") {
         if (/user gesture|required/i.test(msg)) {
-          message.info("最初に画面を1回クリックして音声を有効化してください");
+          message.info(t("screens.commonMistakes.audioUnlockHint"));
         } else {
-          message.error(`再生に失敗: ${tok} (${msg})`);
+          message.error(
+            `${t("screens.commonMistakes.playFailed")}${tok} (${msg})`
+          );
         }
       }
       console.warn(`IPA play failed (${event}): ${tok} (${msg})`, e);

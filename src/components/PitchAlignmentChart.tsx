@@ -1,4 +1,5 @@
 import { Collapse, Typography, theme } from "antd";
+import { useTranslation } from "react-i18next";
 import type { PitchAnalysis, SegmentPitch, WordPitch } from "../types/pitch";
 
 export type PitchChartSvgOptions = {
@@ -268,6 +269,7 @@ export function PitchAlignmentChart({
   showLabels = true,
   playheadTime = null,
 }: Props) {
+  const { t } = useTranslation();
   const { token } = theme.useToken();
 
   // Render wider than the container to keep dense word overlays readable.
@@ -280,7 +282,7 @@ export function PitchAlignmentChart({
   if (voiced.length < 2) {
     return (
       <Typography.Text type="secondary">
-        ピッチが検出できませんでした
+        {t("components.pitchAlignmentChart.noPitch")}
       </Typography.Text>
     );
   }
@@ -414,7 +416,7 @@ export function PitchAlignmentChart({
           key: "pitch-alignment",
           label: (
             <Typography.Text type="secondary">
-              Pitch × Whisper Alignment
+              {t("components.pitchAlignmentChart.title")}
             </Typography.Text>
           ),
           children: (
@@ -438,7 +440,7 @@ export function PitchAlignmentChart({
                   fill={token.colorTextSecondary}
                   fontSize={18}
                 >
-                  Time (s)
+                  {t("components.pitchAlignmentChart.axis.timeSeconds")}
                 </text>
                 <text
                   x={14}
@@ -448,7 +450,7 @@ export function PitchAlignmentChart({
                   fill={token.colorTextSecondary}
                   fontSize={18}
                 >
-                  Pitch (f0 rel.)
+                  {t("components.pitchAlignmentChart.axis.pitchRelative")}
                 </text>
 
                 {/* word regions */}

@@ -1,4 +1,5 @@
 import { message } from "antd";
+import i18next from "i18next";
 
 let sharedAudioEl: HTMLAudioElement | null = null;
 let sharedPlayId = 0;
@@ -17,7 +18,7 @@ function getSharedAudioEl(): HTMLAudioElement {
 export function confirmOverwriteExisting(): Promise<boolean> {
   return new Promise((resolve) => {
     message.info({
-      content: "既に保存済みの音声があります。上書きしますか？（自動でOK）",
+      content: i18next.t("screens.recorder.messages.overwriteExistingAutoOk"),
       duration: 1,
       onClick: () => resolve(true),
       onClose: () => resolve(false),
@@ -28,7 +29,7 @@ export function confirmOverwriteExisting(): Promise<boolean> {
 
 export async function playAudioUrl(url: string | null) {
   if (!url) {
-    message.info("音声を読み込み中…");
+    message.info(i18next.t("screens.recorder.messages.audioLoading"));
     return;
   }
 
@@ -57,7 +58,7 @@ export async function playAudioUrl(url: string | null) {
     }
   } catch (e) {
     console.error("Audio playback failed:", e);
-    message.error("音声の再生に失敗しました");
+    message.error(i18next.t("screens.recorder.messages.audioPlaybackFailed"));
   }
 }
 
@@ -65,7 +66,7 @@ export async function playAudioUrlUntilEnded(
   url: string | null
 ): Promise<boolean> {
   if (!url) {
-    message.info("音声を読み込み中…");
+    message.info(i18next.t("screens.recorder.messages.audioLoading"));
     return false;
   }
 
@@ -90,7 +91,7 @@ export async function playAudioUrlUntilEnded(
     return ok;
   } catch (e) {
     console.error("Audio playback failed:", e);
-    message.error("音声の再生に失敗しました");
+    message.error(i18next.t("screens.recorder.messages.audioPlaybackFailed"));
     return false;
   }
 }

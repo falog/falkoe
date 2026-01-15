@@ -1,4 +1,4 @@
-import { Button, Card, Radio, Space, Typography } from "antd";
+import { Button, Card, Select, Space, Typography } from "antd";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { i18n, setStoredUiLanguage, type UiLanguage } from "../i18n";
@@ -9,7 +9,7 @@ type Props = {
 
 export default function LanguageSelectScreen({ onDone }: Props) {
   const { t } = useTranslation();
-  const [value, setValue] = useState<UiLanguage>("ja");
+  const [value, setValue] = useState<UiLanguage>("en");
 
   const options = useMemo(
     () => [
@@ -40,10 +40,11 @@ export default function LanguageSelectScreen({ onDone }: Props) {
       </Typography.Text>
 
       <Card>
-        <Radio.Group
+        <Select
+          style={{ width: 240, maxWidth: "100%" }}
           options={options}
           value={value}
-          onChange={(e) => setValue(e.target.value as UiLanguage)}
+          onChange={(v) => setValue(v as UiLanguage)}
         />
       </Card>
 

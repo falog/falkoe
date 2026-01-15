@@ -10,6 +10,7 @@ import {
   guessExtFromPath,
   isHttpUrl,
 } from "./audioUtils";
+import { useTranslation } from "react-i18next";
 
 type SentenceLike = {
   text: string;
@@ -32,6 +33,7 @@ export function useAddToAnki({
   uploadedAudioPath,
   displayText,
 }: Params) {
+  const { t } = useTranslation();
   const addToAnki = useCallback(
     async (rec: Recording) => {
       try {
@@ -129,20 +131,21 @@ export function useAddToAnki({
         });
 
         console.log("added note id:", res);
-        message.success("Ankiに追加しました");
+        message.success(t("screens.recorder.messages.ankiAdded"));
       } catch (e) {
         console.error("[RecorderScreen] addToAnki failed" + e, e);
         const details = e instanceof Error ? e.message : String(e);
         message.error({
           content: (
-            <span style={{ whiteSpace: "pre-line" }}>{
-              `Ankiへの追加に失敗しました：\n${details}`
-            }</span>
+            <span style={{ whiteSpace: "pre-line" }}>
+              {t("screens.recorder.messages.ankiAddFailed")}
+              {details}
+            </span>
           ),
         });
       }
     },
-    [displayText, sentence, sentenceHash, sourceKind, uploadedAudioPath]
+    [displayText, sentence, sentenceHash, sourceKind, uploadedAudioPath, t]
   );
 
   return { addToAnki };

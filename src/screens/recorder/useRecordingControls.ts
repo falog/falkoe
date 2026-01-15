@@ -8,6 +8,7 @@ import {
   cancelBackgroundTranscription,
   startBackgroundTranscription,
 } from "../../state/backgroundTranscription";
+import { useTranslation } from "react-i18next";
 
 type Params = {
   sentenceHash: string;
@@ -26,6 +27,7 @@ export function useRecordingControls({
   setTranscripts,
   setIsTranscribing,
 }: Params) {
+  const { t } = useTranslation();
   const [isRecording, setIsRecording] = useState(false);
 
   const sentenceHashRef = useRef(sentenceHash);
@@ -56,9 +58,11 @@ export function useRecordingControls({
       await startRecording();
       setIsRecording(true);
     } catch (e) {
-      message.error(String(e));
+      message.error(
+        `${t("screens.recorder.messages.recordingStartFailed")}${String(e)}`
+      );
     }
-  }, []);
+  }, [t]);
 
   const handleStopRecording = useCallback(async () => {
     setIsRecording(false);
@@ -72,7 +76,7 @@ export function useRecordingControls({
         sentenceHash: sentenceHashRef.current,
       });
     } catch (e) {
-      message.error("録音の保存に失敗しました");
+      message.error(t("screens.recorder.messages.saveRecordingFailed"));
       await refreshFilesRef.current();
       return;
     }
@@ -103,11 +107,13 @@ export function useRecordingControls({
         return next;
       });
       setIsTranscribingRef.current(false);
-      message.info("録音は保存されました（文字起こしは後で実行できます）");
+      message.info(
+        t("screens.recorder.messages.recordingSavedTranscribeLater")
+      );
     }
 
     await refreshFilesRef.current();
-  }, []);
+  }, [t]);
 
   return {
     isRecording,

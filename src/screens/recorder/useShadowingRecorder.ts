@@ -5,6 +5,7 @@ import {
   type MicRecorderSilenceWatcher,
 } from "./micRecorderSilenceWatcher";
 import type { ModelStatus } from "../../types/model";
+import { useTranslation } from "react-i18next";
 
 type ShadowingStartOptions = {
   mode?: "manual" | "mimic";
@@ -35,6 +36,7 @@ export function useShadowingRecorder({
   headerAudioUrl,
   isHeaderAudioLoading,
 }: UseShadowingRecorderArgs): UseShadowingRecorderResult {
+  const { t } = useTranslation();
   const isRecordingRef = useRef(isRecording);
   useEffect(() => {
     isRecordingRef.current = isRecording;
@@ -90,12 +92,12 @@ export function useShadowingRecorder({
           silenceUnavailableNotifiedRef.current = true;
           const msg = String((e as any)?.message ?? e);
           message.info(
-            "無音検知を開始できません（デバイス競合の可能性）: " + msg
+            `${t("screens.recorder.messages.silenceWatcherUnavailable")}${msg}`
           );
         }
         return null;
       });
-  }, [stopRecording]);
+  }, [stopRecording, t]);
 
   useEffect(() => {
     return () => {
@@ -131,7 +133,9 @@ export function useShadowingRecorder({
       if (mode === "manual") {
         if (isRecording) return;
         if (status !== "ready") {
-          message.info("モデル準備中のため録音を開始できません");
+          message.info(
+            t("screens.recorder.messages.modelNotReadyCannotRecord")
+          );
           return;
         }
 
@@ -159,11 +163,13 @@ export function useShadowingRecorder({
 
       try {
         if (!headerAudioUrl || isHeaderAudioLoading) {
-          message.info("音声を読み込み中…");
+          message.info(t("screens.recorder.messages.audioLoading"));
           return;
         }
         if (status !== "ready") {
-          message.info("モデル準備中のため録音を開始できません");
+          message.info(
+            t("screens.recorder.messages.modelNotReadyCannotRecord")
+          );
           return;
         }
         if (isRecording) return;
@@ -223,6 +229,7 @@ export function useShadowingRecorder({
       startAutoStopWatcher,
       startRecording,
       status,
+      t,
     ]
   );
 

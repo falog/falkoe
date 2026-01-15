@@ -9,6 +9,7 @@ import {
   Modal,
 } from "antd";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import ExampleList, { Sentence } from "../components/ExampleList";
 import AudioUpload from "../components/AudioUpload";
 import { invoke } from "@tauri-apps/api/core";
@@ -83,89 +84,6 @@ type UpsertManifestTextResult = {
   manifestPath: string;
   previousText?: string | null;
 };
-
-function confirmOverwriteRecognizedText(): Promise<boolean> {
-  return new Promise((resolve) => {
-    Modal.confirm({
-      title: "認識結果で上書きしますか？",
-      content:
-        "音声認識の結果が既にあります。入力欄を認識結果で上書きしますか？",
-      okText: "上書きする",
-      cancelText: "上書きしない",
-      onOk: () => resolve(true),
-      onCancel: () => resolve(false),
-    });
-  });
-}
-
-function confirmOverwriteManualText(
-  prevWord: string,
-  nextWord: string
-): Promise<boolean> {
-  return new Promise((resolve) => {
-    Modal.confirm({
-      title: "テキストを上書きしますか？",
-      content: `前のワード（${prevWord}）の手動入力テキストが残っています。現在のワード（${nextWord}）用に上書きしますか？`,
-      okText: "上書きする",
-      cancelText: "上書きしない",
-      onOk: () => resolve(true),
-      onCancel: () => resolve(false),
-    });
-  });
-}
-
-function confirmOverwriteExisting(): Promise<boolean> {
-  return new Promise((resolve) => {
-    Modal.confirm({
-      title: "既に保存済みの音声があります",
-      content: "同じIDのアップロード音声が既に存在します。上書きしますか？",
-      okText: "上書きする",
-      cancelText: "上書きしない",
-      onOk: () => resolve(true),
-      onCancel: () => resolve(false),
-    });
-  });
-}
-
-function confirmOverwriteManifestText(
-  prev: string,
-  next: string
-): Promise<boolean> {
-  return new Promise((resolve) => {
-    Modal.confirm({
-      title: "manifest.jsonのテキストを上書きしますか？",
-      content: (
-        <div>
-          <div style={{ marginBottom: 8 }}>
-            既に保存済みのテキストがあります。manifest.json の text
-            を上書きしますか？
-          </div>
-          <div>
-            <Typography.Text strong>現在:</Typography.Text>
-            <div style={{ whiteSpace: "pre-wrap" }}>{prev}</div>
-          </div>
-          <div style={{ marginTop: 8 }}>
-            <Typography.Text strong>新しい入力:</Typography.Text>
-            <div style={{ whiteSpace: "pre-wrap" }}>{next}</div>
-          </div>
-        </div>
-      ),
-      okText: "上書きする",
-      cancelText: "上書きしない",
-      onOk: () => resolve(true),
-      onCancel: () => resolve(false),
-    });
-  });
-}
-
-function warnManualNeedsText(): void {
-  Modal.warning({
-    title: "テキストを入力してください",
-    content:
-      "手動入力モードでは、テキストが空だとRecorder側で自動認識が走ってしまいます。テキストを入力するか、音声認識をONにしてください。",
-    okText: "OK",
-  });
-}
 
 async function fetchExamples(
   word: string,
@@ -303,6 +221,91 @@ const WordInputScreen = ({
   onOpenDevelopersMistakes,
   onOpenCommonMistakes,
 }: WordInputScreenProps) => {
+  const { t } = useTranslation();
+
+  function confirmOverwriteRecognizedText(): Promise<boolean> {
+    return new Promise((resolve) => {
+      Modal.confirm({
+        title: t("screens.wordInput.confirmOverwriteRecognizedText.title"),
+        content: t("screens.wordInput.confirmOverwriteRecognizedText.content"),
+        okText: t("screens.wordInput.confirmOverwriteRecognizedText.ok"),
+        cancelText: t(
+          "screens.wordInput.confirmOverwriteRecognizedText.cancel"
+        ),
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+  }
+
+  function confirmOverwriteManualText(): Promise<boolean> {
+    return new Promise((resolve) => {
+      Modal.confirm({
+        title: t("screens.wordInput.confirmOverwriteManualText.title"),
+        content: t("screens.wordInput.confirmOverwriteManualText.content"),
+        okText: t("screens.wordInput.confirmOverwriteManualText.ok"),
+        cancelText: t("screens.wordInput.confirmOverwriteManualText.cancel"),
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+  }
+
+  function confirmOverwriteExisting(): Promise<boolean> {
+    return new Promise((resolve) => {
+      Modal.confirm({
+        title: t("screens.wordInput.confirmOverwriteExisting.title"),
+        content: t("screens.wordInput.confirmOverwriteExisting.content"),
+        okText: t("screens.wordInput.confirmOverwriteExisting.ok"),
+        cancelText: t("screens.wordInput.confirmOverwriteExisting.cancel"),
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+  }
+
+  function confirmOverwriteManifestText(
+    prev: string,
+    next: string
+  ): Promise<boolean> {
+    return new Promise((resolve) => {
+      Modal.confirm({
+        title: t("screens.wordInput.confirmOverwriteManifestText.title"),
+        content: (
+          <div>
+            <div style={{ marginBottom: 8 }}>
+              {t("screens.wordInput.confirmOverwriteManifestText.intro")}
+            </div>
+            <div>
+              <Typography.Text strong>
+                {t("screens.wordInput.confirmOverwriteManifestText.current")}
+              </Typography.Text>
+              <div style={{ whiteSpace: "pre-wrap" }}>{prev}</div>
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <Typography.Text strong>
+                {t("screens.wordInput.confirmOverwriteManifestText.newInput")}
+              </Typography.Text>
+              <div style={{ whiteSpace: "pre-wrap" }}>{next}</div>
+            </div>
+          </div>
+        ),
+        okText: t("screens.wordInput.confirmOverwriteManifestText.ok"),
+        cancelText: t("screens.wordInput.confirmOverwriteManifestText.cancel"),
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+  }
+
+  function warnManualNeedsText(): void {
+    Modal.warning({
+      title: t("screens.wordInput.warnManualNeedsText.title"),
+      content: t("screens.wordInput.warnManualNeedsText.content"),
+      okText: t("screens.wordInput.warnManualNeedsText.ok"),
+    });
+  }
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
@@ -407,7 +410,7 @@ const WordInputScreen = ({
       console.log("result:", result.length);
     } catch (e) {
       console.error(e);
-      setError("例文の取得に失敗しました");
+      setError(t("screens.wordInput.fetchFailed"));
     } finally {
       setLoading(false);
     }
@@ -423,12 +426,14 @@ const WordInputScreen = ({
         onOpenDevelopersMistakes={onOpenDevelopersMistakes}
         onOpenCommonMistakes={onOpenCommonMistakes}
       />
-      <Typography.Title level={4}>例文検索</Typography.Title>
+      <Typography.Title level={4}>
+        {t("screens.wordInput.title")}
+      </Typography.Title>
       <Checkbox
         checked={useSpeech}
         onChange={(e) => setUseSpeech(e.target.checked)}
       >
-        音声ファイルを選択して例文を取得する
+        {t("screens.wordInput.useSpeech")}
       </Checkbox>
       {useSpeech && (
         <Space
@@ -531,10 +536,12 @@ const WordInputScreen = ({
           {(audioFile || savedUploadedPath) && (
             <>
               <Typography.Text>
-                選択中: {audioFile ? audioFile.name : savedUploadedFilename}
+                {t("screens.wordInput.selectedFile")}
+                {audioFile ? audioFile.name : (savedUploadedFilename ?? "")}
               </Typography.Text>
               <Typography.Text>
-                選択言語：{LANG_OPTIONS.find((o) => o.value === lang)?.label}
+                {t("screens.wordInput.selectedLanguage")}
+                {LANG_OPTIONS.find((o) => o.value === lang)?.label ?? ""}
               </Typography.Text>
               <Checkbox
                 checked={useRecognition}
@@ -563,13 +570,13 @@ const WordInputScreen = ({
                   setUseRecognition(next);
                 }}
               >
-                音声認識を使用する（自動入力）
+                {t("screens.wordInput.useRecognition")}
               </Checkbox>
-              テキストを手動入力：
+              {t("screens.wordInput.manualTextLabel")}
               <Input
                 type="value"
                 value={sentence}
-                placeholder="Input sentence manually"
+                placeholder={t("screens.wordInput.manualSentencePlaceholder")}
                 onFocus={async () => {
                   if (useRecognition) return;
 
@@ -596,7 +603,7 @@ const WordInputScreen = ({
                   if (manualOverwritePromptedRef.current) return;
 
                   manualOverwritePromptedRef.current = true;
-                  const ok = await confirmOverwriteManualText(prev, next);
+                  const ok = await confirmOverwriteManualText();
                   if (ok) {
                     setSentence("");
                     setManualTextWord(next);
@@ -687,13 +694,13 @@ const WordInputScreen = ({
                 }}
                 disabled={savingUpload}
               >
-                この例文を使って練習
+                {t("screens.wordInput.practiceWithSentence")}
               </Button>
             </>
           )}
         </Space>
       )}
-      練習する言語を選択してください：
+      {t("screens.wordInput.choosePracticeLanguage")}
       <Select
         value={lang}
         onChange={setLang}
@@ -701,7 +708,7 @@ const WordInputScreen = ({
         options={LANG_OPTIONS}
         style={{ width: 200 }}
       />
-      翻訳先（Translate to）：
+      {t("screens.wordInput.translateTo")}
       <Select
         value={translateTo}
         onChange={setTranslateTo}
@@ -710,7 +717,7 @@ const WordInputScreen = ({
         disabled={useSpeech}
         style={{ width: 200 }}
       />
-      ワード数を選択してください：
+      {t("screens.wordInput.chooseWordCount")}
       <Select
         value={wordcount}
         disabled={useSpeech}
@@ -722,8 +729,8 @@ const WordInputScreen = ({
         value={word}
         disabled={useSpeech}
         onChange={(e) => onWordChange(e.target.value)}
-        placeholder="Input word or phrase"
-        enterButton="検索"
+        placeholder={t("screens.wordInput.wordPlaceholder")}
+        enterButton={t("screens.wordInput.search")}
         onSearch={search}
       />
       {loading && <Spin />}
@@ -732,7 +739,7 @@ const WordInputScreen = ({
         <>
           {hasSearched && sentences.length === 0 ? (
             <Typography.Text type="secondary">
-              該当する例文がありませんでした（検索語は選択した言語で入力してください）
+              {t("screens.wordInput.noResults")}
             </Typography.Text>
           ) : (
             <ExampleList

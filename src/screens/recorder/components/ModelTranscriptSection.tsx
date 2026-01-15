@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { documentDir, join } from "@tauri-apps/api/path";
 import { readTextFile } from "@tauri-apps/plugin-fs";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { RenderLinkingResult, DisplayMode } from "../../../types/linking";
 import type { IpaIndex } from "../../../utils/ipaResources";
 import LinkingStressArea from "../LinkingStressArea";
@@ -63,6 +64,8 @@ export function ModelTranscriptSection({
   progress,
   headerRight,
 }: Props) {
+  const { t } = useTranslation();
+
   const langNorm = (lang ?? "").toLowerCase();
   const isJapanese =
     langNorm === "jpn" || langNorm === "ja" || langNorm.startsWith("ja-");
@@ -238,9 +241,10 @@ export function ModelTranscriptSection({
           const words = await waitForAccentWords(accentPath, 60000);
           if (!cancelled) {
             setAccentWords(words);
+            const filename = accentPath.split(/[\\/]/).pop() ?? "accent.json";
             setAccentError(
               words === null
-                ? `アクセント情報 (${accentPath.split(/[\\/]/).pop() ?? "accent.json"}) を1分待ちましたが読み込めませんでした。`
+                ? `${t("screens.recorder.pitch.accentTimeoutPrefix")}${filename}${t("screens.recorder.pitch.accentTimeoutSuffix")}`
                 : null
             );
           }
@@ -255,25 +259,29 @@ export function ModelTranscriptSection({
     return () => {
       cancelled = true;
     };
-  }, [hasModelText, isJapanese, sentenceHash, sourceKind]);
+  }, [hasModelText, isJapanese, sentenceHash, sourceKind, t]);
 
   return (
     <>
       {isTranscribing && (
         <Space>
           <Spin size="small" />
-          <Typography.Text type="secondary">文字起こし中…</Typography.Text>
+          <Typography.Text type="secondary">
+            {t("screens.recorder.modelTranscript.transcribing")}
+          </Typography.Text>
         </Space>
       )}
 
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
         <Typography.Paragraph style={{ flex: "1 1 auto", minWidth: 0 }}>
-          <strong style={{ whiteSpace: "nowrap" }}>Model transcript:</strong>{" "}
+          <strong style={{ whiteSpace: "nowrap" }}>
+            {t("screens.recorder.modelTranscript.label")}
+          </strong>{" "}
           {modelText ? (
             stripWhisperSpecialTokens(modelText)
           ) : (
             <Typography.Text type="secondary">
-              音声認識されていません
+              {t("screens.recorder.modelTranscript.notTranscribed")}
             </Typography.Text>
           )}
         </Typography.Paragraph>
@@ -297,14 +305,15 @@ export function ModelTranscriptSection({
             <Space>
               <Spin size="small" />
               <Typography.Text type="secondary">
-                模範音声のピッチ解析中…
+                {t("screens.recorder.pitch.loading")}
               </Typography.Text>
             </Space>
           )}
 
           {!pitchLoading && pitchError && (
             <Typography.Text type="secondary">
-              模範音声のピッチ解析に失敗しました: {pitchError}
+              {t("screens.recorder.pitch.failed")}
+              {pitchError}
             </Typography.Text>
           )}
 
@@ -312,7 +321,9 @@ export function ModelTranscriptSection({
             <div style={{ marginBottom: 15 }}>
               <Space align="center" size={10} style={{ marginBottom: 4 }}>
                 <Typography.Text type="secondary">
-                  Pitch extractor: {pitch.extractor ?? "(unknown)"}
+                  {t("screens.recorder.pitch.extractor")}{" "}
+                  {pitch.extractor ??
+                    t("screens.recorder.pitch.extractorUnknown")}
                 </Typography.Text>
                 <Button
                   size="small"
@@ -331,7 +342,9 @@ export function ModelTranscriptSection({
                     }
                   }}
                 >
-                  {isPlaying ? "停止" : "再生"}
+                  {isPlaying
+                    ? t("screens.recorder.pitch.stop")
+                    : t("screens.recorder.pitch.play")}
                 </Button>
               </Space>
               {!pitchLoading && !pitchError && isJapanese && accentError && (
@@ -361,11 +374,15 @@ export function ModelTranscriptSection({
         />
       )}
 
-      <Typography.Text type="secondary">Model status: {status}</Typography.Text>
+      <Typography.Text type="secondary">
+        {t("screens.recorder.model.status")}
+        {status}
+      </Typography.Text>
 
       {status === "downloading" && (
         <Typography.Text type="secondary">
-          Downloading model… {progress ?? 0}%
+          {t("screens.recorder.model.downloading")}
+          {progress ?? 0}%
         </Typography.Text>
       )}
     </>

@@ -7,6 +7,7 @@ import {
   cancelBackgroundTranscription,
   startBackgroundTranscription,
 } from "../../state/backgroundTranscription";
+import { useTranslation } from "react-i18next";
 
 export function useRecognizeRecording(params: {
   status: ModelStatus;
@@ -18,6 +19,7 @@ export function useRecognizeRecording(params: {
   ) => void;
   setIsTranscribing: (v: boolean) => void;
 }) {
+  const { t } = useTranslation();
   const {
     status,
     sentenceHash,
@@ -49,10 +51,20 @@ export function useRecognizeRecording(params: {
           return next;
         });
         setIsTranscribing(false);
-        message.error("音声認識の開始に失敗しました: " + String(e));
+        message.error(
+          `${t("screens.recorder.messages.recognizeStartFailed")}${String(e)}`
+        );
       }
     },
-    [lang, recognizing, sentenceHash, setIsTranscribing, setRecognizing, status]
+    [
+      lang,
+      recognizing,
+      sentenceHash,
+      setIsTranscribing,
+      setRecognizing,
+      status,
+      t,
+    ]
   );
 
   return { recognizeRecording };
