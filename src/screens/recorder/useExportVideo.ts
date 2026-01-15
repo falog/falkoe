@@ -10,6 +10,8 @@ import {
   writeFile,
 } from "@tauri-apps/plugin-fs";
 import { message, Modal } from "antd";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 import {
   buildPitchAlignmentChartSvg,
   type PitchChartSvgOptions,
@@ -112,14 +114,14 @@ const pickFirstExisting = async (paths: string[]) => {
 };
 
 const confirmExportWithMissingTranscripts = (
-  missingCount: number
+  t: TFunction
 ): Promise<boolean> => {
   return new Promise((resolve) => {
     Modal.confirm({
-      title: "音声認識されていない録音があります",
-      content: `音声認識されていない録音が ${missingCount} 件あります。未認識の録音は動画から除外されます。それでも実行しますか？`,
-      okText: "実行する",
-      cancelText: "キャンセル",
+      title: t("screens.recorder.export.confirmMissingTranscripts.title"),
+      content: t("screens.recorder.export.confirmMissingTranscripts.content"),
+      okText: t("screens.recorder.export.confirmMissingTranscripts.ok"),
+      cancelText: t("screens.recorder.export.confirmMissingTranscripts.cancel"),
       onOk: () => resolve(true),
       onCancel: () => resolve(false),
     });
@@ -127,22 +129,32 @@ const confirmExportWithMissingTranscripts = (
 };
 
 const confirmCreateMissingReferenceAudio = (
+  t: TFunction,
   kind: "model" | "uploaded"
 ): Promise<boolean> => {
   return new Promise((resolve) => {
-    const title =
+    const titleKey =
       kind === "model"
-        ? "model音声がありません"
-        : "アップロード音声がありません";
-    const content =
+        ? "screens.recorder.export.confirmCreateModelAudio.title"
+        : "screens.recorder.export.confirmCreateUploadedAudio.title";
+    const contentKey =
       kind === "model"
-        ? "model音声がありませんので作成します。作成してから動画作成を続けますか？"
-        : "アップロード音声(wav)がありませんので作成します。作成してから動画作成を続けますか？";
+        ? "screens.recorder.export.confirmCreateModelAudio.content"
+        : "screens.recorder.export.confirmCreateUploadedAudio.content";
+    const okKey =
+      kind === "model"
+        ? "screens.recorder.export.confirmCreateModelAudio.ok"
+        : "screens.recorder.export.confirmCreateUploadedAudio.ok";
+    const cancelKey =
+      kind === "model"
+        ? "screens.recorder.export.confirmCreateModelAudio.cancel"
+        : "screens.recorder.export.confirmCreateUploadedAudio.cancel";
+
     Modal.confirm({
-      title,
-      content,
-      okText: "作成して続行",
-      cancelText: "キャンセル",
+      title: t(titleKey),
+      content: t(contentKey),
+      okText: t(okKey),
+      cancelText: t(cancelKey),
       onOk: () => resolve(true),
       onCancel: () => resolve(false),
     });
@@ -197,6 +209,7 @@ export function useExportVideo(params: {
   token: PitchChartSvgOptions["token"];
   recognizeModel: () => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const {
     sentenceHash,
     sentenceText,
@@ -330,13 +343,11 @@ export function useExportVideo(params: {
 
         if (sourceKind === "uploaded") {
           if (!uploadedAudioPath) {
-            throw new Error(
-              "アップロード音声の作成に必要なパスが見つかりません。"
-            );
+            throw new Error(t("screens.recorder.export.missingUploadedPath"));
           }
         } else {
           if (!sentenceAudioUrl) {
-            throw new Error("model音声のURLが見つかりません。");
+            throw new Error(t("screens.recorder.export.missingModelUrl"));
           }
         }
 
@@ -361,7 +372,7 @@ export function useExportVideo(params: {
         const pitchJson = await waitForJsonFile<any>(refPitch, 120_000);
         if (!wavReady || !pitchJson) {
           throw new Error(
-            "参照音声の解析が完了しませんでした（音声認識/ピッチ解析）。もう一度お試しください。"
+            t("screens.recorder.export.referenceAnalysisTimeout")
           );
         }
 
@@ -374,6 +385,7 @@ export function useExportVideo(params: {
       // Reference segment (model/uploaded)
       if (!(await exists(refWav))) {
         const ok = await confirmCreateMissingReferenceAudio(
+          t,
           sourceKind === "uploaded" ? "uploaded" : "model"
         );
         if (!ok) return;
@@ -404,7 +416,14 @@ export function useExportVideo(params: {
       const refOutPng = await join(tmpBase, "ref.png");
       await renderSvgToPngFile(refSvgRes, refOutPng);
       segments.push({
-        label: sourceKind === "uploaded" ? "Upload" : "Model",
+        label:
+          sourceKind === "uploaded"
+            ? isJapanese(sentenceLang)
+              ? "アップロード"
+              : "Upload"
+            : isJapanese(sentenceLang)
+              ? "モデル"
+              : "Model",
         wavPath: refWav,
         transcriptJsonPath: refTranscriptPicked,
         pitchJsonPath: refPitch,
@@ -431,9 +450,7 @@ export function useExportVideo(params: {
       );
 
       if (missingTranscriptCount > 0) {
-        const ok = await confirmExportWithMissingTranscripts(
-          missingTranscriptCount
-        );
+        const ok = await confirmExportWithMissingTranscripts(t);
         if (!ok) return;
       }
 
@@ -476,7 +493,7 @@ export function useExportVideo(params: {
         const transcriptPath = rec.path.replace(/\.wav$/i, ".json");
 
         segments.push({
-          label: `Take ${i + 1}`,
+          label: isJapanese(sentenceLang) ? `テイク ${i + 1}` : `Take ${i + 1}`,
           wavPath: rec.path,
           transcriptJsonPath: (await waitForJsonFile<any>(transcriptPath, 1500))
             ? transcriptPath
@@ -495,9 +512,7 @@ export function useExportVideo(params: {
       }
 
       if (segments.length === 0) {
-        message.warning(
-          "動画に入れるデータがありません（認識済みの録音が必要です）"
-        );
+        message.warning(t("screens.recorder.messages.exportNoSegments"));
         return;
       }
 
@@ -510,11 +525,13 @@ export function useExportVideo(params: {
         segments,
       });
 
-      message.success("ビデオに保存しました: " + outPath);
+      message.success(`${t("screens.recorder.messages.videoSaved")}${outPath}`);
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error(e);
-      message.error("動画の作成に失敗しました: " + String(e));
+      message.error(
+        `${t("screens.recorder.messages.videoCreateFailed")}${String(e)}`
+      );
     } finally {
       await cleanupVideoTmp();
       setIsExportingVideo(false);
@@ -528,6 +545,7 @@ export function useExportVideo(params: {
     sentenceLang,
     sentenceText,
     sourceKind,
+    t,
     token,
     transcripts,
     uploadedAudioPath,

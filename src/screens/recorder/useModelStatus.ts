@@ -3,8 +3,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { message } from "antd";
 import { coerceModelStatus, type ModelStatus } from "../../types/model";
+import { useTranslation } from "react-i18next";
 
 export function useModelStatus() {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<ModelStatus>("idle");
   const [progress, setProgress] = useState<number | null>(null);
   const modelMissingShown = useRef(false);
@@ -45,9 +47,9 @@ export function useModelStatus() {
   useEffect(() => {
     if (status === "downloading" && !modelMissingShown.current) {
       modelMissingShown.current = true;
-      message.info("音声認識モデルがありません。ダウンロードを開始します。");
+      message.info(t("screens.recorder.messages.modelMissingDownloadStart"));
     }
-  }, [status]);
+  }, [status, t]);
 
   return { status, progress };
 }

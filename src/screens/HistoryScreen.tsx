@@ -1,6 +1,7 @@
 import { Button, Card, Empty, Space, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useTranslation } from "react-i18next";
 import TopNav from "../components/TopNav";
 import type { SpeechSource } from "../types/speech";
 
@@ -35,6 +36,7 @@ export default function HistoryScreen({
   onOpenSettings,
   onOpenFromHistory,
 }: Props) {
+  const { t } = useTranslation();
   const [items, setItems] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -101,14 +103,18 @@ export default function HistoryScreen({
       />
 
       <Typography.Title level={4} style={{ margin: 0 }}>
-        録音履歴
+        {t("screens.history.title")}
       </Typography.Title>
 
       {loading && items.length === 0 && (
-        <Typography.Text type="secondary">読み込み中…</Typography.Text>
+        <Typography.Text type="secondary">
+          {t("screens.history.loading")}
+        </Typography.Text>
       )}
 
-      {!loading && items.length === 0 && <Empty description="No Data" />}
+      {!loading && items.length === 0 && (
+        <Empty description={t("screens.history.empty")} />
+      )}
 
       <Space orientation="vertical" style={{ width: "100%" }}>
         {items.map((it) => (
@@ -118,7 +124,9 @@ export default function HistoryScreen({
             title={
               <Space wrap>
                 <Typography.Text strong>
-                  {it.text?.trim() ? it.text : "(テキスト未保存)"}
+                  {it.text?.trim()
+                    ? it.text
+                    : t("screens.history.textNotSaved")}
                 </Typography.Text>
                 <Typography.Text type="secondary">[{it.lang}]</Typography.Text>
               </Space>
@@ -134,17 +142,19 @@ export default function HistoryScreen({
                   !it.uploadedPath
                 }
               >
-                開く
+                {t("screens.history.open")}
               </Button>
             }
           >
             <Space wrap>
               <Typography.Text type="secondary">
-                Takes: {it.recordingsCount ?? 0}
+                {t("screens.history.takes")}
+                {it.recordingsCount ?? 0}
               </Typography.Text>
               {it.lastRecordingTimestamp && (
                 <Typography.Text type="secondary">
-                  Last: {it.lastRecordingTimestamp}
+                  {t("screens.history.last")}
+                  {it.lastRecordingTimestamp}
                 </Typography.Text>
               )}
             </Space>

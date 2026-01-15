@@ -3,6 +3,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { Button, Select, Space, Typography, message, Progress } from "antd";
 import TopNav from "../components/TopNav";
 import { useModelStatus } from "./recorder/useModelStatus";
+import { useTranslation } from "react-i18next";
+import {
+  getStoredUiLanguage,
+  setStoredUiLanguage,
+  type UiLanguage,
+} from "../i18n";
 
 type ModelVariant =
   | "tiny"
@@ -40,7 +46,13 @@ export default function SettingsScreen({
   onOpenCommonMistakes,
   onOpenSettings,
 }: Props) {
+  const { t, i18n } = useTranslation();
   const { status, progress } = useModelStatus();
+  const [uiLanguage, setUiLanguage] = useState<UiLanguage>(() => {
+    const stored = getStoredUiLanguage();
+    if (stored) return stored;
+    return i18n.resolvedLanguage === "ja" ? "ja" : "en";
+  });
   const [variant, setVariant] = useState<ModelVariant>("small");
   const [loading, setLoading] = useState(false);
 
@@ -88,42 +100,68 @@ export default function SettingsScreen({
 
   const options = useMemo(
     () => [
-      { value: "tiny-q8_0", label: "tiny-q8_0 (最速 / 精度低め)" },
-      { value: "tiny-q5_1", label: "tiny-q5_1 (最速 / 精度低め)" },
-      { value: "tiny", label: "tiny (速い / 精度低め)" },
-      { value: "base-q8_0", label: "base-q8_0 (速い / 中間)" },
-      { value: "base-q5_1", label: "base-q5_1 (速い / 中間)" },
-      { value: "base", label: "base (中間)" },
-      { value: "small-q8_0", label: "small-q8_0 (やや速い / 高め)" },
-      { value: "small-q5_1", label: "small-q5_1 (やや速い / 高め)" },
-      { value: "small", label: "small (従来 / 精度高め)" },
-      { value: "medium-q8_0", label: "medium-q8_0 (重い / さらに高め)" },
-      { value: "medium-q5_0", label: "medium-q5_0 (重い / さらに高め)" },
-      { value: "medium", label: "medium (重い / さらに高め)" },
-      { value: "large-v3-q5_0", label: "large-v3-q5_0 (最重 / 最高)" },
-      { value: "large-v3", label: "large-v3 (最重 / 最高)" },
+      { value: "tiny-q8_0", label: t("settings.model.variants.tiny-q8_0") },
+      { value: "tiny-q5_1", label: t("settings.model.variants.tiny-q5_1") },
+      { value: "tiny", label: t("settings.model.variants.tiny") },
+      { value: "base-q8_0", label: t("settings.model.variants.base-q8_0") },
+      { value: "base-q5_1", label: t("settings.model.variants.base-q5_1") },
+      { value: "base", label: t("settings.model.variants.base") },
+      { value: "small-q8_0", label: t("settings.model.variants.small-q8_0") },
+      { value: "small-q5_1", label: t("settings.model.variants.small-q5_1") },
+      { value: "small", label: t("settings.model.variants.small") },
+      {
+        value: "medium-q8_0",
+        label: t("settings.model.variants.medium-q8_0"),
+      },
+      {
+        value: "medium-q5_0",
+        label: t("settings.model.variants.medium-q5_0"),
+      },
+      { value: "medium", label: t("settings.model.variants.medium") },
+      {
+        value: "large-v3-q5_0",
+        label: t("settings.model.variants.large-v3-q5_0"),
+      },
+      { value: "large-v3", label: t("settings.model.variants.large-v3") },
       {
         value: "large-v3-turbo-q8_0",
-        label: "large-v3-turbo-q8_0 (重い / 高速)",
+        label: t("settings.model.variants.large-v3-turbo-q8_0"),
       },
       {
         value: "large-v3-turbo-q5_0",
-        label: "large-v3-turbo-q5_0 (重い / 高速)",
+        label: t("settings.model.variants.large-v3-turbo-q5_0"),
       },
-      { value: "large-v3-turbo", label: "large-v3-turbo (重い / 高速)" },
+      {
+        value: "large-v3-turbo",
+        label: t("settings.model.variants.large-v3-turbo"),
+      },
     ],
-    []
+    [t, i18n.language]
   );
+
+  const uiLanguageOptions = useMemo(
+    () => [
+      { value: "en" as const, label: t("app.language.english") },
+      { value: "ja" as const, label: t("app.language.japanese") },
+    ],
+    [t, i18n.language]
+  );
+
+  const changeUiLanguage = async (next: UiLanguage) => {
+    setUiLanguage(next);
+    setStoredUiLanguage(next);
+    await i18n.changeLanguage(next);
+  };
 
   const apply = async () => {
     try {
       setLoading(true);
       await invoke("set_model_variant", { variant });
-      message.success("モデル設定を更新しました。必要ならダウンロードします。");
+      message.success(t("settings.updated"));
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error(e);
-      message.error("設定の更新に失敗しました");
+      message.error(t("settings.updateFailed"));
     } finally {
       setLoading(false);
     }
@@ -142,11 +180,22 @@ export default function SettingsScreen({
       />
 
       <Typography.Title level={4} style={{ margin: 0 }}>
-        設定
+        {t("settings.title")}
       </Typography.Title>
 
       <Space orientation="vertical" style={{ width: "100%" }}>
-        <Typography.Text>音声認識モデル</Typography.Text>
+        <Typography.Text>{t("settings.uiLanguage.label")}</Typography.Text>
+        <Select
+          style={{ width: 360, maxWidth: "100%" }}
+          value={uiLanguage}
+          options={uiLanguageOptions}
+          onChange={(v) => void changeUiLanguage(v as UiLanguage)}
+        />
+        <Typography.Text type="secondary">
+          {t("settings.uiLanguage.note")}
+        </Typography.Text>
+
+        <Typography.Text>{t("settings.model.label")}</Typography.Text>
         <Select
           style={{ width: 360, maxWidth: "100%" }}
           value={variant}
@@ -156,15 +205,18 @@ export default function SettingsScreen({
         />
 
         <Button type="primary" onClick={apply} loading={loading}>
-          適用
+          {t("settings.apply")}
         </Button>
 
         <Typography.Text type="secondary">
-          変更後、必要ならモデルをダウンロードします（初回は時間がかかります）。
+          {t("settings.model.note")}
         </Typography.Text>
 
         <Space orientation="vertical" style={{ width: "100%" }}>
-          <Typography.Text type="secondary">状態: {status}</Typography.Text>
+          <Typography.Text type="secondary">
+            {t("settings.model.status")}
+            {status}
+          </Typography.Text>
           {status === "downloading" && typeof progress === "number" && (
             <Progress percent={progress} size="small" />
           )}

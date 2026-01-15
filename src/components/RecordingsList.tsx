@@ -1,4 +1,5 @@
 import { Typography, Space } from "antd";
+import { useTranslation } from "react-i18next";
 import RecordingItem from "./RecordingItem";
 import type { Recording, Transcript } from "../types/recording";
 
@@ -27,9 +28,12 @@ export default function RecordingsList({
   addToAnki,
   lang,
 }: Props) {
+  const { t } = useTranslation();
   if (!recordings.length) {
     return (
-      <Typography.Text type="secondary">No reconrdings yet.</Typography.Text>
+      <Typography.Text type="secondary">
+        {t("screens.recorder.recordings.empty")}
+      </Typography.Text>
     );
   }
 

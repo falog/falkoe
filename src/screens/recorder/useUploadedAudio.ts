@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { message } from "antd";
 import { invoke } from "@tauri-apps/api/core";
 import { confirmOverwriteExisting } from "./uiUtils";
+import { useTranslation } from "react-i18next";
 
 type UploadedAudioInfo = {
   exists: boolean;
@@ -21,6 +22,7 @@ export function useUploadedAudio({
   sentenceText,
   lang,
 }: Params) {
+  const { t } = useTranslation();
   const uploadedFileRef = useRef<File | null>(null);
   const uploadedFileUrlRef = useRef<string | null>(null);
 
@@ -101,7 +103,7 @@ export function useUploadedAudio({
           const overwrite = await confirmOverwriteExisting();
           if (!overwrite) {
             await applySavedPath(info.path);
-            message.info("既存の保存済み音声を使用します");
+            message.info(t("screens.recorder.messages.useExistingSavedAudio"));
             return;
           }
         }
@@ -129,14 +131,16 @@ export function useUploadedAudio({
         } catch {}
 
         await applySavedPath(savedPath);
-        message.success("音声ファイルを保存しました");
+        message.success(t("screens.recorder.messages.savedAudioFile"));
       } catch (e) {
-        message.error("音声ファイルの保存に失敗しました: " + String(e));
+        message.error(
+          `${t("screens.recorder.messages.saveAudioFailed")}${String(e)}`
+        );
       }
     };
 
     void saveUploadedFile();
-  }, [source, sentenceHash, uploadedAudioPath, sentenceText, lang]);
+  }, [source, sentenceHash, uploadedAudioPath, sentenceText, lang, t]);
 
   return { uploadedFileAudioUrl, uploadedAudioPath, setUploadedAudioPath };
 }

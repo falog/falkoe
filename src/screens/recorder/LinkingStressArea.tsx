@@ -1,5 +1,6 @@
 import { Radio, Space, Typography, message, theme } from "antd";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { tokenizeIpa } from "../../utils/ipaTokenize";
 import { playBundledAudio } from "../../utils/ipaPlayer";
 import type { RenderLinkingResult, DisplayMode } from "../../types/linking";
@@ -18,6 +19,7 @@ export default function LinkingStressArea({
   setLinkingDisplayMode,
   ipaIndex,
 }: Props) {
+  const { t } = useTranslation();
   const { token: antdToken } = theme.useToken();
 
   const [lastHoveredTok, setLastHoveredTok] = useState<string | null>(null);
@@ -46,9 +48,11 @@ export default function LinkingStressArea({
       const msg = String((e as any)?.message ?? e);
       if (event === "click") {
         if (/user gesture|required/i.test(msg)) {
-          message.info("最初に画面を1回クリックして音声を有効化してください");
+          message.info(t("screens.commonMistakes.audioUnlockHint"));
         } else {
-          message.error(`再生に失敗: ${tok} (${msg})`);
+          message.error(
+            `${t("screens.commonMistakes.playFailed")}${tok} (${msg})`
+          );
         }
       }
       console.warn(`IPA play failed (${event}): ${tok} (${msg})`, e);
@@ -155,22 +159,24 @@ export default function LinkingStressArea({
       return (
         <Typography.Text type="secondary" style={{ display: "block" }}>
           <Typography.Text style={{ color: antdToken.colorErrorText }}>
-            ˈ 強勢
+            {t("screens.recorder.linking.legend.primaryStress")}
           </Typography.Text>
           {" / "}
           <Typography.Text style={{ color: antdToken.colorWarningText }}>
-            ˌ 副強勢
+            {t("screens.recorder.linking.legend.secondaryStress")}
           </Typography.Text>
           {" / "}
           <Typography.Text style={{ color: antdToken.colorSuccessText }}>
-            母音
+            {t("screens.recorder.linking.legend.vowel")}
           </Typography.Text>
           {" / "}
           <Typography.Text style={{ color: antdToken.colorInfoText }}>
-            子音
+            {t("screens.recorder.linking.legend.consonant")}
           </Typography.Text>
           {" / "}
-          <Typography.Text type="secondary">記号</Typography.Text>
+          <Typography.Text type="secondary">
+            {t("screens.recorder.linking.legend.symbol")}
+          </Typography.Text>
         </Typography.Text>
       );
     }
@@ -178,14 +184,16 @@ export default function LinkingStressArea({
     return (
       <Typography.Text type="secondary" style={{ display: "block" }}>
         <Typography.Text style={{ color: antdToken.colorErrorText }}>
-          ˈ 強勢
+          {t("screens.recorder.linking.legend.primaryStress")}
         </Typography.Text>
         {" / "}
         <Typography.Text style={{ color: antdToken.colorWarningText }}>
-          ˌ 副強勢
+          {t("screens.recorder.linking.legend.secondaryStress")}
         </Typography.Text>
         {" / "}
-        <Typography.Text type="secondary">弱</Typography.Text>
+        <Typography.Text type="secondary">
+          {t("screens.recorder.linking.legend.weak")}
+        </Typography.Text>
       </Typography.Text>
     );
   }
@@ -582,7 +590,10 @@ export default function LinkingStressArea({
           type="secondary"
           style={{ display: "block", marginBottom: 10, lineHeight: 1.7 }}
         >
-          {`強勢: ${p} / 副強勢: ${s}`}
+          {t("screens.recorder.linking.stressCount", {
+            primary: p,
+            secondary: s,
+          })}
         </Typography.Text>
       )}
 

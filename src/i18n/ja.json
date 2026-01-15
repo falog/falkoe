@@ -1,0 +1,388 @@
+{
+  "app": {
+    "language": {
+      "title": "言語を選択",
+      "description": "アプリの表示言語を選んでください。後から設定で変更できます。",
+      "japanese": "日本語",
+      "english": "English",
+      "continue": "続ける"
+    }
+  },
+  "nav": {
+    "back": "← 戻る",
+    "history": "録音履歴",
+    "ipaList": "IPA 発音一覧",
+    "developersMistakes": "デベロッパーズミステイク",
+    "commonMistakes": "よくある間違い",
+    "settings": "設定"
+  },
+  "settings": {
+    "title": "設定",
+    "uiLanguage": {
+      "label": "表示言語",
+      "note": "表示言語はすぐに反映されます。"
+    },
+    "apply": "適用",
+    "updated": "モデル設定を更新しました。必要ならダウンロードします。",
+    "updateFailed": "設定の更新に失敗しました",
+    "model": {
+      "label": "音声認識モデル",
+      "variants": {
+        "tiny-q8_0": "tiny-q8_0 (最速 / 精度低め)",
+        "tiny-q5_1": "tiny-q5_1 (最速 / 精度低め)",
+        "tiny": "tiny (速い / 精度低め)",
+        "base-q8_0": "base-q8_0 (速い / 中間)",
+        "base-q5_1": "base-q5_1 (速い / 中間)",
+        "base": "base (中間)",
+        "small-q8_0": "small-q8_0 (やや速い / 高め)",
+        "small-q5_1": "small-q5_1 (やや速い / 高め)",
+        "small": "small (従来 / 精度高め)",
+        "medium-q8_0": "medium-q8_0 (重い / さらに高め)",
+        "medium-q5_0": "medium-q5_0 (重い / さらに高め)",
+        "medium": "medium (重い / さらに高め)",
+        "large-v3-q5_0": "large-v3-q5_0 (最重 / 最高)",
+        "large-v3": "large-v3 (最重 / 最高)",
+        "large-v3-turbo-q8_0": "large-v3-turbo-q8_0 (重い / 高速)",
+        "large-v3-turbo-q5_0": "large-v3-turbo-q5_0 (重い / 高速)",
+        "large-v3-turbo": "large-v3-turbo (重い / 高速)"
+      },
+      "note": "変更後、必要ならモデルをダウンロードします（初回は時間がかかります）。",
+      "status": "状態: "
+    }
+  },
+  "components": {
+    "audioUpload": {
+      "selectFile": "音声ファイルを選択"
+    }
+  },
+  "screens": {
+    "wordInput": {
+      "title": "例文検索",
+      "useSpeech": "音声ファイルを選択して例文を取得する",
+      "selectedFile": "選択中: ",
+      "selectedLanguage": "選択言語：",
+      "useRecognition": "音声認識を使用する（自動入力）",
+      "manualTextLabel": "テキストを手動入力：",
+      "manualSentencePlaceholder": "文を手動入力",
+      "practiceWithSentence": "この例文を使って練習",
+      "choosePracticeLanguage": "練習する言語を選択してください：",
+      "translateTo": "翻訳先（Translate to）：",
+      "chooseWordCount": "ワード数を選択してください：",
+      "wordPlaceholder": "単語・フレーズを入力",
+      "search": "検索",
+      "fetchFailed": "例文の取得に失敗しました",
+      "noResults": "該当する例文がありませんでした（検索語は選択した言語で入力してください）",
+      "confirmOverwriteRecognizedText": {
+        "title": "認識結果で上書きしますか？",
+        "content": "音声認識の結果が既にあります。入力欄を認識結果で上書きしますか？",
+        "ok": "上書きする",
+        "cancel": "上書きしない"
+      },
+      "confirmOverwriteManualText": {
+        "title": "テキストを上書きしますか？",
+        "content": "前のワードの手動入力テキストが残っています。上書きしますか？",
+        "ok": "上書きする",
+        "cancel": "上書きしない"
+      },
+      "confirmOverwriteExisting": {
+        "title": "既に保存済みの音声があります",
+        "content": "同じIDのアップロード音声が既に存在します。上書きしますか？",
+        "ok": "上書きする",
+        "cancel": "上書きしない"
+      },
+      "confirmOverwriteManifestText": {
+        "title": "manifest.jsonのテキストを上書きしますか？",
+        "intro": "既に保存済みのテキストがあります。manifest.json の text を上書きしますか？",
+        "current": "現在:",
+        "newInput": "新しい入力:",
+        "ok": "上書きする",
+        "cancel": "上書きしない"
+      },
+      "warnManualNeedsText": {
+        "title": "テキストを入力してください",
+        "content": "手動入力モードでは、テキストが空だとRecorder側で自動認識が走ってしまいます。テキストを入力するか、音声認識をONにしてください。",
+        "ok": "OK"
+      }
+    },
+    "recorder": {
+      "exportVideo": "動画を作成（mp4）",
+      "ipaIndexLoadFailed": "IPA index 読み込み失敗: ",
+      "linking": {
+        "legend": {
+          "primaryStress": "ˈ 強勢",
+          "secondaryStress": "ˌ 副強勢",
+          "vowel": "母音",
+          "consonant": "子音",
+          "symbol": "記号",
+          "weak": "弱"
+        },
+        "stressCount": "強勢: {{primary}} / 副強勢: {{secondary}}"
+      },
+      "header": {
+        "recognizeUploaded": "アップロード音声を音声認識する",
+        "recognizeModel": "模範音声を音声認識する"
+      },
+      "recordings": {
+        "empty": "まだ録音がありません"
+      },
+      "messages": {
+        "overwriteExistingAutoOk": "既に保存済みの音声があります。上書きしますか？（自動でOK）",
+        "audioLoading": "音声を読み込み中…",
+        "audioPlaybackFailed": "音声の再生に失敗しました",
+        "useExistingSavedAudio": "既存の保存済み音声を使用します",
+        "savedAudioFile": "音声ファイルを保存しました",
+        "saveAudioFailed": "音声ファイルの保存に失敗しました: ",
+        "modelMissingDownloadStart": "音声認識モデルがありません。ダウンロードを開始します。",
+        "recordingStartFailed": "録音の開始に失敗しました: ",
+        "saveRecordingFailed": "録音の保存に失敗しました",
+        "recordingSavedTranscribeLater": "録音は保存されました（文字起こしは後で実行できます）",
+        "recognizeStartFailed": "音声認識の開始に失敗しました: ",
+        "audioLoadFailed": "音声の読み込みに失敗しました: ",
+        "ankiAdded": "Ankiに追加しました",
+        "ankiAddFailed": "Ankiへの追加に失敗しました：",
+        "silenceWatcherUnavailable": "無音検知を開始できません（デバイス競合の可能性）: ",
+        "modelNotReadyCannotRecord": "モデル準備中のため録音を開始できません",
+        "exportNoSegments": "動画に入れるデータがありません（認識済みの録音が必要です）",
+        "videoSaved": "ビデオに保存しました: ",
+        "videoCreateFailed": "動画の作成に失敗しました: "
+      },
+      "export": {
+        "referenceAnalysisTimeout": "参照音声の解析が完了しませんでした（音声認識/ピッチ解析）。もう一度お試しください。",
+        "missingUploadedPath": "アップロード音声の作成に必要なパスが見つかりません。",
+        "missingModelUrl": "model音声のURLが見つかりません。",
+        "confirmMissingTranscripts": {
+          "title": "音声認識されていない録音があります",
+          "content": "音声認識されていない録音があります。未認識の録音は動画から除外されます。それでも実行しますか？",
+          "ok": "実行する",
+          "cancel": "キャンセル"
+        },
+        "confirmCreateModelAudio": {
+          "title": "model音声がありません",
+          "content": "model音声がありませんので作成します。作成してから動画作成を続けますか？",
+          "ok": "作成して続行",
+          "cancel": "キャンセル"
+        },
+        "confirmCreateUploadedAudio": {
+          "title": "アップロード音声がありません",
+          "content": "アップロード音声(wav)がありませんので作成します。作成してから動画作成を続けますか？",
+          "ok": "作成して続行",
+          "cancel": "キャンセル"
+        }
+      }
+    },
+    "ipaList": {
+      "title": "IPA 発音一覧",
+      "description": "Pronounce は通常発音、Explain は解説音声（ある場合）です。",
+      "loading": "読み込み中…",
+      "loadFailed": "読み込み失敗: ",
+      "audioUnlockHint": "最初に画面を1回クリックして音声を有効化してください",
+      "noAudioForToken": "まだ音声がありません: ",
+      "category": {
+        "consonants": "Consonants（子音）",
+        "vowels": "Vowels（母音）",
+        "others": "Others（その他）"
+      },
+      "buttons": {
+        "pronounce": "発音",
+        "explain": "解説"
+      }
+    },
+    "history": {
+      "title": "録音履歴",
+      "loading": "読み込み中…",
+      "empty": "データがありません",
+      "textNotSaved": "(テキスト未保存)",
+      "open": "開く",
+      "takes": "テイク: ",
+      "last": "最終: "
+    },
+    "commonMistakes": {
+      "title": "よくある間違い（録音はあとで追加）",
+      "description": "ネイティブの指摘とは別に、発音学習でハマりやすいポイントをメモしていくページです。",
+      "listTitle": "一覧",
+      "loading": "読み込み中…",
+      "ipaIndexLoadFailed": "IPA index 読み込み失敗: ",
+      "audioUnlockHint": "最初に画面を1回クリックして音声を有効化してください",
+      "noAudioForToken": "まだ音声がありません: ",
+      "playFailed": "再生に失敗: ",
+      "buttons": {
+        "failed": "失敗",
+        "correct": "正解"
+      }
+    },
+    "developersMistakes": {
+      "title": "デベロッパーズミステイク（Recorded by fal）",
+      "tocTitle": "このページの目次（今回の2つ）",
+      "intro": "ネイティブに指摘された「自分の録音のミス」を、失敗談として残すページです。恥ずかしいけど、学習ログとしてちゃんと積み上げる。",
+      "nativeCommentOriginal": "ネイティブのコメント（原文）",
+      "nativeCommentJa": "日本語訳",
+      "nativeFeedback": "The \"R\" sound is more like a zombie sound like for run.\nAnd the \"oo\" sound almost sounds like a U. Like for book or look.",
+      "nativeFeedbackJa": "「R」の音は、run の r みたいにゾンビっぽい音に近い。\nあと「oo」の音が、ほとんど「U」みたいに聞こえる。book や look みたいに。",
+      "fun": {
+        "line1": "これだけ発音がある中で「2つだけ」って逆にすごい。",
+        "aside": "（伸びしろが見える？笑）",
+        "line2": "でも、一体どれくらい言語の勉強しているか、もはやわからない（笑）"
+      },
+      "loading": "読み込み中…",
+      "ipaIndexLoadFailed": "IPA index 読み込み失敗: ",
+      "whatHappenedTitle": "何が起きたか（今回の2つ）",
+      "fixNextStepsTitle": "修正 / 次のステップ",
+      "abLabel": "A/B (failed / ネイティブ)",
+      "noAudioForToken": "まだ音声がありません: ",
+      "noAudio": "まだ音声がありません",
+      "noAudioAlt": "音声がありません: ",
+      "noAudioWithCandidates": "まだ音声がありません: ",
+      "fix": {
+        "line1": "ɹ は “うなり” を抜いて クリアな近似音に寄せる",
+        "line2": "uː と ʊ を最小対立で練習する"
+      },
+      "buttons": {
+        "failed": "失敗",
+        "native": "ネイティブ",
+        "pronounceWithTok": "発音",
+        "explainWithTok": "解説"
+      }
+    }
+  },
+  "data": {
+    "commonMistakes": [
+      {
+        "key": "j",
+        "title": "J: 文字のJとIPAの j を混同",
+        "paragraphs": [
+          [
+            { "kind": "text", "value": "英語の " },
+            { "kind": "code", "value": "jump" },
+            { "kind": "text", "value": " の“J”は" },
+            { "kind": "code", "value": "j" },
+            { "kind": "text", "value": "（yes の y）ではなく" },
+            { "kind": "code", "value": "dʒ" },
+            { "kind": "text", "value": "。" }
+          ]
+        ],
+        "buttons": [
+          { "label": "j（yesのy）", "tok": "j", "kind": "audio" },
+          { "label": "j 解説", "tok": "j", "kind": "explain" },
+          { "label": "dʒ（jumpのJ）", "tok": "dʒ", "kind": "audio" }
+        ]
+      },
+      {
+        "key": "r",
+        "title": "R: run の r が 'zombie sound' っぽい",
+        "paragraphs": [
+          [
+            { "kind": "text", "value": "“唸り”を入れすぎてしまって、" },
+            { "kind": "code", "value": "ɹ" },
+            {
+              "kind": "text",
+              "value": "というより うなり声っぽく聞こえたらしい。"
+            }
+          ]
+        ],
+        "buttons": [
+          { "label": "ɹ 発音", "tok": "ɹ", "kind": "audio" },
+          { "label": "ɹ 解説", "tok": "ɹ", "kind": "explain" }
+        ]
+      },
+      {
+        "key": "oo",
+        "title": "oo: goose の uː が ʊ（book/look）寄りに聞こえる",
+        "paragraphs": [
+          [
+            { "kind": "code", "value": "uː" },
+            { "kind": "text", "value": "（goose/too）を" },
+            { "kind": "code", "value": "ʊ" },
+            {
+              "kind": "text",
+              "value": "（book/look）みたいに短く・ゆるくしてしまった。"
+            }
+          ]
+        ],
+        "buttons": [
+          { "label": "uː (goose/too)", "tok": "uː", "kind": "audio" },
+          { "label": "uː 解説", "tok": "uː", "kind": "explain" },
+          { "label": "ʊ (book/look)", "tok": "ʊ", "kind": "audio" }
+        ]
+      }
+    ],
+    "commonPitfalls": [
+      {
+        "key": "example-j",
+        "title": "J: 文字のJとIPAの j を混同",
+        "body": "実例あり。jump の J は IPA の j（yesのy）ではなく dʒ。文字とIPAの見た目が似ていて混乱しやすい。",
+        "ipa": ["dʒ", "j"]
+      },
+      {
+        "key": "example-r",
+        "title": "R: /ɹ/ が唸り（zombie sound）っぽくなる",
+        "body": "実例あり。Rは頑張りすぎると唸りや濁りが乗りやすい。舌先をどこにも付けず、力を抜いて形だけ作る意識。",
+        "ipa": ["ɹ"]
+      },
+      {
+        "key": "example-oo",
+        "title": "oo: uː が ʊ（book/look）寄りに短くなる",
+        "body": "実例あり。goose/too の uː を短くゆるくすると book/look の ʊ に寄りやすい。長さ＋口の緊張の差を意識。",
+        "ipa": ["uː", "ʊ"]
+      },
+      {
+        "key": "th",
+        "title": "th: /θ/ と /ð/ を /s/ や /z/ に寄せてしまう",
+        "body": "舌先を歯に軽く当てて息を漏らす。/θ/ は無声音（think）、/ð/ は有声音（this）。日本語話者は /s/ や /z/ に置き換えがち。",
+        "ipa": ["θ", "ð", "s", "z"]
+      },
+      {
+        "key": "l-r",
+        "title": "L/R: /l/ と /ɹ/ を混同する",
+        "body": "/l/ は舌先が上の歯茎に触れる（light）。/ɹ/ は舌先を付けず、前寄りで丸める（right）。どっちも“rっぽい/ら行っぽい”でまとめない。",
+        "ipa": ["l", "ɹ"]
+      },
+      {
+        "key": "v-b",
+        "title": "V/B: /v/ を /b/ にしてしまう",
+        "body": "/v/ は下唇＋上の歯で摩擦（very）。/b/ は唇を閉じて破裂（berry）。摩擦が入っているかが差。",
+        "ipa": ["v", "b"]
+      },
+      {
+        "key": "f-h",
+        "title": "F/H: /f/ を /h/ にしてしまう",
+        "body": "/f/ は唇＋歯の摩擦（fine）。/h/ は喉側の息（high）。口元の形が違う。",
+        "ipa": ["f", "h"]
+      },
+      {
+        "key": "i-ih",
+        "title": "iː/ɪ: 長母音と短母音の差が消える",
+        "body": "beat の /iː/ は長く張る、bit の /ɪ/ は短くゆるい。長さだけでなく“口の緊張”も変わる。",
+        "ipa": ["iː", "ɪ"]
+      },
+      {
+        "key": "ae-e",
+        "title": "æ: /æ/ を /e/ に寄せる",
+        "body": "cat の /æ/ は口を横に大きく開ける。/e/（bed）より開きが強い。",
+        "ipa": ["æ", "e"]
+      },
+      {
+        "key": "uh-schwa",
+        "title": "ə: シュワ（弱母音）を全部はっきり読んでしまう",
+        "body": "about の最初の母音は /ə/ で弱く短い。英語は強勢のある母音だけが“はっきり”する。",
+        "ipa": ["ə"]
+      },
+      {
+        "key": "stress",
+        "title": "アクセント: 強勢位置がずれる",
+        "body": "母音の長さ・明瞭さが変わるので、子音よりも通じやすさに直結しやすい。まず強勢のある音節を決める。"
+      },
+      {
+        "key": "flap",
+        "title": "t/d: アメリカ英語のフラップ /ɾ/ を知らずに聞き取れない",
+        "body": "water/ladder などで t/d が [ɾ] に寄る。発音というより“同じ音に聞こえる現象”として知っておくと楽。",
+        "ipa": ["ɾ"]
+      },
+      {
+        "key": "ng",
+        "title": "ng: /ŋ/ を /nɡ/ と言ってしまう",
+        "body": "sing の語末は基本 /ŋ/（n + g ではない）。tongue のように g を発音する単語もあるので混ざりやすい。",
+        "ipa": ["ŋ"]
+      }
+    ]
+  }
+}

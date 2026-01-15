@@ -1,17 +1,18 @@
 import { Button, message, Space, Spin, Typography } from "antd";
 import { PlayCircleOutlined } from "@ant-design/icons";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { loadIpaIndex, type IpaIndex } from "../utils/ipaResources";
 import {
   playBundledAudio,
   unlockAudioFromUserGesture,
 } from "../utils/ipaPlayer";
 import {
-  COMMON_PITFALLS,
   sampleResourceCandidates,
   type SampleSpeaker,
+  type CommonPitfall,
 } from "../data/commonMistakes";
 import TopNav from "../components/TopNav";
+import { useTranslation } from "react-i18next";
 
 type Props = {
   onBack: () => void;
@@ -30,10 +31,16 @@ export default function CommonMistakesScreen({
   onOpenCommonMistakes,
   onOpenSettings,
 }: Props) {
+  const { t, i18n } = useTranslation();
   const [ipaIndex, setIpaIndex] = useState<IpaIndex | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const unlockTriedRef = useRef(false);
+
+  const commonPitfalls = useMemo(() => {
+    const v = t("data.commonPitfalls", { returnObjects: true });
+    return Array.isArray(v) ? (v as CommonPitfall[]) : [];
+  }, [t, i18n.language]);
 
   useEffect(() => {
     setLoading(true);
@@ -59,7 +66,7 @@ export default function CommonMistakesScreen({
         lastErr = e;
         const msg = String((e as any)?.message ?? e);
         if (/user gesture|required/i.test(msg)) {
-          message.info("最初に画面を1回クリックして音声を有効化してください");
+          message.info(t("screens.commonMistakes.audioUnlockHint"));
           return;
         }
         if (
@@ -71,13 +78,13 @@ export default function CommonMistakesScreen({
         }
         //message.error(`再生に失敗: ${tok} (${msg})`);
         //message.info(`まだ音声がありません: ${tok} (${candidates.join(" / ")})`);
-        message.info(`まだ音声がありません: ${tok}`);
+        message.info(`${t("screens.commonMistakes.noAudioForToken")}${tok}`);
         return;
       }
     }
 
     //message.info(`まだ音声がありません: ${tok} (${candidates.join(" / ")})`);
-    message.info(`まだ音声がありません: ${tok}`);
+    message.info(`${t("screens.commonMistakes.noAudioForToken")}${tok}`);
     void lastErr;
   }
 
@@ -85,7 +92,7 @@ export default function CommonMistakesScreen({
     const entry = ipaIndex?.[tok];
     const resourcePath = entry?.audio ?? null;
     if (!resourcePath) {
-      message.info(`まだ音声がありません: ${tok}`);
+      message.info(`${t("screens.commonMistakes.noAudioForToken")}${tok}`);
       return;
     }
 
@@ -94,9 +101,11 @@ export default function CommonMistakesScreen({
     } catch (e) {
       const msg = String((e as any)?.message ?? e);
       if (/user gesture|required/i.test(msg)) {
-        message.info("最初に画面を1回クリックして音声を有効化してください");
+        message.info(t("screens.commonMistakes.audioUnlockHint"));
       } else {
-        message.error(`再生に失敗: ${tok} (${msg})`);
+        message.error(
+          `${t("screens.commonMistakes.playFailed")}${tok} (${msg})`
+        );
       }
     }
   }
@@ -124,27 +133,30 @@ export default function CommonMistakesScreen({
       />
 
       <Typography.Title level={4} style={{ margin: 0 }}>
-        よくある間違い（録音はあとで追加）
+        {t("screens.commonMistakes.title")}
       </Typography.Title>
 
       <Typography.Paragraph style={{ marginBottom: 8 }}>
-        ネイティブの指摘とは別に、発音学習でハマりやすいポイントをメモしていくページです。
+        {t("screens.commonMistakes.description")}
       </Typography.Paragraph>
 
       <Typography.Title level={5} style={{ margin: "12px 0 0" }}>
-        一覧
+        {t("screens.commonMistakes.listTitle")}
       </Typography.Title>
 
       {loading && (
         <Space>
           <Spin size="small" />
-          <Typography.Text type="secondary">読み込み中…</Typography.Text>
+          <Typography.Text type="secondary">
+            {t("screens.commonMistakes.loading")}
+          </Typography.Text>
         </Space>
       )}
 
       {error && (
         <Typography.Text type="danger">
-          IPA index 読み込み失敗: {error}
+          {t("screens.commonMistakes.ipaIndexLoadFailed")}
+          {error}
         </Typography.Text>
       )}
 
@@ -155,7 +167,7 @@ export default function CommonMistakesScreen({
           overflow: "hidden",
         }}
       >
-        {COMMON_PITFALLS.map((p, idx) => (
+        {commonPitfalls.map((p, idx) => (
           <div key={p.key}>
             <div style={{ padding: "12px 16px" }}>
               <Space orientation="vertical" size={4} style={{ width: "100%" }}>
@@ -171,7 +183,7 @@ export default function CommonMistakesScreen({
                           icon={<PlayCircleOutlined />}
                           onClick={() => void playSample("failed", tok)}
                         >
-                          failed
+                          {t("screens.commonMistakes.buttons.failed")}
                         </Button>
                         <Button
                           size="small"
@@ -179,7 +191,7 @@ export default function CommonMistakesScreen({
                           onClick={() => void playCorrect(tok)}
                           disabled={!!error || loading}
                         >
-                          Correct
+                          {t("screens.commonMistakes.buttons.correct")}
                         </Button>
                       </Space>
                     ))}
@@ -187,7 +199,7 @@ export default function CommonMistakesScreen({
                 )}
               </Space>
             </div>
-            {idx < COMMON_PITFALLS.length - 1 && (
+            {idx < commonPitfalls.length - 1 && (
               <div style={{ borderTop: "1px solid var(--ant-color-split)" }} />
             )}
           </div>

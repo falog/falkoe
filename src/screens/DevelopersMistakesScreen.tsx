@@ -1,6 +1,7 @@
 import { Button, message, Space, Spin, Typography } from "antd";
 import { PlayCircleOutlined } from "@ant-design/icons";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { loadIpaIndex, type IpaIndex } from "../utils/ipaResources";
 import {
   playBundledAudio,
@@ -8,9 +9,9 @@ import {
   unlockAudioFromUserGesture,
 } from "../utils/ipaPlayer";
 import {
-  COMMON_MISTAKES,
   sampleResourceCandidates,
   type SampleSpeaker,
+  type CommonMistake,
   type MistakeInline,
   type MistakeParagraph,
 } from "../data/commonMistakes";
@@ -33,6 +34,7 @@ export default function DevelopersMistakesScreen({
   onOpenSettings,
   initialFocus,
 }: Props) {
+  const { t, i18n } = useTranslation();
   const [ipaIndex, setIpaIndex] = useState<IpaIndex | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,15 +43,26 @@ export default function DevelopersMistakesScreen({
   >({});
   const unlockTriedRef = useRef(false);
 
+  const commonMistakes = useMemo(() => {
+    const v = t("data.commonMistakes", { returnObjects: true });
+    return (Array.isArray(v) ? v : []) as unknown as CommonMistake[];
+  }, [t, i18n.language]);
+
+  const pageMistakes = useMemo(() => {
+    return commonMistakes.filter((m) => m.key === "r" || m.key === "oo");
+  }, [commonMistakes]);
+
   useEffect(() => {
     let cancelled = false;
 
-    const simpleKeys = new Set(["j", "r", "oo"]);
+    const simpleKeys = new Set(["r", "oo"]);
     const explainToks = Array.from(
       new Set(
-        COMMON_MISTAKES.filter((m) => simpleKeys.has(m.key)).flatMap((m) =>
-          m.buttons.filter((b) => b.kind === "explain").map((b) => b.tok)
-        )
+        pageMistakes
+          .filter((m) => simpleKeys.has(m.key))
+          .flatMap((m) =>
+            m.buttons.filter((b) => b.kind === "explain").map((b) => b.tok)
+          )
       )
     );
 
@@ -84,7 +97,7 @@ export default function DevelopersMistakesScreen({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [pageMistakes]);
 
   useEffect(() => {
     setLoading(true);
@@ -102,7 +115,9 @@ export default function DevelopersMistakesScreen({
     if (!initialFocus) return;
     if (loading || error) return;
 
-    const el = document.getElementById(`mistake-${initialFocus}`);
+    // Back-compat: the old page had a "j" section; now it only has r/oo.
+    const focus = initialFocus === "j" ? "r" : initialFocus;
+    const el = document.getElementById(`mistake-${focus}`);
     el?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [initialFocus, loading, error]);
 
@@ -133,7 +148,7 @@ export default function DevelopersMistakesScreen({
         : (entry?.audio ?? null);
 
     if (!resourcePath) {
-      message.info(`まだ音声がありません: ${tok}`);
+      message.info(`${t("screens.developersMistakes.noAudioForToken")}${tok}`);
       return;
     }
 
@@ -142,10 +157,10 @@ export default function DevelopersMistakesScreen({
     } catch (e) {
       const msg = String((e as any)?.message ?? e);
       if (/user gesture|required/i.test(msg)) {
-        message.info("最初に画面を1回クリックして音声を有効化してください");
+        message.info(t("screens.commonMistakes.audioUnlockHint"));
       } else {
         //message.error(`再生に失敗: ${tok} (${msg})`);
-        message.info(`まだ音声がありません: ${tok}`);
+        message.info(`${t("screens.developersMistakes.noAudioAlt")}${tok}`);
       }
     }
   }
@@ -162,7 +177,7 @@ export default function DevelopersMistakesScreen({
         lastErr = e;
         const msg = String((e as any)?.message ?? e);
         if (/user gesture|required/i.test(msg)) {
-          message.info("最初に画面を1回クリックして音声を有効化してください");
+          message.info(t("screens.commonMistakes.audioUnlockHint"));
           return;
         }
         if (
@@ -174,12 +189,16 @@ export default function DevelopersMistakesScreen({
           continue;
         }
         //message.error(`再生に失敗: ${tok} (${msg})`);
-        message.info(`音声がありません: ${tok}`);
+        message.info(`${t("screens.developersMistakes.noAudioAlt")}${tok}`);
         return;
       }
     }
 
-    message.info(`まだ音声がありません: ${tok} (${candidates.join(" / ")})`);
+    message.info(
+      `${t("screens.developersMistakes.noAudioWithCandidates")}${tok} (${candidates.join(
+        " / "
+      )})`
+    );
     void lastErr;
   }
 
@@ -197,7 +216,7 @@ export default function DevelopersMistakesScreen({
         lastErr = e;
         const msg = String((e as any)?.message ?? e);
         if (/user gesture|required/i.test(msg)) {
-          message.info("最初に画面を1回クリックして音声を有効化してください");
+          message.info(t("screens.commonMistakes.audioUnlockHint"));
           return;
         }
         if (
@@ -209,25 +228,17 @@ export default function DevelopersMistakesScreen({
           continue;
         }
         //message.error(`再生に失敗: ${tok} (${msg})`);
-        message.info(`まだ音声がありません: ${tok}`);
+        message.info(
+          `${t("screens.developersMistakes.noAudioForToken")}${tok}`
+        );
         return;
       }
     }
 
     //message.info(`まだ音声がありません: ${tok} (${candidates.join(" / ")})`);
-    message.info("まだ音声がありません");
+    message.info(t("screens.developersMistakes.noAudio"));
     void lastErr;
   }
-
-  const nativeFeedback =
-    'The "J" sound is correct with a consonant but the common "J" sound is different. Like in jump.\n' +
-    'The "R" sound is more like a zombie sound like for run.\n' +
-    'And the "oo" sound almost sounds like a U. Like for book or look.';
-
-  const nativeFeedbackJa =
-    "「J」の音は子音と一緒なら合ってるけど、一般的な「J」の音は違う。たとえば jump の J。\n" +
-    "「R」の音は、run の r みたいにゾンビっぽい音に近い。\n" +
-    "あと「oo」の音が、ほとんど「U」みたいに聞こえる。book や look みたいに。";
 
   return (
     <div
@@ -253,16 +264,16 @@ export default function DevelopersMistakesScreen({
         />
 
         <Typography.Title level={4} style={{ margin: 0 }}>
-          Developer’s mistakes (recorded by fal)
+          {t("screens.developersMistakes.title")}
         </Typography.Title>
 
         <Typography.Paragraph style={{ margin: 0 }}>
           <Typography.Text strong>
-            このページの目次（今回の3つ）
+            {t("screens.developersMistakes.tocTitle")}
           </Typography.Text>
         </Typography.Paragraph>
         <Space wrap>
-          {COMMON_MISTAKES.map((m) => (
+          {pageMistakes.map((m) => (
             <Button
               key={`toc-${m.key}`}
               type="link"
@@ -278,50 +289,56 @@ export default function DevelopersMistakesScreen({
         </Space>
 
         <Typography.Paragraph>
-          ネイティブに指摘された「自分の録音のミス」を、失敗談として残すページです。
-          恥ずかしいけど、学習ログとしてちゃんと積み上げる。
+          {t("screens.developersMistakes.intro")}
         </Typography.Paragraph>
 
         <Typography.Paragraph>
-          <Typography.Text strong>ネイティブのコメント（原文）</Typography.Text>
+          <Typography.Text strong>
+            {t("screens.developersMistakes.nativeCommentOriginal")}
+          </Typography.Text>
           <pre style={{ whiteSpace: "pre-wrap", margin: "8px 0 0" }}>
-            {nativeFeedback}
+            {t("screens.developersMistakes.nativeFeedback")}
           </pre>
         </Typography.Paragraph>
 
         <Typography.Paragraph>
-          <Typography.Text strong>日本語訳</Typography.Text>
+          <Typography.Text strong>
+            {t("screens.developersMistakes.nativeCommentJa")}
+          </Typography.Text>
           <pre style={{ whiteSpace: "pre-wrap", margin: "8px 0 0" }}>
-            {nativeFeedbackJa}
+            {t("screens.developersMistakes.nativeFeedbackJa")}
           </pre>
         </Typography.Paragraph>
 
         <Typography.Paragraph>
-          これだけ発音がある中で「3つだけ」って逆にすごい。
+          {t("screens.developersMistakes.fun.line1")}
           <Typography.Text type="secondary">
-            （伸びしろが見える？笑）
+            {t("screens.developersMistakes.fun.aside")}
           </Typography.Text>
           <br />
-          でも、一体どれくらい言語の勉強しているか、もはやわからない（笑）
+          {t("screens.developersMistakes.fun.line2")}
         </Typography.Paragraph>
 
         {loading && (
           <Space>
             <Spin size="small" />
-            <Typography.Text type="secondary">読み込み中…</Typography.Text>
+            <Typography.Text type="secondary">
+              {t("screens.developersMistakes.loading")}
+            </Typography.Text>
           </Space>
         )}
 
         {error && (
           <Typography.Text type="danger">
-            IPA index 読み込み失敗: {error}
+            {t("screens.developersMistakes.ipaIndexLoadFailed")}
+            {error}
           </Typography.Text>
         )}
 
         {!loading && !error && (
           <>
             <Typography.Title level={5} style={{ margin: "8px 0 0" }}>
-              What happened（今回の3つ）
+              {t("screens.developersMistakes.whatHappenedTitle")}
             </Typography.Title>
 
             <div
@@ -331,7 +348,7 @@ export default function DevelopersMistakesScreen({
                 overflow: "hidden",
               }}
             >
-              {COMMON_MISTAKES.map((item, idx) => (
+              {pageMistakes.map((item, idx) => (
                 <div key={item.key} id={`mistake-${item.key}`}>
                   <div style={{ padding: "12px 16px" }}>
                     <Space
@@ -344,7 +361,7 @@ export default function DevelopersMistakesScreen({
                       <div>{item.paragraphs.map(renderParagraph)}</div>
 
                       {(() => {
-                        const simpleKeys = new Set(["j", "r", "oo"]);
+                        const simpleKeys = new Set(["r", "oo"]);
 
                         if (!simpleKeys.has(item.key)) {
                           return (
@@ -379,7 +396,6 @@ export default function DevelopersMistakesScreen({
                         );
 
                         const tokenOrderByKey: Record<string, string[]> = {
-                          j: ["j", "dʒ"],
                           r: ["ɹ"],
                           oo: ["uː", "ʊ"],
                         };
@@ -403,7 +419,10 @@ export default function DevelopersMistakesScreen({
                                   icon={<PlayCircleOutlined />}
                                   onClick={() => void playSample("falkoe", tok)}
                                 >
-                                  {tok} Pronounce
+                                  {tok}{" "}
+                                  {t(
+                                    "screens.developersMistakes.buttons.pronounceWithTok"
+                                  )}
                                 </Button>,
                                 explainTokSet.has(tok) &&
                                 sampleExplainAvailable[
@@ -411,12 +430,14 @@ export default function DevelopersMistakesScreen({
                                 ] ? (
                                   <Button
                                     key={`${item.key}-${tok}-explain-falkoe`}
-                                    icon={<PlayCircleOutlined />}
                                     onClick={() =>
                                       void playSampleExplain("falkoe", tok)
                                     }
                                   >
-                                    {tok} Explain
+                                    {tok}{" "}
+                                    {t(
+                                      "screens.developersMistakes.buttons.explainWithTok"
+                                    )}
                                   </Button>
                                 ) : null,
                                 <Button
@@ -426,7 +447,10 @@ export default function DevelopersMistakesScreen({
                                     void playSample("advised-by-native", tok)
                                   }
                                 >
-                                  {tok} Native
+                                  {tok}{" "}
+                                  {t(
+                                    "screens.developersMistakes.buttons.native"
+                                  )}
                                 </Button>,
                               ].filter(Boolean);
 
@@ -446,7 +470,7 @@ export default function DevelopersMistakesScreen({
                       })()}
 
                       {(() => {
-                        const simpleKeys = new Set(["j", "r", "oo"]);
+                        const simpleKeys = new Set(["r", "oo"]);
                         if (simpleKeys.has(item.key)) return null;
 
                         const abcExcluded = new Set(["dʒ", "ʊ", "ɹ"]);
@@ -464,7 +488,7 @@ export default function DevelopersMistakesScreen({
                         return (
                           <div style={{ marginTop: 8 }}>
                             <Typography.Text type="secondary">
-                              A/B (failed / ネイティブ)
+                              {t("screens.developersMistakes.abLabel")}
                             </Typography.Text>
                             <Space wrap style={{ marginTop: 6 }}>
                               {abcToks.map((tok) => (
@@ -476,7 +500,9 @@ export default function DevelopersMistakesScreen({
                                       void playSample("failed", tok)
                                     }
                                   >
-                                    failed
+                                    {t(
+                                      "screens.developersMistakes.buttons.failed"
+                                    )}
                                   </Button>
                                   <Button
                                     size="small"
@@ -484,7 +510,9 @@ export default function DevelopersMistakesScreen({
                                       void playSample("advised-by-native", tok)
                                     }
                                   >
-                                    Native
+                                    {t(
+                                      "screens.developersMistakes.buttons.native"
+                                    )}
                                   </Button>
                                 </Space>
                               ))}
@@ -495,7 +523,7 @@ export default function DevelopersMistakesScreen({
                     </Space>
                   </div>
 
-                  {idx < COMMON_MISTAKES.length - 1 && (
+                  {idx < pageMistakes.length - 1 && (
                     <div
                       style={{ borderTop: "1px solid var(--ant-color-split)" }}
                     />
@@ -504,16 +532,11 @@ export default function DevelopersMistakesScreen({
               ))}
             </div>
             <Typography.Title level={5} style={{ margin: "12px 0 0" }}>
-              Fix / Next steps
+              {t("screens.developersMistakes.fixNextStepsTitle")}
             </Typography.Title>
             <Typography.Paragraph style={{ marginBottom: 0 }}>
-              - <Typography.Text code>dʒ</Typography.Text> の録音を増やして、
-              <Typography.Text code>j</Typography.Text>
-              （yes）との対比を定着させる
-              <br />- <Typography.Text code>ɹ</Typography.Text> は “うなり”
-              を抜いて クリアな近似音に寄せる
-              <br />- <Typography.Text code>uː</Typography.Text> と
-              <Typography.Text code>ʊ</Typography.Text> を最小対立で練習する
+              - {t("screens.developersMistakes.fix.line1")}
+              <br />- {t("screens.developersMistakes.fix.line2")}
             </Typography.Paragraph>
           </>
         )}

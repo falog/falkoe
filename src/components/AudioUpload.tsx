@@ -1,11 +1,14 @@
 import { Upload, Button } from "antd";
 import { UploadOutlined } from "@ant-design/icons";
+import { useTranslation } from "react-i18next";
 
 type AudioUploadProps = {
   onUpload: (file: File) => void;
 };
 
 const AudioUpload = ({ onUpload }: AudioUploadProps) => {
+  const { t } = useTranslation();
+
   return (
     <Upload
       accept="audio/*"
@@ -15,7 +18,9 @@ const AudioUpload = ({ onUpload }: AudioUploadProps) => {
         return false; // 自動アップロードしない
       }}
     >
-      <Button icon={<UploadOutlined />}>音声ファイルを選択</Button>
+      <Button icon={<UploadOutlined />}>
+        {t("components.audioUpload.selectFile")}
+      </Button>
     </Upload>
   );
 };

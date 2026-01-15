@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import { Button, Space, Row, Col } from "antd";
+import { useTranslation } from "react-i18next";
 import { unlockAudioFromUserGesture } from "../utils/ipaPlayer";
 import TopNav from "../components/TopNav";
 import { RecorderHeader } from "./recorder/components/RecorderHeader";
@@ -28,6 +29,7 @@ const RecorderScreen = ({
   onOpenDevelopersMistakes,
   onOpenCommonMistakes,
 }: RecorderScreenProps) => {
+  const { t } = useTranslation();
   const audioUnlockTriedRef = useRef(false);
 
   const mimicDisabledForSource =
@@ -124,7 +126,7 @@ const RecorderScreen = ({
                 loading={isExportingVideo}
                 disabled={isExportingVideo}
               >
-                動画を作成（mp4）
+                {t("screens.recorder.exportVideo")}
               </Button>
             }
           />

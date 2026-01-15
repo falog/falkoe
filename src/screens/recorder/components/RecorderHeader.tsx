@@ -1,4 +1,5 @@
 import { Button, Typography } from "antd";
+import { useTranslation } from "react-i18next";
 import HeaderAudioPlayButton from "../HeaderAudioPlayButton";
 
 type Props = {
@@ -24,6 +25,8 @@ export function RecorderHeader({
   modelRecognizeDisabled,
   sourceKind,
 }: Props) {
+  const { t } = useTranslation();
+
   return (
     <div
       style={{
@@ -47,8 +50,8 @@ export function RecorderHeader({
         disabled={modelRecognizeDisabled || autoRecognizingUploaded}
       >
         {sourceKind === "uploaded"
-          ? "アップロード音声を音声認識する"
-          : "模範音声を音声認識する"}
+          ? t("screens.recorder.header.recognizeUploaded")
+          : t("screens.recorder.header.recognizeModel")}
       </Button>
     </div>
   );

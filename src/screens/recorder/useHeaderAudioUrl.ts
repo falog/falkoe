@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { message } from "antd";
 import { guessAudioMimeFromPath, isHttpUrl } from "./audioUtils";
 import type { SourceKind } from "../../types/speech";
+import { useTranslation } from "react-i18next";
 
 type HeaderAudioArgs = {
   sourceKind: SourceKind;
@@ -16,6 +17,7 @@ type HeaderAudioArgs = {
 };
 
 export function useHeaderAudioUrl(args: HeaderAudioArgs) {
+  const { t } = useTranslation();
   const {
     sourceKind,
     sentenceAudioUrl,
@@ -201,7 +203,9 @@ export function useHeaderAudioUrl(args: HeaderAudioArgs) {
       } catch (e) {
         console.error("[useHeaderAudioUrl] Failed:", e);
         if (!cancelled) {
-          message.error("音声の読み込みに失敗しました: " + String(e));
+          message.error(
+            `${t("screens.recorder.messages.audioLoadFailed")}${String(e)}`
+          );
           setState({
             key: headerAudioKey,
             url: null,
@@ -227,6 +231,7 @@ export function useHeaderAudioUrl(args: HeaderAudioArgs) {
     toAssetUrl,
     hasUploadedFile,
     headerAudioKey,
+    t,
   ]);
 
   useEffect(() => {

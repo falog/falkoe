@@ -1,0 +1,415 @@
+{
+  "app": {
+    "language": {
+      "title": "Choose language",
+      "description": "Select the display language. You can change it later in Settings.",
+      "japanese": "日本語",
+      "english": "English",
+      "continue": "Continue"
+    }
+  },
+  "nav": {
+    "back": "← Back",
+    "history": "History",
+    "ipaList": "IPA list",
+    "developersMistakes": "Developer’s mistakes",
+    "commonMistakes": "Common mistakes",
+    "settings": "Settings"
+  },
+  "settings": {
+    "title": "Settings",
+    "uiLanguage": {
+      "label": "Display language",
+      "note": "Changes apply immediately."
+    },
+    "apply": "Apply",
+    "updated": "Updated model settings. Will download if needed.",
+    "updateFailed": "Failed to update settings",
+    "model": {
+      "label": "Speech recognition model",
+      "variants": {
+        "tiny-q8_0": "tiny-q8_0 (fastest / lower accuracy)",
+        "tiny-q5_1": "tiny-q5_1 (fastest / lower accuracy)",
+        "tiny": "tiny (fast / lower accuracy)",
+        "base-q8_0": "base-q8_0 (fast / balanced)",
+        "base-q5_1": "base-q5_1 (fast / balanced)",
+        "base": "base (balanced)",
+        "small-q8_0": "small-q8_0 (somewhat fast / higher accuracy)",
+        "small-q5_1": "small-q5_1 (somewhat fast / higher accuracy)",
+        "small": "small (default / higher accuracy)",
+        "medium-q8_0": "medium-q8_0 (heavy / even higher accuracy)",
+        "medium-q5_0": "medium-q5_0 (heavy / even higher accuracy)",
+        "medium": "medium (heavy / even higher accuracy)",
+        "large-v3-q5_0": "large-v3-q5_0 (heaviest / best)",
+        "large-v3": "large-v3 (heaviest / best)",
+        "large-v3-turbo-q8_0": "large-v3-turbo-q8_0 (heavy / fast)",
+        "large-v3-turbo-q5_0": "large-v3-turbo-q5_0 (heavy / fast)",
+        "large-v3-turbo": "large-v3-turbo (heavy / fast)"
+      },
+      "note": "After changing, the model will be downloaded if needed (first time can take a while).",
+      "status": "Status: "
+    }
+  },
+  "components": {
+    "audioUpload": {
+      "selectFile": "Select audio file"
+    },
+    "pitchAlignmentChart": {
+      "title": "Pitch × Whisper Alignment",
+      "noPitch": "Pitch could not be detected",
+      "axis": {
+        "timeSeconds": "Time (s)",
+        "pitchRelative": "Pitch (f0 rel.)"
+      }
+    }
+  },
+  "screens": {
+    "wordInput": {
+      "title": "Example search",
+      "useSpeech": "Select an audio file to fetch example sentences",
+      "selectedFile": "Selected: ",
+      "selectedLanguage": "Selected language: ",
+      "useRecognition": "Use speech recognition (auto input)",
+      "manualTextLabel": "Manual text:",
+      "manualSentencePlaceholder": "Input sentence manually",
+      "practiceWithSentence": "Practice with this sentence",
+      "choosePracticeLanguage": "Choose the practice language:",
+      "translateTo": "Translate to:",
+      "chooseWordCount": "Choose word count:",
+      "wordPlaceholder": "Input word or phrase",
+      "search": "Search",
+      "fetchFailed": "Failed to fetch example sentences",
+      "noResults": "No matching sentences (enter the query in the selected language)",
+      "confirmOverwriteRecognizedText": {
+        "title": "Overwrite with recognized text?",
+        "content": "You already have a speech recognition result. Overwrite the input with it?",
+        "ok": "Overwrite",
+        "cancel": "Don't overwrite"
+      },
+      "confirmOverwriteManualText": {
+        "title": "Overwrite manual text?",
+        "content": "Manual text for the previous word is still present. Overwrite it?",
+        "ok": "Overwrite",
+        "cancel": "Don't overwrite"
+      },
+      "confirmOverwriteExisting": {
+        "title": "Audio already exists",
+        "content": "An uploaded audio with the same ID already exists. Overwrite it?",
+        "ok": "Overwrite",
+        "cancel": "Don't overwrite"
+      },
+      "confirmOverwriteManifestText": {
+        "title": "Overwrite manifest.json text?",
+        "intro": "A saved text already exists. Overwrite manifest.json text?",
+        "current": "Current:",
+        "newInput": "New input:",
+        "ok": "Overwrite",
+        "cancel": "Don't overwrite"
+      },
+      "warnManualNeedsText": {
+        "title": "Please enter text",
+        "content": "In manual input mode, leaving the text empty will trigger auto recognition in Recorder. Please enter text, or enable speech recognition.",
+        "ok": "OK"
+      }
+    },
+    "recorder": {
+      "exportVideo": "Create video (mp4)",
+      "ipaIndexLoadFailed": "Failed to load IPA index: ",
+      "linking": {
+        "legend": {
+          "primaryStress": "ˈ Primary stress",
+          "secondaryStress": "ˌ Secondary stress",
+          "vowel": "Vowel",
+          "consonant": "Consonant",
+          "symbol": "Symbol",
+          "weak": "Unstressed"
+        },
+        "stressCount": "Primary: {{primary}} / Secondary: {{secondary}}"
+      },
+      "modelTranscript": {
+        "label": "Model transcript:",
+        "transcribing": "Transcribing…",
+        "notTranscribed": "Not transcribed yet"
+      },
+      "pitch": {
+        "extractor": "Pitch extractor:",
+        "extractorUnknown": "(unknown)",
+        "play": "Play",
+        "stop": "Stop",
+        "loading": "Analyzing pitch…",
+        "failed": "Pitch analysis failed: ",
+        "accentTimeoutPrefix": "Accent info (",
+        "accentTimeoutSuffix": ") could not be loaded after 1 minute."
+      },
+      "model": {
+        "status": "Model status: ",
+        "downloading": "Downloading model… "
+      },
+      "header": {
+        "recognizeUploaded": "Recognize uploaded audio",
+        "recognizeModel": "Recognize model audio"
+      },
+      "recordings": {
+        "empty": "No recordings yet."
+      },
+      "messages": {
+        "overwriteExistingAutoOk": "An audio file is already saved. Overwrite it? (auto OK)",
+        "audioLoading": "Loading audio…",
+        "audioPlaybackFailed": "Failed to play audio",
+        "useExistingSavedAudio": "Using existing saved audio",
+        "savedAudioFile": "Saved audio file",
+        "saveAudioFailed": "Failed to save audio file: ",
+        "modelMissingDownloadStart": "Speech recognition model is missing. Starting download.",
+        "recordingStartFailed": "Failed to start recording: ",
+        "saveRecordingFailed": "Failed to save recording",
+        "recordingSavedTranscribeLater": "Recording saved (you can run transcription later)",
+        "recognizeStartFailed": "Failed to start recognition: ",
+        "audioLoadFailed": "Failed to load audio: ",
+        "ankiAdded": "Added to Anki",
+        "ankiAddFailed": "Failed to add to Anki:",
+        "silenceWatcherUnavailable": "Unable to start silence detection (possible device conflict): ",
+        "modelNotReadyCannotRecord": "Cannot start recording while the model is preparing",
+        "exportNoSegments": "No data to include in the video (need recognized recordings)",
+        "videoSaved": "Saved video: ",
+        "videoCreateFailed": "Failed to create video: "
+      },
+      "export": {
+        "referenceAnalysisTimeout": "Reference audio analysis did not finish (recognition/pitch). Please try again.",
+        "missingUploadedPath": "Required path for creating uploaded audio was not found.",
+        "missingModelUrl": "Model audio URL was not found.",
+        "confirmMissingTranscripts": {
+          "title": "Some recordings are not transcribed",
+          "content": "Some recordings are not transcribed. Unrecognized recordings will be excluded from the video. Continue?",
+          "ok": "Continue",
+          "cancel": "Cancel"
+        },
+        "confirmCreateModelAudio": {
+          "title": "Model audio is missing",
+          "content": "Model audio is missing, so it will be created. Continue video export after creating it?",
+          "ok": "Create and continue",
+          "cancel": "Cancel"
+        },
+        "confirmCreateUploadedAudio": {
+          "title": "Uploaded audio is missing",
+          "content": "Uploaded audio (wav) is missing, so it will be created. Continue video export after creating it?",
+          "ok": "Create and continue",
+          "cancel": "Cancel"
+        }
+      }
+    },
+    "ipaList": {
+      "title": "IPA list",
+      "description": "Pronounce is the normal audio, Explain is the explanation audio (if available).",
+      "loading": "Loading…",
+      "loadFailed": "Load failed: ",
+      "audioUnlockHint": "Click the screen once to enable audio",
+      "noAudioForToken": "No audio yet: ",
+      "category": {
+        "consonants": "Consonants",
+        "vowels": "Vowels",
+        "others": "Others"
+      },
+      "buttons": {
+        "pronounce": "Pronounce",
+        "explain": "Explain"
+      }
+    },
+    "history": {
+      "title": "History",
+      "loading": "Loading…",
+      "empty": "No Data",
+      "textNotSaved": "(No saved text)",
+      "open": "Open",
+      "takes": "Takes: ",
+      "last": "Last: "
+    },
+    "commonMistakes": {
+      "title": "Common mistakes (recordings coming later)",
+      "description": "A page to note common pitfalls in pronunciation learning beyond native feedback.",
+      "listTitle": "List",
+      "loading": "Loading…",
+      "ipaIndexLoadFailed": "Failed to load IPA index: ",
+      "audioUnlockHint": "Click the screen once to enable audio",
+      "noAudioForToken": "No audio yet: ",
+      "playFailed": "Playback failed: ",
+      "buttons": {
+        "failed": "failed",
+        "correct": "Correct"
+      }
+    },
+    "developersMistakes": {
+      "title": "Developer’s mistakes (recorded by fal)",
+      "tocTitle": "Table of contents (these 2)",
+      "intro": "A page to keep notes of mistakes in my own recordings pointed out by a native speaker. Embarrassing, but it builds a proper learning log.",
+      "nativeCommentOriginal": "Native comment (original)",
+      "nativeCommentJa": "Japanese translation",
+      "nativeFeedback": "The \"R\" sound is more like a zombie sound like for run.\nAnd the \"oo\" sound almost sounds like a U. Like for book or look.",
+      "nativeFeedbackJa": "The \"R\" sound is more like a zombie sound like for run.\nAnd the \"oo\" sound almost sounds like a U. Like for book or look.",
+      "fun": {
+        "line1": "Only 2 mistakes out of all these sounds is kind of impressive.",
+        "aside": "(So much room to grow? haha)",
+        "line2": "Also, I have no idea how much time I've spent learning languages anymore (lol)"
+      },
+      "loading": "Loading…",
+      "ipaIndexLoadFailed": "Failed to load IPA index: ",
+      "whatHappenedTitle": "What happened (these 2)",
+      "fixNextStepsTitle": "Fix / Next steps",
+      "abLabel": "A/B (failed / native)",
+      "noAudioForToken": "No audio yet: ",
+      "noAudio": "No audio yet",
+      "noAudioAlt": "No audio: ",
+      "noAudioWithCandidates": "No audio yet: ",
+      "fix": {
+        "line1": "For ɹ, remove the growl and move toward a clear approximation",
+        "line2": "Practice uː vs ʊ with minimal pairs"
+      },
+      "buttons": {
+        "failed": "failed",
+        "native": "Native",
+        "pronounceWithTok": "Pronounce",
+        "explainWithTok": "Explain"
+      }
+    }
+  },
+  "data": {
+    "commonMistakes": [
+      {
+        "key": "j",
+        "title": "J: confusing the letter J with IPA j",
+        "paragraphs": [
+          [
+            { "kind": "text", "value": "In English, the \"J\" in " },
+            { "kind": "code", "value": "jump" },
+            { "kind": "text", "value": " is not IPA " },
+            { "kind": "code", "value": "j" },
+            { "kind": "text", "value": " (the y in \"yes\"), but " },
+            { "kind": "code", "value": "dʒ" },
+            { "kind": "text", "value": "." }
+          ]
+        ],
+        "buttons": [
+          { "label": "j (like yes)", "tok": "j", "kind": "audio" },
+          { "label": "j Explain", "tok": "j", "kind": "explain" },
+          { "label": "dʒ (like jump)", "tok": "dʒ", "kind": "audio" }
+        ]
+      },
+      {
+        "key": "r",
+        "title": "R: the r in run sounds like a 'zombie sound'",
+        "paragraphs": [
+          [
+            {
+              "kind": "text",
+              "value": "I added too much growl, so it sounded more like a groan than "
+            },
+            { "kind": "code", "value": "ɹ" },
+            { "kind": "text", "value": "." }
+          ]
+        ],
+        "buttons": [
+          { "label": "ɹ Pronounce", "tok": "ɹ", "kind": "audio" },
+          { "label": "ɹ Explain", "tok": "ɹ", "kind": "explain" }
+        ]
+      },
+      {
+        "key": "oo",
+        "title": "oo: uː in goose sounds closer to ʊ (book/look)",
+        "paragraphs": [
+          [
+            { "kind": "code", "value": "uː" },
+            {
+              "kind": "text",
+              "value": " (goose/too) became too short/relaxed and drifted toward "
+            },
+            { "kind": "code", "value": "ʊ" },
+            { "kind": "text", "value": " (book/look)." }
+          ]
+        ],
+        "buttons": [
+          { "label": "uː (goose/too)", "tok": "uː", "kind": "audio" },
+          { "label": "uː Explain", "tok": "uː", "kind": "explain" },
+          { "label": "ʊ (book/look)", "tok": "ʊ", "kind": "audio" }
+        ]
+      }
+    ],
+    "commonPitfalls": [
+      {
+        "key": "example-j",
+        "title": "J: confusing the letter J with IPA j",
+        "body": "Real example. The J in 'jump' is not IPA j (the y in yes), but dʒ. The glyphs look similar, so it's easy to mix them up.",
+        "ipa": ["dʒ", "j"]
+      },
+      {
+        "key": "example-r",
+        "title": "R: /ɹ/ becomes a growly 'zombie sound'",
+        "body": "Real example. Overdoing R can add growl/roughness. Keep the tongue tip off contact points, relax, and focus on shaping rather than forcing sound.",
+        "ipa": ["ɹ"]
+      },
+      {
+        "key": "example-oo",
+        "title": "oo: uː shortens toward ʊ (book/look)",
+        "body": "Real example. If uː in goose/too gets too short and lax, it drifts toward ʊ in book/look. Pay attention to both length and lip/tongue tension.",
+        "ipa": ["uː", "ʊ"]
+      },
+      {
+        "key": "th",
+        "title": "th: /θ/ and /ð/ become /s/ or /z/",
+        "body": "Lightly place the tongue tip against the teeth and let air leak. /θ/ is voiceless (think), /ð/ is voiced (this). Many learners replace them with /s/ or /z/.",
+        "ipa": ["θ", "ð", "s", "z"]
+      },
+      {
+        "key": "l-r",
+        "title": "L/R: confusing /l/ and /ɹ/",
+        "body": "/l/: tongue tip touches the alveolar ridge (light). /ɹ/: tongue tip does not touch; curl/shape forward (right). Don't lump both together as a single 'r-like' sound.",
+        "ipa": ["l", "ɹ"]
+      },
+      {
+        "key": "v-b",
+        "title": "V/B: /v/ becomes /b/",
+        "body": "/v/: friction with lower lip and upper teeth (very). /b/: lips close then release (berry). The presence of friction is the key difference.",
+        "ipa": ["v", "b"]
+      },
+      {
+        "key": "f-h",
+        "title": "F/H: /f/ becomes /h/",
+        "body": "/f/: lip + teeth friction (fine). /h/: breath from the throat (high). The mouth shape is different.",
+        "ipa": ["f", "h"]
+      },
+      {
+        "key": "i-ih",
+        "title": "iː/ɪ: long vs short vowel contrast disappears",
+        "body": "Beat /iː/ is longer and tenser; bit /ɪ/ is shorter and laxer. Not only length, but also oral tension changes.",
+        "ipa": ["iː", "ɪ"]
+      },
+      {
+        "key": "ae-e",
+        "title": "æ: /æ/ drifts toward /e/",
+        "body": "In 'cat', /æ/ requires a wider opening than /e/ in 'bed'.",
+        "ipa": ["æ", "e"]
+      },
+      {
+        "key": "uh-schwa",
+        "title": "ə: pronouncing schwa too clearly",
+        "body": "The first vowel in 'about' is /ə/: weak and short. In English, only stressed vowels are clearly articulated.",
+        "ipa": ["ə"]
+      },
+      {
+        "key": "stress",
+        "title": "Stress: stress placement shifts",
+        "body": "Since vowel length/clarity changes, stress often impacts intelligibility more than consonants. Decide the stressed syllable first."
+      },
+      {
+        "key": "flap",
+        "title": "t/d: missing the American flap /ɾ/",
+        "body": "In words like water/ladder, t/d can sound like [ɾ]. It's useful to know as a perception phenomenon, not just pronunciation.",
+        "ipa": ["ɾ"]
+      },
+      {
+        "key": "ng",
+        "title": "ng: saying /ŋ/ as /nɡ/",
+        "body": "Word-final 'ng' in 'sing' is typically /ŋ/ (not n + g). Some words pronounce g (like tongue), so it's easy to mix.",
+        "ipa": ["ŋ"]
+      }
+    ]
+  }
+}

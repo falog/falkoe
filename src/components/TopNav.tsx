@@ -1,4 +1,5 @@
 import { Button, Space } from "antd";
+import { useTranslation } from "react-i18next";
 
 export type TopNavCurrent =
   | "word"
@@ -28,31 +29,33 @@ export default function TopNav({
   onOpenDevelopersMistakes,
   onOpenCommonMistakes,
 }: Props) {
+  const { t } = useTranslation();
+
   return (
     <Space wrap>
-      {onBack && <Button onClick={onBack}>← 戻る</Button>}
+      {onBack && <Button onClick={onBack}>{t("nav.back")}</Button>}
 
       {onOpenHistory && (
         <Button disabled={current === "history"} onClick={onOpenHistory}>
-          録音履歴
+          {t("nav.history")}
         </Button>
       )}
 
       <Button disabled={current === "ipa"} onClick={onOpenIpaList}>
-        IPA 発音一覧
+        {t("nav.ipaList")}
       </Button>
       <Button
         disabled={current === "mistakes"}
         onClick={onOpenDevelopersMistakes}
       >
-        Developer’s mistakes
+        {t("nav.developersMistakes")}
       </Button>
       <Button disabled={current === "common"} onClick={onOpenCommonMistakes}>
-        よくある間違い
+        {t("nav.commonMistakes")}
       </Button>
 
       <Button disabled={current === "settings"} onClick={onOpenSettings}>
-        設定
+        {t("nav.settings")}
       </Button>
     </Space>
   );
