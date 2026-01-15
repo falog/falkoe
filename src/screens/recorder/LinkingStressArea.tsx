@@ -159,22 +159,24 @@ export default function LinkingStressArea({
       return (
         <Typography.Text type="secondary" style={{ display: "block" }}>
           <Typography.Text style={{ color: antdToken.colorErrorText }}>
-            ˈ 強勢
+            {t("screens.recorder.linking.legend.primaryStress")}
           </Typography.Text>
           {" / "}
           <Typography.Text style={{ color: antdToken.colorWarningText }}>
-            ˌ 副強勢
+            {t("screens.recorder.linking.legend.secondaryStress")}
           </Typography.Text>
           {" / "}
           <Typography.Text style={{ color: antdToken.colorSuccessText }}>
-            母音
+            {t("screens.recorder.linking.legend.vowel")}
           </Typography.Text>
           {" / "}
           <Typography.Text style={{ color: antdToken.colorInfoText }}>
-            子音
+            {t("screens.recorder.linking.legend.consonant")}
           </Typography.Text>
           {" / "}
-          <Typography.Text type="secondary">記号</Typography.Text>
+          <Typography.Text type="secondary">
+            {t("screens.recorder.linking.legend.symbol")}
+          </Typography.Text>
         </Typography.Text>
       );
     }
@@ -182,14 +184,16 @@ export default function LinkingStressArea({
     return (
       <Typography.Text type="secondary" style={{ display: "block" }}>
         <Typography.Text style={{ color: antdToken.colorErrorText }}>
-          ˈ 強勢
+          {t("screens.recorder.linking.legend.primaryStress")}
         </Typography.Text>
         {" / "}
         <Typography.Text style={{ color: antdToken.colorWarningText }}>
-          ˌ 副強勢
+          {t("screens.recorder.linking.legend.secondaryStress")}
         </Typography.Text>
         {" / "}
-        <Typography.Text type="secondary">弱</Typography.Text>
+        <Typography.Text type="secondary">
+          {t("screens.recorder.linking.legend.weak")}
+        </Typography.Text>
       </Typography.Text>
     );
   }
@@ -586,7 +590,10 @@ export default function LinkingStressArea({
           type="secondary"
           style={{ display: "block", marginBottom: 10, lineHeight: 1.7 }}
         >
-          {`強勢: ${p} / 副強勢: ${s}`}
+          {t("screens.recorder.linking.stressCount", {
+            primary: p,
+            secondary: s,
+          })}
         </Typography.Text>
       )}
 

@@ -50,6 +50,11 @@
       "status": "状態: "
     }
   },
+  "components": {
+    "audioUpload": {
+      "selectFile": "音声ファイルを選択"
+    }
+  },
   "screens": {
     "wordInput": {
       "title": "例文検索",
@@ -102,6 +107,17 @@
     "recorder": {
       "exportVideo": "動画を作成（mp4）",
       "ipaIndexLoadFailed": "IPA index 読み込み失敗: ",
+      "linking": {
+        "legend": {
+          "primaryStress": "ˈ 強勢",
+          "secondaryStress": "ˌ 副強勢",
+          "vowel": "母音",
+          "consonant": "子音",
+          "symbol": "記号",
+          "weak": "弱"
+        },
+        "stressCount": "強勢: {{primary}} / 副強勢: {{secondary}}"
+      },
       "header": {
         "recognizeUploaded": "アップロード音声を音声認識する",
         "recognizeModel": "模範音声を音声認識する"
