@@ -7,13 +7,13 @@
 
 ## 📸 Screenshots
 
-![Falkoe Screenshot 01](docs/screenshots/Falkoe_Screenshot_20260104_01.png)
+![Falkoe Screenshot 01](docs/screenshots/Falkoe_Screenshot_20260116_01.png)
 
-![Falkoe Screenshot 02](docs/screenshots/Falkoe_Screenshot_20260104_02.png)
+![Falkoe Screenshot 02](docs/screenshots/Falkoe_Screenshot_20260116_02.png)
 
-![Falkoe Screenshot 03](docs/screenshots/Falkoe_Screenshot_20260104_03.png)
+![Falkoe Screenshot 03](docs/screenshots/Falkoe_Screenshot_20260116_03.png)
 
-![Falkoe Screenshot 04](docs/screenshots/Falkoe_Screenshot_20260104_04.png)
+![Falkoe Screenshot 04](docs/screenshots/Falkoe_Screenshot_20260116_04.png)
 
 ---
 
