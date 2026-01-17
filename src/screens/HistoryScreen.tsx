@@ -137,6 +137,7 @@ export default function HistoryScreen({
                 onClick={() => openItem(it)}
                 disabled={
                   (it.recordingsCount ?? 0) === 0 &&
+                  !it.tatoebaMp3Path &&
                   !it.modelWavPath &&
                   !it.lastRecordingWavPath &&
                   !it.uploadedPath
