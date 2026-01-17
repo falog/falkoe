@@ -5,6 +5,7 @@ use crate::commands::recordings::{
 };
 use crate::commands::sentences::{find_audio_by_sentence, list_sentence_history, upsert_sentence_manifest_text};
 use crate::commands::status::{get_model_status, get_model_variant, set_model_variant};
+use crate::commands::temp_recordings::delete_temp_recording;
 use crate::commands::whisper::run_whisper;
 use crate::commands::whisper::{run_whisper_model, run_whisper_uploaded};
 use tauri_plugin_mic_recorder::init as mic_recorder;
@@ -68,6 +69,7 @@ pub fn run() {
             get_model_variant,
             set_model_variant,
             move_recorded_audio,
+            delete_temp_recording,
             save_uploaded_audio,
             get_uploaded_audio_info,
             fetch_audio_base64,

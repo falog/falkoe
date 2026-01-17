@@ -63,6 +63,9 @@ const RecorderScreen = ({
     showModelAreaTranscribing,
     autoRecognizingUploaded,
     isRecording,
+    pendingRecordedPath,
+    savePendingRecording,
+    discardPendingRecording,
     shadowingRecorder,
     navigateSafely,
     handleExportVideo,
@@ -142,6 +145,13 @@ const RecorderScreen = ({
           onStartRecording={() => shadowingRecorder.start()}
           onStopRecording={shadowingRecorder.stop}
           autoStopRemainingMs={shadowingRecorder.autoStopRemainingMs}
+          pendingSave={Boolean(pendingRecordedPath)}
+          onSavePending={() => {
+            void savePendingRecording();
+          }}
+          onDiscardPending={() => {
+            void discardPendingRecording();
+          }}
         />
 
         <RecordingsSection

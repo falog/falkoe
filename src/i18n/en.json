@@ -115,6 +115,18 @@
     "recorder": {
       "exportVideo": "Create video (mp4)",
       "ipaIndexLoadFailed": "Failed to load IPA index: ",
+      "recordingControls": {
+        "shadowing": "Shadowing",
+        "startRecording": "Start recording",
+        "stopRecording": "Stop recording",
+        "keep": "Keep",
+        "discard": "Discard",
+        "autoStopCountdown": "Silence detected. Auto-stop in: {{seconds}}",
+        "keepOrDiscard": {
+          "title": "Keep this recording?",
+          "content": "This recording is not saved yet.\nChoose Keep to save it, or Discard to delete it."
+        }
+      },
       "linking": {
         "legend": {
           "primaryStress": "ˈ Primary stress",

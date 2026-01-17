@@ -107,6 +107,18 @@
     "recorder": {
       "exportVideo": "動画を作成（mp4）",
       "ipaIndexLoadFailed": "IPA index 読み込み失敗: ",
+      "recordingControls": {
+        "shadowing": "シャドーイング",
+        "startRecording": "録音開始",
+        "stopRecording": "録音停止",
+        "keep": "残す",
+        "discard": "破棄",
+        "autoStopCountdown": "無音です 録音停止まで：{{seconds}}",
+        "keepOrDiscard": {
+          "title": "この録音を残しますか？",
+          "content": "録音はまだ確定保存されていません。\n「残す」で保存、「破棄」で削除します。"
+        }
+      },
       "linking": {
         "legend": {
           "primaryStress": "ˈ 強勢",

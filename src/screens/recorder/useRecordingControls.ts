@@ -29,6 +29,9 @@ export function useRecordingControls({
 }: Params) {
   const { t } = useTranslation();
   const [isRecording, setIsRecording] = useState(false);
+  const [pendingRecordedPath, setPendingRecordedPath] = useState<string | null>(
+    null
+  );
 
   const sentenceHashRef = useRef(sentenceHash);
   const langRef = useRef(lang);
@@ -55,6 +58,7 @@ export function useRecordingControls({
 
   const handleStartRecording = useCallback(async () => {
     try {
+      if (pendingRecordedPath) return;
       await startRecording();
       setIsRecording(true);
     } catch (e) {
@@ -62,20 +66,36 @@ export function useRecordingControls({
         `${t("screens.recorder.messages.recordingStartFailed")}${String(e)}`
       );
     }
-  }, [t]);
+  }, [pendingRecordedPath, t]);
 
   const handleStopRecording = useCallback(async () => {
     setIsRecording(false);
 
-    let movedPath: string;
-
     try {
       const recordedPath = await stopRecording();
+      setPendingRecordedPath(recordedPath);
+    } catch (e) {
+      message.error(t("screens.recorder.messages.saveRecordingFailed"));
+      await refreshFilesRef.current();
+      return;
+    }
+  }, [t]);
+
+  const savePendingRecording = useCallback(async () => {
+    const recordedPath = pendingRecordedPath;
+    if (!recordedPath) return;
+
+    setPendingRecordedPath(null);
+
+    let movedPath: string;
+    try {
       movedPath = await invoke<string>("move_recorded_audio", {
         srcPath: recordedPath,
         sentenceHash: sentenceHashRef.current,
       });
-    } catch (e) {
+    } catch {
+      // If moving failed, keep the pending path so user can retry.
+      setPendingRecordedPath(recordedPath);
       message.error(t("screens.recorder.messages.saveRecordingFailed"));
       await refreshFilesRef.current();
       return;
@@ -113,11 +133,26 @@ export function useRecordingControls({
     }
 
     await refreshFilesRef.current();
-  }, [t]);
+  }, [pendingRecordedPath, t]);
+
+  const discardPendingRecording = useCallback(async () => {
+    const recordedPath = pendingRecordedPath;
+    if (!recordedPath) return;
+    setPendingRecordedPath(null);
+    try {
+      await invoke("delete_temp_recording", { srcPath: recordedPath });
+    } catch {
+      // best-effort; ignore
+    }
+    await refreshFilesRef.current();
+  }, [pendingRecordedPath]);
 
   return {
     isRecording,
     startRecording: handleStartRecording,
     stopRecording: handleStopRecording,
+    pendingRecordedPath,
+    savePendingRecording,
+    discardPendingRecording,
   };
 }

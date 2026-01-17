@@ -149,7 +149,14 @@ export function useRecorderScreenState(source: SpeechSource) {
     setIsTranscribing: (v) => setIsTranscribing(v),
   });
 
-  const { isRecording, startRecording, stopRecording } = useRecordingControls({
+  const {
+    isRecording,
+    startRecording,
+    stopRecording,
+    pendingRecordedPath,
+    savePendingRecording,
+    discardPendingRecording,
+  } = useRecordingControls({
     sentenceHash,
     lang: sentence.lang,
     refreshFiles,
@@ -292,6 +299,9 @@ export function useRecorderScreenState(source: SpeechSource) {
     showModelAreaTranscribing,
     autoRecognizingUploaded,
     isRecording,
+    pendingRecordedPath,
+    savePendingRecording,
+    discardPendingRecording,
     shadowingRecorder,
     navigateSafely,
     handleExportVideo,
