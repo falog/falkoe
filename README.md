@@ -228,9 +228,8 @@ Praatを同梱しない場合でも、より安定したF0抽出をしたいと�
 
 Tauri の `resource_dir` から次の順で探します。
 
-1. `resources/bin/praatcon(.exe)`
-2. `resources/bin/praat(.exe)`
-3. PATH の `praat`
+1. `resources/bin/praat(.exe)`
+2. PATH の `praat`
 
 ### 同梱スクリプト
 
@@ -246,7 +245,7 @@ Tauri の `resource_dir` から次の順で探します。
 
 Falkoe uses **Praat** for pitch extraction when available (for more stable F0 extraction).
 
-- **Distribution build (recommended)**: `praat` / `praatcon` can be bundled with the app.
+- **Distribution build (recommended)**: `praat` can be bundled with the app.
 - **Non-bundled**: System `praat` in PATH will be used if available.
 - **Fallback**: If Praat is unavailable, the app falls back to a built-in simple YIN implementation (functionality continues).
 
@@ -254,9 +253,8 @@ Falkoe uses **Praat** for pitch extraction when available (for more stable F0 ex
 
 The app searches in the following order from Tauri's `resource_dir`:
 
-1. `resources/bin/praatcon(.exe)`
-2. `resources/bin/praat(.exe)`
-3. `praat` in PATH
+1. `resources/bin/praat(.exe)`
+2. `praat` in PATH
 
 ### Bundled Script
 
@@ -368,6 +366,14 @@ Falkoe の音声認識は Whisper（`whisper.cpp` 互換の `ggml-*.bin`）を�
 ### GPU acceleration (optional) / GPU高速化（任意）
 
 Whisper は **デフォルトではCPUで動きます**（配布での互換性を優先）。
+
+`--features whisper-vulkan` を有効にしてビルドした場合、Vulkan が利用できる環境では **Vulkan を優先して使用**し、
+利用できない/失敗した場合は **CPUへフォールバック**します。
+
+配布するビルドで Vulkan 対応版（`whisper-vulkan`）を同梱している場合は、通常は追加設定なしで **Vulkan優先**になります。
+（※Windows で `vulkan-1.dll` が無い等、Vulkan が利用できない環境では自動的にCPUへ切り替わります）
+
+In distribution builds that bundle the Vulkan backend (`whisper-vulkan`), Falkoe will **prefer Vulkan by default** and fall back to CPU when Vulkan is unavailable.
 
 GPUを使いたい場合は、ビルド時にバックエンドを有効化した **別ビルド**を作ってください：
 
