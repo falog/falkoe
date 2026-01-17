@@ -1,7 +1,7 @@
 # Falkoe (ふぁるこえ)
 
-**Voice-powered language learning app**  
-あなたの声で学ぶ、言語学習アプリ
+**Voice-powered language learning tool**  
+あなたの声で学ぶ、言語学習ツール
 
 ---
 
@@ -25,81 +25,19 @@ This app runs on multiple platforms: **Windows (msi), Linux (deb / rpm), and mac
 
 ---
 
-### 皆さんは、暗記が得意ですか？
+### Concept
 
-私は、「覚える」という作業がずっと苦手でした。  
-ですがあるとき、自分の声で作った英単語帳を使ってみたのです。
+言語学習において、自分の声は避けられない存在です。
 
-すると――驚くほど記憶に残りました。  
-「自分の声」には、思っていた以上の力があると実感しました。
-
----
-
-語学学習において、**自分の声を確認すること**は避けて通れない道だと思っています。  
-だから私は、**声を活用した、シンプルな言語学習アプリ**を作りました。
+Falkoeは、自分の発話を**録音・観察・再確認する**ことを核としたツールです。
+「正しい」答えを教える代わりに、あなたの声で**実際に起こったこと**を保存します。
 
 ---
 
-このアプリでは、あなた自身の声を使って：
+In language learning, your own voice is unavoidable.
 
-- **Anki 用のデッキを自動生成**
-- **発音やフレーズ練習を記録・振り返り**
-
-ができます。
-
----
-
-**見本の声、あなたの声、そして私ふぁるの声。**  
-言語学習のための「声」が、ここに集まります。
-
----
-
-### 🗣️ 言ってほしいセリフ、録音してみたいフレーズがあれば、ぜひ投稿してください。
-
-**私、ふぁるも手伝います。**
-
----
-
-これが「**ふぁる化**」。  
-あなたも一緒に、「**ふぁるこえ**」になりましょう。
-
----
-
-### Are you good at memorization?
-
-I have always struggled with memorizing things.  
-One day, I tried using a vocabulary deck made with **my own voice**.
-
-The result surprised me — the words stayed in my memory far better than expected.  
-That was when I realized how powerful **your own voice** can be.
-
----
-
-In language learning, I believe that **listening to and checking your own voice** is unavoidable.  
-That belief led me to create a **simple language learning app centered around voice**.
-
----
-
-With this app, you can use _your own voice_ to:
-
-- **Automatically generate Anki decks**
-- **Record and review pronunciation and phrase practice**
-
----
-
-**Sample voices, your voice, and my voice — Falkoe's voice.**  
-All the voices needed for language learning come together here.
-
----
-
-### 🗣️ If there's a sentence you want spoken or a phrase you want to record, feel free to share it.
-
-**I, Falkoe, will help you.**
-
----
-
-This is **"Fal-fication."**  
-Join me, and let's become **"Falkoe voices."**
+Falkoe is a voice-first language learning tool built around **recording, observing, and revisiting speech**.
+Instead of providing correction, it preserves **what actually occurred** in the voice.
 
 ---
 
@@ -129,21 +67,23 @@ Your voice might help someone else's learning journey.
 
 ## ✨ Features / 機能
 
-- ✅ **マイク録音** — 自分の声を簡単に録音
-- ✅ **音声認識 (Whisper)** — ローカルで音声をテキスト化
-- ✅ **Anki デッキ生成** — 録音からAnki用のデッキを自動作成
+- ✅ **マイク録音** — 自分の声をそのまま記録する
+- ✅ **F0 / タイミングのグラフ表示** — 発話の崩れを視覚的に残す
+- ✅ **音声認識 (Whisper)** — 発話をローカルで文字化する
+- ✅ **Anki デッキ生成** — 録音結果を反復可能な形式に変換
 - ✅ **クロスプラットフォーム** — Windows / Linux / macOS 対応
-- ✅ **練習動画の記録** — 発音練習を動画で残す
-- 🚧 **音声共有 (P2P)** — ユーザー間で音声を共有（開発中）
+- ✅ **練習動画の記録** — 発話の過程を動画として保存
+- 🚧 **音声共有 (P2P)** — 発話データの共有（開発中）
 
 ---
 
-- ✅ **Mic recording** — Record your voice easily
+- ✅ **Mic recording** — Record raw voice input
+- ✅ **F0 / timing visualization** — Visualize pitch and timing deviations
 - ✅ **Speech recognition (Whisper)** — Local, offline speech-to-text
-- ✅ **Anki deck generation** — Auto-generate Anki decks from recordings
-- ✅ **Cross-platform** — Windows / Linux / macOS support
-- ✅ **Practice video recording** — Save pronunciation practice as video
-- 🚧 **Voice sharing (P2P)** — Share voices between users (in development)
+- ✅ **Anki deck generation** — Convert recordings into reviewable decks
+- ✅ **Cross-platform** — Windows / Linux / macOS
+- ✅ **Practice video recording** — Preserve speech sessions as video
+- 🚧 **Voice sharing (P2P)** — Peer-to-peer voice data sharing (WIP)
 
 ---
 
@@ -747,6 +687,26 @@ src-tauri/target/release/bundle/
 
 ---
 
+## 📖 Story
+
+Falkoeがなぜ創られたのか、ボイスを核としたその経緯。
+Why Falkoe was built, and how "voice" became its core.
+
+- 日本語: [Story.md](./Story.md)
+- English: [Story.en.md](./Story.en.md)
+
+---
+
+## 📜 Manifest
+
+Falkoeがやること、やらないこと  
+What Falkoe does — and what it does not.
+
+- 日本語: [Manifest.md](./Manifest.md)
+- English: [Manifest.en.md](./Manifest.en.md)
+
+---
+
 ## 🤝 Contributing / 貢献
 
 Contributions are welcome!
@@ -785,8 +745,3 @@ See [LICENSE](LICENSE) file for details.
 - [Whisper](https://github.com/openai/whisper) — Speech recognition
 - [Anki](https://apps.ankiweb.net/) — Spaced repetition learning
 - [Tatoeba](https://tatoeba.org/) — Multilingual sentence database. Some example sentences are used in this app. Thank you for the great resource!
-
----
-
-**Let's learn together with our voices!**  
-**声を使って、一緒に学びましょう！**
