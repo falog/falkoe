@@ -103,6 +103,11 @@ Falkoe の音声認識は `whisper.cpp/ggml` ベースです。Windows の x86_6
 - ✅ **最低要件（Windows x86_64）**: **AVX 対応CPU**
 - ⚡ **推奨（高速）**: **AVX2 対応CPU**（対応していれば自動でより高速な実装が選ばれます）
 
+#### Whisper GUI / Vulkan（GPU）版について
+
+配布ビルドで Whisper の Vulkan 対応版（いわゆる「Whisper GUI」同梱）を入れている場合、Vulkan が利用できる環境では **GPU（Vulkan）を優先**して動作します。
+ただし Vulkan が使えない/失敗した場合は **CPUへフォールバック**するため、Windows x86_64 では引き続き **AVX 対応CPUが前提**です。
+
 AVX が無い CPU だと、起動直後に Whisper が `Illegal instruction` 相当で落ちることがあります（例: `0xC000001D`）。
 
 目安（Intel/AMD）:
@@ -123,6 +128,11 @@ Falkoe uses a `whisper.cpp/ggml` backend. On **Windows x86_64 distribution build
 
 - ✅ **Minimum (Windows x86_64)**: CPU with **AVX**
 - ⚡ **Recommended (faster)**: **AVX2** (when available, a faster backend is selected automatically at runtime)
+
+#### Whisper GUI / Vulkan (GPU) builds
+
+In distribution builds that bundle the Vulkan backend ("Whisper GUI" / `whisper-vulkan`), Falkoe will **prefer GPU (Vulkan)** when available.
+When Vulkan is unavailable or fails, it will **fall back to CPU**, so **AVX support is still required** on Windows x86_64.
 
 If your CPU does not support AVX, Whisper may crash immediately with an “Illegal instruction” type error (e.g. `0xC000001D`).
 
