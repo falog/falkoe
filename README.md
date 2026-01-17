@@ -7,15 +7,22 @@
 
 ## 📸 Screenshots
 
-![Falkoe Screenshot 01](docs/screenshots/Falkoe_Screenshot_20260116_01.png)
+- 言語選択画面  
+   Language selection screen  
+  ![Falkoe Screenshot 01](docs/screenshots/Falkoe_Screenshot_20260116_01.png)
 
-![Falkoe Screenshot 02](docs/screenshots/Falkoe_Screenshot_20260116_02.png)
+- 例文の検索画面  
+   Example sentence search  
+  ![Falkoe Screenshot 02](docs/screenshots/Falkoe_Screenshot_20260116_02.png)
 
-![Falkoe Screenshot 03](docs/screenshots/Falkoe_Screenshot_20260116_03.png)
+- 模範音声（日本語）のピッチアクセントとグラフ  
+   Pitch accent and F0 visualization of a reference Japanese voice  
+   ※実際は蓋を開けてみるとこんなもん  
+  ![Falkoe Screenshot 03](docs/screenshots/Falkoe_Screenshot_20260116_03.png)
 
-![Falkoe Screenshot 04](docs/screenshots/Falkoe_Screenshot_20260116_04.png)
-
----
+- 英語練習風景  
+   English practice session  
+  ![Falkoe Screenshot 04](docs/screenshots/Falkoe_Screenshot_20260116_04.png)
 
 ## 🌟 Concept / コンセプト
 
