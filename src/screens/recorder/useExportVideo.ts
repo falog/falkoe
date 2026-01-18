@@ -411,19 +411,14 @@ export function useExportVideo(params: {
         words: refAccentWords ?? undefined,
         height: 320,
         showLabels: isJapanese(sentenceLang) && sourceKind !== "uploaded",
+        renderMode: "video",
+        maxRenderWidthPx: 12000,
         token,
       });
       const refOutPng = await join(tmpBase, "ref.png");
       await renderSvgToPngFile(refSvgRes, refOutPng);
       segments.push({
-        label:
-          sourceKind === "uploaded"
-            ? isJapanese(sentenceLang)
-              ? "アップロード"
-              : "Upload"
-            : isJapanese(sentenceLang)
-              ? "モデル"
-              : "Model",
+        label: sourceKind === "uploaded" ? "Upload" : "Model",
         wavPath: refWav,
         transcriptJsonPath: refTranscriptPicked,
         pitchJsonPath: refPitch,
@@ -485,6 +480,8 @@ export function useExportVideo(params: {
           words: accentWords ?? undefined,
           height: 320,
           showLabels: isJapanese(sentenceLang),
+          renderMode: "video",
+          maxRenderWidthPx: 12000,
           token,
         });
         const outPng = await join(tmpBase, `take_${i + 1}.png`);
@@ -493,7 +490,7 @@ export function useExportVideo(params: {
         const transcriptPath = rec.path.replace(/\.wav$/i, ".json");
 
         segments.push({
-          label: isJapanese(sentenceLang) ? `テイク ${i + 1}` : `Take ${i + 1}`,
+          label: `Take ${i + 1}`,
           wavPath: rec.path,
           transcriptJsonPath: (await waitForJsonFile<any>(transcriptPath, 1500))
             ? transcriptPath

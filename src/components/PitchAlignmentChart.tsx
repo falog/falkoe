@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Collapse, Typography, theme } from "antd";
 import { useTranslation } from "react-i18next";
 import type { PitchAnalysis, SegmentPitch, WordPitch } from "../types/pitch";
@@ -7,6 +8,8 @@ export type PitchChartSvgOptions = {
   words?: Array<WordPitch | SegmentPitch> | null;
   height?: number;
   showLabels?: boolean;
+  renderMode?: "ui" | "video";
+  maxRenderWidthPx?: number;
   token: {
     colorBorderSecondary: string;
     borderRadius: number;
@@ -37,7 +40,44 @@ type Props = {
   height?: number;
   showLabels?: boolean;
   playheadTime?: number | null;
+  maxRenderWidthPx?: number;
 };
+
+function clampInt(v: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, Math.round(v)));
+}
+
+function computeRenderWidthPx(
+  windowDur: number,
+  wordCount: number,
+  renderMode: "ui" | "video",
+  maxRenderWidthPx: number
+) {
+  // Wider charts are easier to read for long sentences, and enable horizontal scrolling.
+  // Also keep this bounded for performance (both in UI and video export).
+  // For video export we keep the minimum smaller so short clips don't always trigger panning.
+  // Video export expects a fixed output width (currently 750px).
+  // Keep the chart at least that wide to avoid concat dimension mismatches.
+  const minW = renderMode === "video" ? 750 : 750;
+  const byTime =
+    windowDur * (renderMode === "video" ? 200 : 260) +
+    (renderMode === "video" ? 260 : 320);
+  const byWords =
+    wordCount * (renderMode === "video" ? 110 : 140) +
+    (renderMode === "video" ? 260 : 320);
+
+  const target = Math.max(minW, byTime, byWords);
+
+  // UI: if the chart would only be mildly wider than the viewport,
+  // keep it within 750px to avoid unnecessary horizontal scrolling.
+  if (renderMode === "ui") {
+    const cap = Math.min(750, maxRenderWidthPx);
+    const isShort = windowDur <= 5.0 && wordCount <= 12;
+    if (isShort) return cap;
+  }
+
+  return clampInt(target, minW, maxRenderWidthPx);
+}
 
 function clamp(v: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, v));
@@ -93,8 +133,8 @@ export function buildPitchAlignmentChartSvg(
   const height = opts.height ?? 320;
   const showLabels = opts.showLabels ?? true;
   const token = opts.token;
-
-  const renderWidthPx = 750;
+  const renderMode = opts.renderMode ?? "ui";
+  const maxRenderWidthPx = opts.maxRenderWidthPx ?? 3200;
 
   const f0 = analysis.f0_rel;
   const voiced = f0.filter((v): v is number => typeof v === "number");
@@ -102,16 +142,11 @@ export function buildPitchAlignmentChartSvg(
   const maxV = voiced.length ? Math.max(...voiced) : 1;
   const range = Math.max(1e-6, maxV - minV);
 
-  const W = 900;
   const H = height;
   const padX = 36;
   const padY = 18;
-  const plotW = W - padX * 2;
   const plotH = H - padY * 2;
   const n = f0.length;
-
-  const yForValue = (v: number) => padY + (1 - (v - minV) / range) * plotH;
-  const baselineY = yForValue(clamp(0, minV, maxV));
 
   const overlayWords = (
     words ??
@@ -164,7 +199,12 @@ export function buildPitchAlignmentChartSvg(
     (v): v is number => typeof v === "number" && Number.isFinite(v)
   );
 
-  if (candidatesStart.length > 0 && candidatesEnd.length > 0) {
+  if (renderMode === "video" && wordStart !== null && wordEnd !== null) {
+    // For video export, prefer the transcript span so short sentences don't
+    // become extremely wide due to long trailing silence / pitch tail.
+    windowStart = wordStart;
+    windowEnd = wordEnd;
+  } else if (candidatesStart.length > 0 && candidatesEnd.length > 0) {
     windowStart = Math.min(...candidatesStart);
     windowEnd = Math.max(...candidatesEnd);
   } else if (wordStart !== null && wordEnd !== null) {
@@ -183,6 +223,21 @@ export function buildPitchAlignmentChartSvg(
     windowEnd = fullEndTime;
   }
   const windowDur = Math.max(analysis.time_step, windowEnd - windowStart);
+
+  const renderWidthPx = computeRenderWidthPx(
+    windowDur,
+    overlayWords.length,
+    renderMode,
+    maxRenderWidthPx
+  );
+
+  // Keep the coordinate system in pixel units.
+  // This avoids scaling up padding/fonts when renderWidthPx grows.
+  const W = renderWidthPx;
+  const plotW = W - padX * 2;
+
+  const yForValue = (v: number) => padY + (1 - (v - minV) / range) * plotH;
+  const baselineY = yForValue(clamp(0, minV, maxV));
 
   const xForTime = (t: number) => {
     const tt = clamp(t, windowStart, windowEnd);
@@ -236,7 +291,7 @@ export function buildPitchAlignmentChartSvg(
     .join("\n");
 
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${renderWidthPx}" height="${H}">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
   <rect x="0" y="0" width="${W}" height="${H}" fill="${token.colorBgContainer}" />
   <rect x="0.5" y="0.5" width="${W - 1}" height="${H - 1}" fill="none" stroke="${token.colorBorderSecondary}" />
 
@@ -268,13 +323,14 @@ export function PitchAlignmentChart({
   height = 320,
   showLabels = true,
   playheadTime = null,
+  maxRenderWidthPx = 20000,
 }: Props) {
   const { t } = useTranslation();
   const { token } = theme.useToken();
 
-  // Render wider than the container to keep dense word overlays readable.
-  // The wrapper enables horizontal scrolling when needed.
-  const renderWidthPx = 750;
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const programmaticScrollRef = useRef(false);
+  const lastUserScrollAtRef = useRef(0);
 
   const f0 = analysis.f0_rel;
   const voiced = f0.filter((v): v is number => typeof v === "number");
@@ -291,11 +347,9 @@ export function PitchAlignmentChart({
   const maxV = Math.max(...voiced);
   const range = Math.max(1e-6, maxV - minV);
 
-  const W = 900; // viewBox width
   const H = height;
   const padX = 36;
   const padY = 18;
-  const plotW = W - padX * 2;
   const plotH = H - padY * 2;
   const n = f0.length;
 
@@ -372,6 +426,18 @@ export function PitchAlignmentChart({
   }
   const windowDur = Math.max(analysis.time_step, windowEnd - windowStart);
 
+  const renderWidthPx = computeRenderWidthPx(
+    windowDur,
+    overlayWords.length,
+    "ui",
+    maxRenderWidthPx
+  );
+
+  // Match viewBox width to the render width so the chart expands horizontally
+  // (instead of scaling everything up, which also inflates padding).
+  const W = renderWidthPx;
+  const plotW = W - padX * 2;
+
   const xForTime = (t: number) => {
     const tt = clamp(t, windowStart, windowEnd);
     return padX + ((tt - windowStart) / windowDur) * plotW;
@@ -381,6 +447,47 @@ export function PitchAlignmentChart({
     typeof playheadTime === "number" && Number.isFinite(playheadTime)
       ? xForTime(playheadTime)
       : null;
+
+  // Auto-scroll the container so the playhead stays visible during playback.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (playheadX === null) return;
+
+    const viewportW = el.clientWidth;
+    if (!(viewportW > 0)) return;
+    if (W <= viewportW + 1) return;
+
+    // Don't fight the user if they just scrolled manually.
+    if (Date.now() - lastUserScrollAtRef.current < 800) return;
+
+    const left = el.scrollLeft;
+    const safeL = left + viewportW * 0.2;
+    const safeR = left + viewportW * 0.8;
+
+    let target: number | null = null;
+    if (playheadX < safeL) {
+      target = playheadX - viewportW * 0.2;
+    } else if (playheadX > safeR) {
+      target = playheadX - viewportW * 0.8;
+    }
+    if (target === null) return;
+
+    const maxLeft = Math.max(0, W - viewportW);
+    const clamped = Math.max(0, Math.min(maxLeft, target));
+    if (Math.abs(clamped - left) < 6) return;
+
+    programmaticScrollRef.current = true;
+    el.scrollTo({ left: clamped, behavior: "auto" });
+  }, [W, playheadX]);
+
+  const handleScroll = () => {
+    if (programmaticScrollRef.current) {
+      programmaticScrollRef.current = false;
+      return;
+    }
+    lastUserScrollAtRef.current = Date.now();
+  };
 
   // Build a path that breaks on nulls (and outside the zoom window).
   const parts: string[] = [];
@@ -420,13 +527,23 @@ export function PitchAlignmentChart({
             </Typography.Text>
           ),
           children: (
-            <div style={{ width: "100%", overflowX: "auto" }}>
+            <div
+              ref={scrollRef}
+              onScroll={handleScroll}
+              style={{
+                width: "100%",
+                minWidth: 0,
+                overflowX: "auto",
+              }}
+            >
               <svg
                 viewBox={`0 0 ${W} ${H}`}
-                width={renderWidthPx}
+                width={W}
                 height={H}
                 style={{
                   display: "block",
+                  flex: "0 0 auto",
+                  maxWidth: "none",
                   border: `1px solid ${token.colorBorderSecondary}`,
                   borderRadius: token.borderRadius,
                   background: token.colorBgContainer,

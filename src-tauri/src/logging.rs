@@ -141,9 +141,10 @@ fn try_use_log_path(path: &std::path::PathBuf) -> bool {
 fn select_log_file_path(app: &AppHandle) -> Option<std::path::PathBuf> {
     // Priority:
     // 1) Explicit override (portable/debug)
-    // 2) Near bundled resources (best effort; may be read-only under Program Files)
-    // 3) Documents (user-writable)
-    // 4) app_data_dir (user-writable; default)
+    // 2) Local user data dir (user-writable; Windows: AppData\\Local, Linux: ~/.local/share)
+    // 3) app_data_dir (user-writable; platform-specific)
+    // 3) Documents (user-writable; but user-facing)
+    // 4) Near bundled resources (best effort; may be read-only under Program Files)
     let mut candidates: Vec<std::path::PathBuf> = Vec::new();
 
     if let Some(dir) = env_log_dir() {
@@ -151,16 +152,25 @@ fn select_log_file_path(app: &AppHandle) -> Option<std::path::PathBuf> {
         candidates.push(dir.join("logs").join("backend.log"));
     }
 
-    if let Ok(resource_dir) = app.path().resource_dir() {
-        candidates.push(resource_dir.join("logs").join("backend.log"));
+    // Prefer a stable, non-user-facing, always-writable location.
+    // `dirs::data_local_dir()` maps to:
+    // - Windows: %LOCALAPPDATA%
+    // - Linux:   ~/.local/share
+    // - macOS:   ~/Library/Application Support
+    if let Some(local_dir) = dirs::data_local_dir() {
+        candidates.push(local_dir.join("falkoe").join("logs").join("backend.log"));
+    }
+
+    if let Ok(data_dir) = app.path().app_data_dir() {
+        candidates.push(data_dir.join("logs").join("backend.log"));
     }
 
     if let Ok(doc_dir) = app.path().document_dir() {
         candidates.push(doc_dir.join("falkoe").join("logs").join("backend.log"));
     }
 
-    if let Ok(data_dir) = app.path().app_data_dir() {
-        candidates.push(data_dir.join("logs").join("backend.log"));
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        candidates.push(resource_dir.join("logs").join("backend.log"));
     }
 
     for p in candidates {
