@@ -183,7 +183,10 @@ pub(crate) fn build_segment_filter_complex_ex(
             ));
         }
         // Add side margins to avoid truncation and keep size modest for 750px wide videos.
-        s.push_str(":force_style='Alignment=2,Fontsize=26,Outline=1,Shadow=0,MarginV=36,MarginL=24,MarginR=24,WrapStyle=0'");
+        // iPhone/Photos playback can feel like subtitles sit "too high"; keep them lower by
+        // reducing the bottom margin (MarginV) and shrinking the font.
+        // Note: libass uses its own units; Fontsize=15 is roughly ~12px feel at our output size.
+        s.push_str(":force_style='Alignment=2,Fontsize=15,Outline=1,Shadow=0,MarginV=18,MarginL=24,MarginR=24,WrapStyle=0'");
         s
     });
 
