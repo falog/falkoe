@@ -1,4 +1,4 @@
-import type { Sentence } from "../components/ExampleList";
+import type { Sentence, SentenceAttribution } from "../components/ExampleList";
 
 export type SpeechSource =
   | {
@@ -8,6 +8,7 @@ export type SpeechSource =
       originalFilename?: string;
       sentenceHash?: string;
       text?: string;
+      attribution?: SentenceAttribution;
       lang: string;
     }
   | {
@@ -15,6 +16,7 @@ export type SpeechSource =
       filePath: string;
       sentenceHash?: string;
       text?: string;
+      attribution?: SentenceAttribution;
       lang: string;
     }
   | {

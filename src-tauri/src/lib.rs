@@ -3,7 +3,12 @@ use crate::commands::linking::render_linking;
 use crate::commands::recordings::{
     get_uploaded_audio_info, list_recordings, move_recorded_audio, save_uploaded_audio,
 };
-use crate::commands::sentences::{find_audio_by_sentence, list_sentence_history, upsert_sentence_manifest_text};
+use crate::commands::sentences::{
+    find_audio_by_sentence,
+    list_sentence_history,
+    upsert_sentence_manifest_attribution,
+    upsert_sentence_manifest_text,
+};
 use crate::commands::status::{get_model_status, get_model_variant, set_model_variant};
 use crate::commands::temp_recordings::delete_temp_recording;
 use crate::commands::whisper::run_whisper;
@@ -57,6 +62,7 @@ pub fn run() {
             Ok(())
         })
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(mic_recorder())
         .invoke_handler(tauri::generate_handler![
             run_whisper,
@@ -75,6 +81,7 @@ pub fn run() {
             fetch_audio_base64,
             ensure_sentence_audio_cached,
             find_audio_by_sentence,
+            upsert_sentence_manifest_attribution,
             upsert_sentence_manifest_text,
             list_sentence_history,
             render_linking,

@@ -101,6 +101,7 @@ const RecorderScreen = ({
                 isHeaderAudioLoading={isHeaderAudioLoading}
                 displayText={displayText}
                 sentenceText={sentence.text}
+                sentenceAttribution={sentence.attribution}
                 onRecognizeModel={recognizeModel}
                 waitingModel={waitingModel}
                 autoRecognizingUploaded={autoRecognizingUploaded}

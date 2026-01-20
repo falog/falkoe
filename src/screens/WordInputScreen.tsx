@@ -89,7 +89,7 @@ async function fetchExamples(
   word: string,
   lang: string,
   wordcount: string,
-  translateTo: string | null
+  translateTo: string | null,
 ): Promise<Sentence[]> {
   const showTransLang =
     translateTo && translateTo !== NONE_TRANSLATION && translateTo !== lang
@@ -109,11 +109,63 @@ async function fetchExamples(
     return await res.json();
   };
 
+  const asStringOrNull = (x: any): string | null =>
+    typeof x === "string" && x.trim() ? x : null;
+
+  const asNumberOrNull = (x: any): number | null =>
+    typeof x === "number" && Number.isFinite(x) ? x : null;
+
+  const toTatoebaSentence = (
+    s: any,
+    translation: string | null,
+    langFallback: string,
+  ): Sentence | null => {
+    const id = asNumberOrNull(s?.id);
+    const text = asStringOrNull(s?.text);
+    const langCode = asStringOrNull(s?.lang) ?? langFallback;
+    if (!id || !text) return null;
+
+    const sentenceLicense = asStringOrNull(s?.license);
+    const sentenceOwner = asStringOrNull(s?.owner);
+
+    const audios = Array.isArray(s?.audios) ? s.audios : [];
+    const a0 = audios.length > 0 ? audios[0] : null;
+    const audioId = asNumberOrNull(a0?.id);
+    const audioLicense = asStringOrNull(a0?.license);
+    const audioAuthor = asStringOrNull(a0?.author);
+    const audioAttributionUrl = asStringOrNull(a0?.attribution_url);
+    const downloadUrl = asStringOrNull(a0?.download_url);
+
+    // ライセンス情報が無いTatoeba項目は、アプリ内で使えないため除外する。
+    if (!sentenceLicense || !audioLicense) return null;
+
+    return {
+      id,
+      text,
+      translation,
+      audioUrl:
+        downloadUrl ??
+        `https://audio.tatoeba.org/sentences/${langCode}/${id}.mp3`,
+      lang: langCode,
+      attribution: {
+        provider: "tatoeba",
+        sentenceLicense,
+        sentenceOwner,
+        sentenceUrl: `https://tatoeba.org/en/sentences/show/${id}`,
+        audioLicense,
+        audioAuthor,
+        audioAttributionUrl,
+        audioId,
+      },
+    };
+  };
+
   const toSentencesFromSameLang = (data: any): Sentence[] => {
     if (!data || !Array.isArray(data.data)) return [];
-    return data.data.map((s: any) => {
+    const out: Sentence[] = [];
+    for (const s of data.data) {
       let translation: string | null = null;
-      if (showTransLang && Array.isArray(s.translations)) {
+      if (showTransLang && Array.isArray(s?.translations)) {
         const hit = s.translations.find((t: any) => {
           const lc = getLangCode(t?.lang);
           return lc === showTransLang;
@@ -123,14 +175,10 @@ async function fetchExamples(
         }
       }
 
-      return {
-        id: s.id,
-        text: s.text,
-        translation,
-        audioUrl: `https://audio.tatoeba.org/sentences/${lang}/${s.id}.mp3`,
-        lang,
-      };
-    });
+      const sent = toTatoebaSentence(s, translation, lang);
+      if (sent) out.push(sent);
+    }
+    return out;
   };
 
   // 1) 通常: `lang` の文を検索し、必要なら `translateTo` の翻訳を表示
@@ -190,14 +238,10 @@ async function fetchExamples(
       if (seen.has(t.id)) continue;
 
       // showtrans側で検索した元文（=入力語が含まれる可能性が高い）を subtext に出す
-      out.push({
-        id: t.id,
-        text: t.text,
-        translation: sourceText || null,
-        audioUrl: `https://audio.tatoeba.org/sentences/${lang}/${t.id}.mp3`,
-        lang,
-      });
-      seen.add(t.id);
+      const sent = toTatoebaSentence(t, sourceText || null, lang);
+      if (!sent) continue;
+      out.push(sent);
+      seen.add(sent.id);
     }
   }
 
@@ -230,7 +274,7 @@ const WordInputScreen = ({
         content: t("screens.wordInput.confirmOverwriteRecognizedText.content"),
         okText: t("screens.wordInput.confirmOverwriteRecognizedText.ok"),
         cancelText: t(
-          "screens.wordInput.confirmOverwriteRecognizedText.cancel"
+          "screens.wordInput.confirmOverwriteRecognizedText.cancel",
         ),
         onOk: () => resolve(true),
         onCancel: () => resolve(false),
@@ -266,7 +310,7 @@ const WordInputScreen = ({
 
   function confirmOverwriteManifestText(
     prev: string,
-    next: string
+    next: string,
   ): Promise<boolean> {
     return new Promise((resolve) => {
       Modal.confirm({
@@ -317,7 +361,7 @@ const WordInputScreen = ({
   const [manualTextWord, setManualTextWord] = useState<string>("");
   const manualOverwritePromptedRef = useRef(false);
   const [savedUploadedPath, setSavedUploadedPath] = useState<string | null>(
-    null
+    null,
   );
   const [savedUploadedFilename, setSavedUploadedFilename] = useState<
     string | null
@@ -404,7 +448,7 @@ const WordInputScreen = ({
         word.trim(),
         lang,
         wordcount,
-        translateTo
+        translateTo,
       );
       onSearchResult(result);
       console.log("result:", result.length);
@@ -460,7 +504,7 @@ const WordInputScreen = ({
                     {
                       sentenceHash,
                       originalFilename: f.name,
-                    }
+                    },
                   );
 
                   if (info.exists) {
@@ -472,20 +516,20 @@ const WordInputScreen = ({
                       try {
                         sessionStorage.setItem(
                           "falkoe.uploadedSavedPath",
-                          info.path
+                          info.path,
                         );
                         sessionStorage.setItem(
                           "falkoe.uploadedFilename",
-                          f.name
+                          f.name,
                         );
                         sessionStorage.setItem(
                           "falkoe.uploadedSentenceHash",
-                          sentenceHash
+                          sentenceHash,
                         );
                         sessionStorage.setItem("falkoe.useSpeech", "true");
                         sessionStorage.setItem(
                           "falkoe.useRecognition",
-                          String(useRecognition)
+                          String(useRecognition),
                         );
                         sessionStorage.setItem("falkoe.manualText", sentence);
                         sessionStorage.setItem("falkoe.lang", lang);
@@ -501,7 +545,7 @@ const WordInputScreen = ({
                       sentenceHash,
                       originalFilename: f.name,
                       overwrite: true,
-                    }
+                    },
                   );
 
                   setSavedUploadedPath(savedPath);
@@ -509,17 +553,17 @@ const WordInputScreen = ({
                   try {
                     sessionStorage.setItem(
                       "falkoe.uploadedSavedPath",
-                      savedPath
+                      savedPath,
                     );
                     sessionStorage.setItem("falkoe.uploadedFilename", f.name);
                     sessionStorage.setItem(
                       "falkoe.uploadedSentenceHash",
-                      sentenceHash
+                      sentenceHash,
                     );
                     sessionStorage.setItem("falkoe.useSpeech", "true");
                     sessionStorage.setItem(
                       "falkoe.useRecognition",
-                      String(useRecognition)
+                      String(useRecognition),
                     );
                     sessionStorage.setItem("falkoe.manualText", sentence);
                     sessionStorage.setItem("falkoe.lang", lang);
@@ -647,7 +691,7 @@ const WordInputScreen = ({
                             lang,
                             text: nextText,
                             overwrite: false,
-                          }
+                          },
                         );
 
                         // アップロード音声（手動入力）では、ユーザーが望むなら manifest.json の text を上書きできる
@@ -655,7 +699,7 @@ const WordInputScreen = ({
                           const prev = (res.previousText ?? "").trim();
                           const ok = await confirmOverwriteManifestText(
                             prev,
-                            nextText
+                            nextText,
                           );
                           if (!ok) return;
 
@@ -666,7 +710,7 @@ const WordInputScreen = ({
                               lang,
                               text: nextText,
                               overwrite: true,
-                            }
+                            },
                           );
                         }
                       }

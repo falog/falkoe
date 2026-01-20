@@ -7,6 +7,7 @@
     "core:default",
     "mic-recorder:default",
     "fs:default",
+    "opener:default",
     "fs:allow-app-write",
     "fs:allow-app-write-recursive",
     "fs:allow-appcache-write",

@@ -140,12 +140,13 @@ fn build_gap_clip_args(
     dur_sec: f32,
     model_txt_path: &Path,
     label_txt_path: &Path,
+    credit_txt_path: Option<&Path>,
 ) -> Vec<String> {
     let dur = dur_sec.max(0.1);
     let color = format!("color=c=black:s={}x{}:d={:.3}", w.max(1), h.max(1), dur);
 
     let font_opt = windows_drawtext_fontfile_opt();
-    let vf = vec![
+    let mut vf_parts: Vec<String> = vec![
         format!(
             "drawtext=textfile='{}'{}:x=(w-text_w)/2:y=8:fontcolor=white:fontsize=26:box=1:boxcolor=black@0.35:boxborderw=8",
             escape_filter_path(model_txt_path),
@@ -157,8 +158,18 @@ fn build_gap_clip_args(
             escape_filter_path(label_txt_path),
             font_opt
         ),
-    ]
-    .join(",");
+    ];
+
+    if let Some(credit_path) = credit_txt_path {
+        // Credits (small, bottom). Keep it subtle but readable.
+        vf_parts.push(format!(
+            "drawtext=textfile='{}'{}:x=(w-text_w)/2:y=h-text_h-14:fontcolor=white:fontsize=18:line_spacing=4:box=1:boxcolor=black@0.35:boxborderw=8",
+            escape_filter_path(credit_path),
+            font_opt
+        ));
+    }
+
+    let vf = vf_parts.join(",");
 
     vec![
         "-y".into(),
@@ -207,8 +218,17 @@ pub(crate) fn create_gap_clip_with_text(
     dur_sec: f32,
     model_txt_path: &Path,
     label_txt_path: &Path,
+    credit_txt_path: Option<&Path>,
 ) -> Result<()> {
-    let args = build_gap_clip_args(out_path, w, h, dur_sec, model_txt_path, label_txt_path);
+    let args = build_gap_clip_args(
+        out_path,
+        w,
+        h,
+        dur_sec,
+        model_txt_path,
+        label_txt_path,
+        credit_txt_path,
+    );
     run_ffmpeg(app, &args)
 }
 
@@ -228,7 +248,7 @@ mod tests {
         let out_path = Path::new("/tmp/out.mp4");
         let model_txt = Path::new("/tmp/model.txt");
         let label_txt = Path::new("/tmp/label.txt");
-        let args = build_gap_clip_args(out_path, 640, 480, 2.0, model_txt, label_txt);
+        let args = build_gap_clip_args(out_path, 640, 480, 2.0, model_txt, label_txt, None);
 
         assert!(args.iter().any(|a| a.contains("drawtext=textfile='")));
         assert_eq!(args.last().map(|s| s.as_str()), Some("/tmp/out.mp4"));

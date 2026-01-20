@@ -23,7 +23,7 @@ type UseSentenceContextResult = {
 };
 
 export function useSentenceContext(
-  source: SpeechSource
+  source: SpeechSource,
 ): UseSentenceContextResult {
   const sourceKind: SourceKind = source.kind;
 
@@ -81,6 +81,7 @@ export function useSentenceContext(
           text: source.text ?? "",
           audioUrl: source.file ? uploadedFileAudioUrl : "",
           lang: source.lang,
+          attribution: source.attribution,
         };
       case "recorded":
         return {
@@ -88,6 +89,7 @@ export function useSentenceContext(
           text: source.text ?? "",
           audioUrl: source.filePath,
           lang: source.lang,
+          attribution: source.attribution,
         };
     }
   }, [source, uploadedFileAudioUrl]);

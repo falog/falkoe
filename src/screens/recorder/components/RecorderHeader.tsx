@@ -1,12 +1,16 @@
 import { Button, Typography } from "antd";
 import { useTranslation } from "react-i18next";
+import type { MouseEvent } from "react";
 import HeaderAudioPlayButton from "../HeaderAudioPlayButton";
+import type { SentenceAttribution } from "../../../components/ExampleList";
+import { openExternalUrl } from "../../../utils/openExternalUrl";
 
 type Props = {
   headerAudioUrl: string | null;
   isHeaderAudioLoading: boolean;
   displayText: string;
   sentenceText: string;
+  sentenceAttribution?: SentenceAttribution;
   onRecognizeModel: () => void;
   waitingModel: boolean;
   autoRecognizingUploaded: boolean;
@@ -19,6 +23,7 @@ export function RecorderHeader({
   isHeaderAudioLoading,
   displayText,
   sentenceText,
+  sentenceAttribution,
   onRecognizeModel,
   waitingModel,
   autoRecognizingUploaded,
@@ -26,6 +31,14 @@ export function RecorderHeader({
   sourceKind,
 }: Props) {
   const { t } = useTranslation();
+
+  const showTatoebaCredit = sentenceAttribution?.provider === "tatoeba";
+
+  const openLink = (url: string) => (e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    void openExternalUrl(url);
+  };
 
   return (
     <div
@@ -41,9 +54,47 @@ export function RecorderHeader({
         loading={isHeaderAudioLoading}
         disabled={!headerAudioUrl || isHeaderAudioLoading}
       />
-      <Typography.Title level={4} style={{ margin: 0, flex: 1 }}>
-        {displayText || sentenceText}
-      </Typography.Title>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <Typography.Title level={4} style={{ margin: 0 }}>
+          {displayText || sentenceText}
+        </Typography.Title>
+        {showTatoebaCredit ? (
+          <Typography.Text type="secondary" style={{ display: "block" }}>
+            {t("tatoeba.credit", {
+              sentenceOwner: sentenceAttribution?.sentenceOwner ?? "?",
+              sentenceLicense: sentenceAttribution?.sentenceLicense,
+              audioAuthor: sentenceAttribution?.audioAuthor ?? "?",
+              audioLicense: sentenceAttribution?.audioLicense,
+            })}
+            {sentenceAttribution?.sentenceUrl ? (
+              <>
+                {" "}
+                <Typography.Link
+                  href={sentenceAttribution.sentenceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={openLink(sentenceAttribution.sentenceUrl)}
+                >
+                  {t("tatoeba.source")}
+                </Typography.Link>
+              </>
+            ) : null}
+            {sentenceAttribution?.audioAttributionUrl ? (
+              <>
+                {" "}
+                <Typography.Link
+                  href={sentenceAttribution.audioAttributionUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={openLink(sentenceAttribution.audioAttributionUrl)}
+                >
+                  {t("tatoeba.audioCredit")}
+                </Typography.Link>
+              </>
+            ) : null}
+          </Typography.Text>
+        ) : null}
+      </div>
       <Button
         onClick={onRecognizeModel}
         loading={waitingModel || autoRecognizingUploaded}

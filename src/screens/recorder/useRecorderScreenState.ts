@@ -49,6 +49,7 @@ export function useRecorderScreenState(source: SpeechSource) {
     sentenceHash,
     text: sentence.text,
     lang: sentence.lang,
+    attribution: sentence.attribution,
   });
 
   const {
@@ -80,7 +81,7 @@ export function useRecorderScreenState(source: SpeechSource) {
       if (j.key.startsWith(sentenceHash + ":")) return true;
       const hash = extractSentenceHashFromSentenceWavPath(j.key);
       return hash === sentenceHash;
-    })
+    }),
   );
 
   const backgroundRecognizingForSentence: Record<string, boolean> = sentenceHash
@@ -92,7 +93,7 @@ export function useRecorderScreenState(source: SpeechSource) {
             const hash = extractSentenceHashFromSentenceWavPath(j.key);
             return hash === sentenceHash;
           })
-          .map((j) => [j.key, true] as const)
+          .map((j) => [j.key, true] as const),
       )
     : {};
 
@@ -261,6 +262,7 @@ export function useRecorderScreenState(source: SpeechSource) {
     sentenceText: sentence.text,
     sentenceLang: sentence.lang,
     sentenceAudioUrl: sentence.audioUrl,
+    sentenceAttribution: sentence.attribution,
     sourceKind,
     uploadedAudioPath,
     recordings,

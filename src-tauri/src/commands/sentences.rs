@@ -1,4 +1,5 @@
 use crate::model::hash_sentence;
+use crate::commands::whisper::{SentenceAttribution, SentenceManifest};
 
 use serde::Serialize;
 use std::{
@@ -6,15 +7,6 @@ use std::{
     path::{Path, PathBuf},
 };
 use tauri::{AppHandle, Manager};
-
-#[derive(serde::Serialize, serde::Deserialize, Clone)]
-struct SentenceManifest {
-    audio_id: String,
-    sentence_id: Option<String>,
-    lang: String,
-    text: Option<String>,
-    last_wav_path: Option<String>,
-}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,6 +33,7 @@ pub struct SentenceHistoryItem {
     pub audio_id: String,
     pub lang: String,
     pub text: Option<String>,
+    pub attribution: Option<SentenceAttribution>,
     pub recordings_count: u32,
     pub last_recording_timestamp: Option<String>,
     pub last_recording_wav_path: Option<String>,
@@ -142,11 +135,13 @@ pub fn list_sentence_history(app: AppHandle) -> Result<Vec<SentenceHistoryItem>,
         let manifest_path = base.join("manifest.json");
         let mut lang: Option<String> = None;
         let mut text: Option<String> = None;
+        let mut attribution: Option<SentenceAttribution> = None;
         if manifest_path.exists() {
             if let Ok(manifest_text) = fs::read_to_string(&manifest_path) {
                 if let Ok(manifest) = serde_json::from_str::<SentenceManifest>(&manifest_text) {
                     lang = Some(manifest.lang);
                     text = manifest.text;
+                    attribution = manifest.attribution;
                 }
             }
         }
@@ -178,6 +173,7 @@ pub fn list_sentence_history(app: AppHandle) -> Result<Vec<SentenceHistoryItem>,
             audio_id,
             lang,
             text,
+            attribution,
             recordings_count,
             last_recording_timestamp,
             last_recording_wav_path,
@@ -249,6 +245,7 @@ pub fn upsert_sentence_manifest_text(
         lang,
         text: Some(normalized_text.to_string()),
         last_wav_path: None,
+        attribution: None,
     };
 
     let json = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
@@ -259,6 +256,63 @@ pub fn upsert_sentence_manifest_text(
         manifest_path: manifest_path_str,
         previous_text: None,
     })
+}
+
+#[tauri::command]
+pub fn upsert_sentence_manifest_attribution(
+    app: AppHandle,
+    audio_id: String,
+    lang: String,
+    attribution: SentenceAttribution,
+) -> Result<String, String> {
+    let audio_id = audio_id.trim();
+    if audio_id.is_empty() {
+        return Err("audio_id is empty".into());
+    }
+    let lang = lang.trim();
+    if lang.is_empty() {
+        return Err("lang is empty".into());
+    }
+
+    let base_dir = sentences_root(&app)?.join(audio_id);
+    fs::create_dir_all(&base_dir).map_err(|e| e.to_string())?;
+
+    let manifest_path = base_dir.join("manifest.json");
+
+    let mut manifest: SentenceManifest = if manifest_path.exists() {
+        match fs::read_to_string(&manifest_path)
+            .ok()
+            .and_then(|s| serde_json::from_str::<SentenceManifest>(&s).ok())
+        {
+            Some(v) => v,
+            None => SentenceManifest {
+                audio_id: audio_id.to_string(),
+                sentence_id: None,
+                lang: lang.to_string(),
+                text: None,
+                last_wav_path: None,
+                attribution: None,
+            },
+        }
+    } else {
+        SentenceManifest {
+            audio_id: audio_id.to_string(),
+            sentence_id: None,
+            lang: lang.to_string(),
+            text: None,
+            last_wav_path: None,
+            attribution: None,
+        }
+    };
+
+    manifest.audio_id = audio_id.to_string();
+    manifest.lang = lang.to_string();
+    manifest.attribution = Some(attribution);
+
+    let json = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
+    fs::write(&manifest_path, json).map_err(|e| e.to_string())?;
+
+    Ok("updated".into())
 }
 
 #[tauri::command]

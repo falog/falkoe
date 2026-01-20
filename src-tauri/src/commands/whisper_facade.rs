@@ -23,6 +23,7 @@ mod transcript;
 mod types;
 
 pub use audio::load_wav_as_f32;
+pub use manifest::SentenceAttribution;
 pub use manifest::SentenceManifest;
 pub use transcribe_impl::{transcribe, transcribe_preview};
 pub use types::{

@@ -7,12 +7,26 @@ use tauri::AppHandle;
 use super::paths::sentence_base_dir;
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SentenceAttribution {
+    pub provider: String,
+    pub sentence_license: String,
+    pub sentence_owner: Option<String>,
+    pub sentence_url: String,
+    pub audio_license: String,
+    pub audio_author: Option<String>,
+    pub audio_attribution_url: Option<String>,
+    pub audio_id: Option<i64>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub struct SentenceManifest {
     pub audio_id: String,
     pub sentence_id: Option<String>,
     pub lang: String,
     pub text: Option<String>,
     pub last_wav_path: Option<String>,
+    pub attribution: Option<SentenceAttribution>,
 }
 
 pub(crate) fn save_sentence_manifest_json(
@@ -41,6 +55,7 @@ pub(crate) fn save_sentence_manifest_json(
                 lang: lang.to_string(),
                 text: None,
                 last_wav_path: None,
+                attribution: None,
             },
         }
     } else {
@@ -50,6 +65,7 @@ pub(crate) fn save_sentence_manifest_json(
             lang: lang.to_string(),
             text: None,
             last_wav_path: None,
+            attribution: None,
         }
     };
 

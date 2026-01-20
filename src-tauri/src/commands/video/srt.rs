@@ -121,10 +121,10 @@ pub(crate) fn generate_srt(transcript_path: &Path, srt_path: &Path) -> Result<()
 
     let mut out = String::new();
     for (idx, seg) in t.segments.iter().enumerate() {
-        let text0 = strip_whisper_special_tokens(seg.text.trim().to_string());
-        // Wrap long lines to avoid horizontal clipping in video subtitles.
-        // 750px width with ~26-28px font fits ~24 JP chars comfortably.
-        let text = wrap_srt_text(&text0, 24, 3);
+        let text0 = strip_whisper_special_tokens(seg.text.replace('\n', " ").trim().to_string());
+        // Avoid aggressive wrapping: fewer line breaks are easier to read.
+        // Keep it to ~2 lines; libass will still wrap if needed.
+        let text = wrap_srt_text(&text0, 44, 2);
         if text.trim().is_empty() {
             continue;
         }

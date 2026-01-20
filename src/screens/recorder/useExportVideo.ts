@@ -12,6 +12,7 @@ import {
 import { message, Modal } from "antd";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
+import type { SentenceAttribution } from "../../components/ExampleList";
 import {
   buildPitchAlignmentChartSvg,
   type PitchChartSvgOptions,
@@ -72,7 +73,7 @@ const waitForFile = async (path: string, timeoutMs: number) => {
 
 const waitForJsonFile = async <T>(
   path: string,
-  timeoutMs: number
+  timeoutMs: number,
 ): Promise<T | null> => {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -114,7 +115,7 @@ const pickFirstExisting = async (paths: string[]) => {
 };
 
 const confirmExportWithMissingTranscripts = (
-  t: TFunction
+  t: TFunction,
 ): Promise<boolean> => {
   return new Promise((resolve) => {
     Modal.confirm({
@@ -130,7 +131,7 @@ const confirmExportWithMissingTranscripts = (
 
 const confirmCreateMissingReferenceAudio = (
   t: TFunction,
-  kind: "model" | "uploaded"
+  kind: "model" | "uploaded",
 ): Promise<boolean> => {
   return new Promise((resolve) => {
     const titleKey =
@@ -163,7 +164,7 @@ const confirmCreateMissingReferenceAudio = (
 
 const renderSvgToPngFile = async (
   svgResult: PitchChartSvgResult,
-  outPath: string
+  outPath: string,
 ) => {
   const blob = new Blob([svgResult.svg], { type: "image/svg+xml" });
   const url = URL.createObjectURL(blob);
@@ -202,6 +203,7 @@ export function useExportVideo(params: {
   sentenceText: string;
   sentenceLang: string;
   sentenceAudioUrl: string;
+  sentenceAttribution?: SentenceAttribution | null | undefined;
   sourceKind: SourceKind;
   uploadedAudioPath: string | null;
   recordings: Recording[];
@@ -215,6 +217,7 @@ export function useExportVideo(params: {
     sentenceText,
     sentenceLang,
     sentenceAudioUrl,
+    sentenceAttribution,
     sourceKind,
     uploadedAudioPath,
     recordings,
@@ -277,7 +280,7 @@ export function useExportVideo(params: {
         "tmp",
         "video",
         sentenceHash,
-        String(Date.now())
+        String(Date.now()),
       );
 
       tmpBase = await join(await documentDir(), "falkoe", baseDir);
@@ -305,35 +308,37 @@ export function useExportVideo(params: {
         await documentDir(),
         "falkoe",
         "sentences",
-        sentenceHash
+        sentenceHash,
       );
 
       const refSubdir = sourceKind === "uploaded" ? "uploaded" : "model";
       const refWav = await join(
         sentenceDir,
         refSubdir,
-        sourceKind === "uploaded" ? "uploaded.wav" : "model.wav"
+        sourceKind === "uploaded" ? "uploaded.wav" : "model.wav",
       );
       const refTranscript = await join(
         sentenceDir,
         refSubdir,
-        sourceKind === "uploaded" ? "uploaded.json" : "model.json"
+        sourceKind === "uploaded" ? "uploaded.json" : "model.json",
       );
       const refTranscriptAlt = await join(
         sentenceDir,
         refSubdir,
-        "transcript.json"
+        "transcript.json",
       );
       const refPitch = await join(
         sentenceDir,
         refSubdir,
-        sourceKind === "uploaded" ? "uploaded.pitch.json" : "model.pitch.json"
+        sourceKind === "uploaded" ? "uploaded.pitch.json" : "model.pitch.json",
       );
 
       const refAccent = await join(
         sentenceDir,
         refSubdir,
-        sourceKind === "uploaded" ? "uploaded.accent.json" : "model.accent.json"
+        sourceKind === "uploaded"
+          ? "uploaded.accent.json"
+          : "model.accent.json",
       );
 
       const ensureReferenceAnalyzed = async () => {
@@ -372,7 +377,7 @@ export function useExportVideo(params: {
         const pitchJson = await waitForJsonFile<any>(refPitch, 120_000);
         if (!wavReady || !pitchJson) {
           throw new Error(
-            t("screens.recorder.export.referenceAnalysisTimeout")
+            t("screens.recorder.export.referenceAnalysisTimeout"),
           );
         }
 
@@ -386,7 +391,7 @@ export function useExportVideo(params: {
       if (!(await exists(refWav))) {
         const ok = await confirmCreateMissingReferenceAudio(
           t,
-          sourceKind === "uploaded" ? "uploaded" : "model"
+          sourceKind === "uploaded" ? "uploaded" : "model",
         );
         if (!ok) return;
       }
@@ -441,7 +446,7 @@ export function useExportVideo(params: {
 
       const missingTranscriptCount = Math.max(
         0,
-        recordings.length - recognizedRecs.length
+        recordings.length - recognizedRecs.length,
       );
 
       if (missingTranscriptCount > 0) {
@@ -467,7 +472,7 @@ export function useExportVideo(params: {
           });
           await writeFile(
             pitchPath,
-            new TextEncoder().encode(JSON.stringify(pitchAnalysis, null, 2))
+            new TextEncoder().encode(JSON.stringify(pitchAnalysis, null, 2)),
           );
         }
 
@@ -513,12 +518,25 @@ export function useExportVideo(params: {
         return;
       }
 
+      const creditText =
+        sentenceAttribution?.provider === "tatoeba"
+          ? t("tatoeba.credit", {
+              sentenceOwner: sentenceAttribution.sentenceOwner ?? "?",
+              sentenceLicense: sentenceAttribution.sentenceLicense,
+              audioAuthor: sentenceAttribution.audioAuthor ?? "?",
+              audioLicense: sentenceAttribution.audioLicense,
+            })
+              .split(" / ")
+              .join("\n")
+          : null;
+
       const outDir = await videoDir();
       const outBase = `Falkoe_${makeSafeVideoBaseName(sentenceText)}`;
       const outPath = await invoke<string>("export_practice_video", {
         outputDir: outDir,
         outputBase: outBase,
         modelText: sentenceText,
+        creditText,
         segments,
       });
 
@@ -527,7 +545,7 @@ export function useExportVideo(params: {
       // eslint-disable-next-line no-console
       console.error(e);
       message.error(
-        `${t("screens.recorder.messages.videoCreateFailed")}${String(e)}`
+        `${t("screens.recorder.messages.videoCreateFailed")}${String(e)}`,
       );
     } finally {
       await cleanupVideoTmp();
@@ -541,6 +559,7 @@ export function useExportVideo(params: {
     sentenceHash,
     sentenceLang,
     sentenceText,
+    sentenceAttribution,
     sourceKind,
     t,
     token,

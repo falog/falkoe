@@ -17,6 +17,21 @@ use ffmpeg::{create_gap_clip_with_text, run_ffmpeg};
 use paths::{pick_unique_mp4_path, sanitize_base_name};
 use std::io::Write;
 
+fn truncate_chars_with_ellipsis(s: &str, max_chars: usize) -> String {
+    if max_chars == 0 {
+        return "…".to_string();
+    }
+    let mut out = String::new();
+    for (i, ch) in s.chars().enumerate() {
+        if i >= max_chars {
+            out.push('…');
+            return out;
+        }
+        out.push(ch);
+    }
+    out
+}
+
 fn wrap_text_for_drawtext(text: &str, max_chars_per_line: usize, max_lines: usize) -> String {
     let mut rest = text.trim().to_string();
     if rest.is_empty() {
@@ -132,6 +147,7 @@ pub fn export_practice_video(
     output_dir: String,
     output_base: String,
     model_text: String,
+    credit_text: Option<String>,
     segments: Vec<VideoSegmentReq>,
 ) -> Result<String, String> {
     let res = catch_unwind(AssertUnwindSafe(|| {
@@ -176,6 +192,45 @@ pub fn export_practice_video(
 
         let model_txt_path = tmp_dir.join("model.txt");
         fs::write(&model_txt_path, model_text.replace('\n', " "))?;
+
+        let credit_txt_path: Option<PathBuf> = credit_text
+            .as_deref()
+            .map(|s| s.replace('\r', ""))
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .map(|s| {
+                let p = tmp_dir.join("credit.txt");
+
+                // Prefer exactly two lines (sentence / audio). Avoid auto-wrapping at odd places.
+                let mut lines: Vec<String> = s
+                    .split('\n')
+                    .map(|l| l.trim())
+                    .filter(|l| !l.is_empty())
+                    .map(|l| l.to_string())
+                    .collect();
+
+                if lines.len() == 1 {
+                    // Fallback: split the common delimiter if the caller didn't provide newlines.
+                    if let Some((a, b)) = lines[0].split_once(" / ") {
+                        lines = vec![a.trim().to_string(), b.trim().to_string()];
+                    }
+                }
+
+                if lines.len() > 2 {
+                    lines.truncate(2);
+                }
+
+                // Clamp each line to a reasonable width so it won't run off-screen.
+                // (drawtext doesn't auto-wrap; long lines would just overflow.)
+                let max_chars_per_line = 80;
+                for l in &mut lines {
+                    *l = truncate_chars_with_ellipsis(l, max_chars_per_line);
+                }
+
+                fs::write(&p, lines.join("\n"))?;
+                Ok::<_, anyhow::Error>(p)
+            })
+            .transpose()?;
 
         let gap_secs: f32 = 2.0;
         let out_w: u32 = 750;
@@ -256,8 +311,8 @@ pub fn export_practice_video(
             let out_h: u32 = seg.chart_height_px + top_pad;
             let y_i_with_pad: i32 = y_i + top_pad as i32;
 
-            // Slightly tighter wrapping for the 750px-wide video.
-            let wrapped_model = wrap_text_for_drawtext(&model_text, 18, 3);
+            // Avoid aggressive wrapping: prefer fewer line breaks for the sentence title.
+            let wrapped_model = wrap_text_for_drawtext(&model_text.replace('\n', " "), 34, 2);
             let wrapped_label = wrap_text_for_drawtext(&seg.label, 18, 3);
             let mut f = std::fs::File::create(&model_txt_path)?;
             f.write_all(wrapped_model.as_bytes())?;
@@ -266,6 +321,10 @@ pub fn export_practice_video(
 
             // Black gap clip (with title/label) before this segment
             let gap_out = tmp_dir.join(format!("gap_{i}.mp4"));
+
+            // Only show credits on the reference "Model" screen.
+            // (The UI creates segments with Model as the first segment.)
+            let credit_for_gap = if i == 0 { credit_txt_path.as_deref() } else { None };
             create_gap_clip_with_text(
                 &app,
                 &gap_out,
@@ -274,6 +333,7 @@ pub fn export_practice_video(
                 gap_secs,
                 &model_txt_path,
                 &label_txt_path,
+                credit_for_gap,
             )?;
             clip_paths.push(gap_out);
 

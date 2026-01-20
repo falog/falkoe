@@ -8,6 +8,14 @@
       "continue": "続ける"
     }
   },
+  "tatoeba": {
+    "credit": "Tatoeba — 文: {{sentenceOwner}} ({{sentenceLicense}}) / 音声: {{audioAuthor}} ({{audioLicense}})",
+    "source": "出典",
+    "audioCredit": "音声クレジット"
+  },
+  "utils": {
+    "openExternalUrlFailed": "リンクを開けませんでした"
+  },
   "nav": {
     "back": "← 戻る",
     "history": "録音履歴",
@@ -53,6 +61,10 @@
   "components": {
     "audioUpload": {
       "selectFile": "音声ファイルを選択"
+    },
+    "exampleList": {
+      "noResults": "例文が見つかりませんでした",
+      "practiceWithSentence": "この例文で練習"
     }
   },
   "screens": {

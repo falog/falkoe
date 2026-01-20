@@ -4,11 +4,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import TopNav from "../components/TopNav";
 import type { SpeechSource } from "../types/speech";
+import type { SentenceAttribution } from "../components/ExampleList";
 
 type HistoryItem = {
   audioId: string;
   lang: string;
   text: string | null;
+  attribution: SentenceAttribution | null;
   recordingsCount: number;
   lastRecordingTimestamp: string | null;
   lastRecordingWavPath: string | null;
@@ -70,6 +72,7 @@ export default function HistoryScreen({
         originalFilename: "uploaded",
         sentenceHash: it.audioId,
         text,
+        attribution: it.attribution ?? undefined,
         lang: it.lang,
       });
       return;
@@ -84,6 +87,7 @@ export default function HistoryScreen({
         filePath: headerPath,
         sentenceHash: it.audioId,
         text,
+        attribution: it.attribution ?? undefined,
         lang: it.lang,
       });
       return;
