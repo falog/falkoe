@@ -122,6 +122,25 @@
         "title": "Please enter text",
         "content": "In manual input mode, leaving the text empty will trigger auto recognition in Recorder. Please enter text, or enable speech recognition.",
         "ok": "OK"
+      },
+      "batchUpload": {
+        "progress": "Processing: {{done}}/{{total}}",
+        "queued": "Queued: {{queued}}",
+        "current": "Now: {{filename}}",
+        "pause": "Pause",
+        "resume": "Resume",
+        "cancelRemaining": "Cancel remaining",
+        "followLatest": "Follow latest",
+        "searchPlaceholder": "Search filename",
+        "find": "Find",
+        "nextMatch": "Next",
+        "prioritizeRemaining": "Prioritize in queue",
+        "movedToFront": "Moved to front of queue",
+        "notFound": "Not found",
+        "prev": "Prev",
+        "next": "Next",
+        "selected": "File: {{index}}/{{total}}",
+        "jumpHint": "Jump"
       }
     },
     "recorder": {

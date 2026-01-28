@@ -114,6 +114,25 @@
         "title": "テキストを入力してください",
         "content": "手動入力モードでは、テキストが空だとRecorder側で自動認識が走ってしまいます。テキストを入力するか、音声認識をONにしてください。",
         "ok": "OK"
+      },
+      "batchUpload": {
+        "progress": "処理中: {{done}}/{{total}}",
+        "queued": "待ち: {{queued}}",
+        "current": "今: {{filename}}",
+        "pause": "一時停止",
+        "resume": "再開",
+        "cancelRemaining": "残りをキャンセル",
+        "followLatest": "最新に追従",
+        "searchPlaceholder": "ファイル名で検索",
+        "find": "検索",
+        "nextMatch": "次",
+        "prioritizeRemaining": "キュー内で優先",
+        "movedToFront": "キューの先頭に移動しました",
+        "notFound": "見つかりませんでした",
+        "prev": "前へ",
+        "next": "次へ",
+        "selected": "ファイル: {{index}}/{{total}}",
+        "jumpHint": "番号移動"
       }
     },
     "recorder": {

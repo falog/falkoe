@@ -7,6 +7,7 @@ import {
   Button,
   Spin,
   Modal,
+  InputNumber,
 } from "antd";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -77,6 +78,18 @@ type WordInputScreenProps = {
 type UploadedAudioInfo = {
   exists: boolean;
   path: string;
+};
+
+type UploadQueueItem = {
+  file: File;
+  lang: string;
+};
+
+type UploadedItem = {
+  originalFilename: string;
+  lang: string;
+  sentenceHash: string;
+  savedPath: string;
 };
 
 type UpsertManifestTextResult = {
@@ -370,6 +383,25 @@ const WordInputScreen = ({
     string | null
   >(null);
   const [savingUpload, setSavingUpload] = useState(false);
+  const [uploadTotal, setUploadTotal] = useState(0);
+  const [uploadDone, setUploadDone] = useState(0);
+  const [queuedCount, setQueuedCount] = useState(0);
+  const [processedCount, setProcessedCount] = useState(0);
+  const [selectedUploadIndex, setSelectedUploadIndex] = useState(0);
+  const [uploadPaused, setUploadPaused] = useState(false);
+  const [followLatest, setFollowLatest] = useState(true);
+  const [uploadSearch, setUploadSearch] = useState("");
+  const [uploadSearchMessage, setUploadSearchMessage] = useState<string | null>(
+    null,
+  );
+  const lastSearchIndexRef = useRef(-1);
+  const [currentUploadFilename, setCurrentUploadFilename] = useState<
+    string | null
+  >(null);
+  const uploadQueueRef = useRef<UploadQueueItem[]>([]);
+  const processedRef = useRef<UploadedItem[]>([]);
+  const batchModeRef = useRef(false);
+  const persistedAfterBatchRef = useRef(false);
   const [hydrated, setHydrated] = useState(false);
   const [translateTo, setTranslateTo] = useState<string>(NONE_TRANSLATION);
   const translateOptions = [
@@ -431,6 +463,227 @@ const WordInputScreen = ({
     translateTo,
   ]);
 
+  const persistUploadedSelection = (
+    savedPath: string,
+    originalFilename: string,
+    sentenceHash: string,
+  ) => {
+    try {
+      sessionStorage.setItem("falkoe.uploadedSavedPath", savedPath);
+      sessionStorage.setItem("falkoe.uploadedFilename", originalFilename);
+      sessionStorage.setItem("falkoe.uploadedSentenceHash", sentenceHash);
+      sessionStorage.setItem("falkoe.useSpeech", "true");
+      sessionStorage.setItem("falkoe.useRecognition", String(useRecognition));
+      sessionStorage.setItem("falkoe.manualText", sentence);
+      sessionStorage.setItem("falkoe.lang", lang);
+    } catch {}
+  };
+
+  const applyUploadedItemAsSelected = (
+    item: UploadedItem,
+    opts?: { persist?: boolean },
+  ) => {
+    setAudioFile(null);
+    setSavedUploadedFilename(item.originalFilename);
+    setSavedUploadedPath(item.savedPath);
+    setSavedUploadedSentenceHash(item.sentenceHash);
+
+    if (opts?.persist !== false) {
+      persistUploadedSelection(
+        item.savedPath,
+        item.originalFilename,
+        item.sentenceHash,
+      );
+    }
+  };
+
+  const selectProcessedIndex = (idx: number) => {
+    const safe = Math.min(Math.max(idx, 0), processedRef.current.length - 1);
+    const item = processedRef.current[safe];
+    if (!item) return false;
+    setFollowLatest(false);
+    setSelectedUploadIndex(safe);
+    applyUploadedItemAsSelected(item, { persist: true });
+    return true;
+  };
+
+  const findInProcessed = (term: string, start: number) => {
+    const q = term.trim().toLowerCase();
+    if (!q) return -1;
+    const items = processedRef.current;
+    if (items.length === 0) return -1;
+
+    const clampStart = Math.min(Math.max(start, 0), items.length - 1);
+    for (let i = clampStart; i < items.length; i++) {
+      if (items[i].originalFilename.toLowerCase().includes(q)) return i;
+    }
+    for (let i = 0; i < clampStart; i++) {
+      if (items[i].originalFilename.toLowerCase().includes(q)) return i;
+    }
+    return -1;
+  };
+
+  const prioritizeInQueue = (term: string) => {
+    const q = term.trim().toLowerCase();
+    if (!q) return false;
+    const qlist = uploadQueueRef.current;
+    if (qlist.length === 0) return false;
+
+    const idx = qlist.findIndex((x) => x.file.name.toLowerCase().includes(q));
+    if (idx < 0) return false;
+    const [hit] = qlist.splice(idx, 1);
+    qlist.unshift(hit);
+    // queuedCount は表示用なので、ref更新後に同期
+    setQueuedCount(qlist.length);
+    return true;
+  };
+
+  const startNewBatch = (files: File[]) => {
+    if (!files || files.length === 0) return;
+    batchModeRef.current = files.length > 1;
+    persistedAfterBatchRef.current = false;
+
+    uploadQueueRef.current = files.map((f) => ({ file: f, lang }));
+    processedRef.current = [];
+
+    setUploadPaused(false);
+    setFollowLatest(true);
+    setUploadTotal(files.length);
+    setUploadDone(0);
+    setQueuedCount(files.length);
+    setProcessedCount(0);
+    setSelectedUploadIndex(0);
+    setCurrentUploadFilename(null);
+
+    setUploadSearch("");
+    setUploadSearchMessage(null);
+    lastSearchIndexRef.current = -1;
+
+    setAudioFile(null);
+    setSavedUploadedFilename(null);
+    setSavedUploadedPath(null);
+    setSavedUploadedSentenceHash(null);
+  };
+
+  const processUpload = async (item: UploadQueueItem) => {
+    const f = item.file;
+    try {
+      setSavingUpload(true);
+      setCurrentUploadFilename(f.name);
+      setAudioFile(f);
+      setSavedUploadedFilename(f.name);
+      setSavedUploadedPath(null);
+
+      const arrayBuffer = await f.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+
+      // 保存先IDは常に audio_id (=音声バイト由来hash) に統一
+      const sentenceHash = await sha256Bytes(bytes, item.lang);
+
+      const info = await invoke<UploadedAudioInfo>("get_uploaded_audio_info", {
+        sentenceHash,
+        originalFilename: f.name,
+      });
+
+      if (info.exists) {
+        // バッチ時は「同一バイト列=同一hash」なので、既存ファイルをそのまま利用してOK
+        const overwrite = batchModeRef.current
+          ? false
+          : await confirmOverwriteExisting();
+
+        if (!overwrite) {
+          setSavedUploadedPath(info.path);
+          setSavedUploadedSentenceHash(sentenceHash);
+          const nextItem: UploadedItem = {
+            originalFilename: f.name,
+            lang: item.lang,
+            sentenceHash,
+            savedPath: info.path,
+          };
+
+          processedRef.current.push(nextItem);
+          setProcessedCount(processedRef.current.length);
+
+          // バッチ中の自動追従は sessionStorage 書き込みを避ける
+          if (followLatest || processedRef.current.length === 1) {
+            const idx = processedRef.current.length - 1;
+            setSelectedUploadIndex(idx);
+            applyUploadedItemAsSelected(nextItem, {
+              persist: !batchModeRef.current,
+            });
+          }
+          return;
+        }
+      }
+
+      const savedPath = await invoke<string>("save_uploaded_audio", {
+        fileData: Array.from(bytes),
+        sentenceHash,
+        originalFilename: f.name,
+        overwrite: true,
+      });
+
+      setSavedUploadedPath(savedPath);
+      setSavedUploadedSentenceHash(sentenceHash);
+      const nextItem: UploadedItem = {
+        originalFilename: f.name,
+        lang: item.lang,
+        sentenceHash,
+        savedPath,
+      };
+
+      processedRef.current.push(nextItem);
+      setProcessedCount(processedRef.current.length);
+
+      if (followLatest || processedRef.current.length === 1) {
+        const idx = processedRef.current.length - 1;
+        setSelectedUploadIndex(idx);
+        applyUploadedItemAsSelected(nextItem, {
+          persist: !batchModeRef.current,
+        });
+      }
+    } finally {
+      setSavingUpload(false);
+      setCurrentUploadFilename(null);
+      setUploadDone((d) => d + 1);
+      setAudioFile(null);
+    }
+  };
+
+  // キューがある限り、1つずつ処理する（並列にしない）
+  useEffect(() => {
+    if (!useSpeech) return;
+    if (savingUpload) return;
+    if (uploadPaused) return;
+    if (queuedCount <= 0) return;
+
+    const next = uploadQueueRef.current.shift();
+    if (!next) {
+      setQueuedCount(0);
+      return;
+    }
+
+    setQueuedCount(uploadQueueRef.current.length);
+    void processUpload(next);
+  }, [useSpeech, savingUpload, uploadPaused, queuedCount]);
+
+  // バッチ完了後、選択中アイテムを1回だけ永続化
+  useEffect(() => {
+    if (!batchModeRef.current) return;
+    if (persistedAfterBatchRef.current) return;
+    if (savingUpload) return;
+    if (queuedCount > 0) return;
+    if (processedRef.current.length === 0) return;
+
+    const idx = Math.min(
+      Math.max(selectedUploadIndex, 0),
+      processedRef.current.length - 1,
+    );
+    const item = processedRef.current[idx];
+    applyUploadedItemAsSelected(item, { persist: true });
+    persistedAfterBatchRef.current = true;
+  }, [savingUpload, queuedCount, selectedUploadIndex]);
+
   // ワードが変わったら、次回フォーカス時に再度確認できるようにする
   useEffect(() => {
     manualOverwritePromptedRef.current = false;
@@ -485,97 +738,232 @@ const WordInputScreen = ({
           style={{ width: "80%", padding: 12, border: "1px dashed #ccc" }}
         >
           <AudioUpload
+            disabled={savingUpload}
             onUpload={(f) => {
-              setAudioFile(f);
-              setSavedUploadedFilename(f.name);
-              setSavedUploadedPath(null);
-
-              const run = async () => {
-                try {
-                  setSavingUpload(true);
-                  const arrayBuffer = await f.arrayBuffer();
-                  const bytes = new Uint8Array(arrayBuffer);
-
-                  // 保存先IDは常に audio_id (=音声バイト由来hash) に統一
-                  const sentenceHash = await sha256Bytes(bytes, lang);
-
-                  const info = await invoke<UploadedAudioInfo>(
-                    "get_uploaded_audio_info",
-                    {
-                      sentenceHash,
-                      originalFilename: f.name,
-                    },
-                  );
-
-                  if (info.exists) {
-                    const overwrite = await confirmOverwriteExisting();
-                    if (!overwrite) {
-                      // 既存ファイルをそのまま利用
-                      setSavedUploadedPath(info.path);
-                      setSavedUploadedSentenceHash(sentenceHash);
-                      try {
-                        sessionStorage.setItem(
-                          "falkoe.uploadedSavedPath",
-                          info.path,
-                        );
-                        sessionStorage.setItem(
-                          "falkoe.uploadedFilename",
-                          f.name,
-                        );
-                        sessionStorage.setItem(
-                          "falkoe.uploadedSentenceHash",
-                          sentenceHash,
-                        );
-                        sessionStorage.setItem("falkoe.useSpeech", "true");
-                        sessionStorage.setItem(
-                          "falkoe.useRecognition",
-                          String(useRecognition),
-                        );
-                        sessionStorage.setItem("falkoe.manualText", sentence);
-                        sessionStorage.setItem("falkoe.lang", lang);
-                      } catch {}
-                      return;
-                    }
-                  }
-
-                  const savedPath = await invoke<string>(
-                    "save_uploaded_audio",
-                    {
-                      fileData: Array.from(bytes),
-                      sentenceHash,
-                      originalFilename: f.name,
-                      overwrite: true,
-                    },
-                  );
-
-                  setSavedUploadedPath(savedPath);
-                  setSavedUploadedSentenceHash(sentenceHash);
-                  try {
-                    sessionStorage.setItem(
-                      "falkoe.uploadedSavedPath",
-                      savedPath,
-                    );
-                    sessionStorage.setItem("falkoe.uploadedFilename", f.name);
-                    sessionStorage.setItem(
-                      "falkoe.uploadedSentenceHash",
-                      sentenceHash,
-                    );
-                    sessionStorage.setItem("falkoe.useSpeech", "true");
-                    sessionStorage.setItem(
-                      "falkoe.useRecognition",
-                      String(useRecognition),
-                    );
-                    sessionStorage.setItem("falkoe.manualText", sentence);
-                    sessionStorage.setItem("falkoe.lang", lang);
-                  } catch {}
-                } finally {
-                  setSavingUpload(false);
-                }
-              };
-
-              run();
+              startNewBatch([f]);
+            }}
+            onUploadFiles={(files) => {
+              startNewBatch(files);
             }}
           />
+
+          {(uploadTotal > 0 || queuedCount > 0 || savingUpload) && (
+            <Typography.Text type="secondary">
+              {t("screens.wordInput.batchUpload.progress", {
+                done: uploadDone,
+                total: uploadTotal,
+              })}
+              {queuedCount > 0
+                ? " " +
+                  t("screens.wordInput.batchUpload.queued", {
+                    queued: queuedCount,
+                  })
+                : ""}
+              {currentUploadFilename
+                ? " " +
+                  t("screens.wordInput.batchUpload.current", {
+                    filename: currentUploadFilename,
+                  })
+                : ""}
+            </Typography.Text>
+          )}
+
+          {(uploadTotal > 0 || queuedCount > 0 || processedCount > 0) && (
+            <Space wrap>
+              <Button
+                size="small"
+                disabled={savingUpload || uploadTotal === 0}
+                onClick={() => setUploadPaused((p) => !p)}
+              >
+                {uploadPaused
+                  ? t("screens.wordInput.batchUpload.resume")
+                  : t("screens.wordInput.batchUpload.pause")}
+              </Button>
+              <Button
+                size="small"
+                disabled={savingUpload || queuedCount === 0}
+                onClick={() => {
+                  uploadQueueRef.current = [];
+                  setQueuedCount(0);
+                  setUploadTotal(uploadDone);
+                }}
+              >
+                {t("screens.wordInput.batchUpload.cancelRemaining")}
+              </Button>
+              <Checkbox
+                checked={followLatest}
+                disabled={savingUpload}
+                onChange={(e) => setFollowLatest(e.target.checked)}
+              >
+                {t("screens.wordInput.batchUpload.followLatest")}
+              </Checkbox>
+            </Space>
+          )}
+
+          {(uploadTotal > 0 || queuedCount > 0 || processedCount > 0) && (
+            <Space wrap>
+              <Input
+                size="small"
+                value={uploadSearch}
+                allowClear
+                placeholder={t(
+                  "screens.wordInput.batchUpload.searchPlaceholder",
+                )}
+                onChange={(e) => {
+                  setUploadSearch(e.target.value);
+                  setUploadSearchMessage(null);
+                }}
+                onPressEnter={() => {
+                  const term = uploadSearch;
+                  const found = findInProcessed(term, 0);
+                  if (found >= 0) {
+                    lastSearchIndexRef.current = found;
+                    selectProcessedIndex(found);
+                    setUploadSearchMessage(null);
+                    return;
+                  }
+                  const moved = prioritizeInQueue(term);
+                  if (moved) {
+                    setUploadPaused(false);
+                    setUploadSearchMessage(
+                      t("screens.wordInput.batchUpload.movedToFront"),
+                    );
+                    return;
+                  }
+                  setUploadSearchMessage(
+                    t("screens.wordInput.batchUpload.notFound"),
+                  );
+                }}
+                style={{ width: 260 }}
+              />
+              <Button
+                size="small"
+                disabled={!uploadSearch.trim() || processedCount === 0}
+                onClick={() => {
+                  const term = uploadSearch;
+                  const found = findInProcessed(term, 0);
+                  if (found >= 0) {
+                    lastSearchIndexRef.current = found;
+                    selectProcessedIndex(found);
+                    setUploadSearchMessage(null);
+                  } else {
+                    setUploadSearchMessage(
+                      t("screens.wordInput.batchUpload.notFound"),
+                    );
+                  }
+                }}
+              >
+                {t("screens.wordInput.batchUpload.find")}
+              </Button>
+              <Button
+                size="small"
+                disabled={!uploadSearch.trim() || processedCount === 0}
+                onClick={() => {
+                  const term = uploadSearch;
+                  const start =
+                    lastSearchIndexRef.current >= 0
+                      ? lastSearchIndexRef.current + 1
+                      : 0;
+                  const found = findInProcessed(term, start);
+                  if (found >= 0) {
+                    lastSearchIndexRef.current = found;
+                    selectProcessedIndex(found);
+                    setUploadSearchMessage(null);
+                  } else {
+                    setUploadSearchMessage(
+                      t("screens.wordInput.batchUpload.notFound"),
+                    );
+                  }
+                }}
+              >
+                {t("screens.wordInput.batchUpload.nextMatch")}
+              </Button>
+              <Button
+                size="small"
+                disabled={!uploadSearch.trim() || queuedCount === 0}
+                onClick={() => {
+                  const moved = prioritizeInQueue(uploadSearch);
+                  if (moved) {
+                    setUploadPaused(false);
+                    setUploadSearchMessage(
+                      t("screens.wordInput.batchUpload.movedToFront"),
+                    );
+                  } else {
+                    setUploadSearchMessage(
+                      t("screens.wordInput.batchUpload.notFound"),
+                    );
+                  }
+                }}
+              >
+                {t("screens.wordInput.batchUpload.prioritizeRemaining")}
+              </Button>
+              {uploadSearchMessage && (
+                <Typography.Text type="secondary">
+                  {uploadSearchMessage}
+                </Typography.Text>
+              )}
+            </Space>
+          )}
+
+          {processedCount > 1 && (
+            <Space wrap>
+              <Button
+                size="small"
+                disabled={savingUpload || selectedUploadIndex <= 0}
+                onClick={() => {
+                  const nextIdx = Math.max(0, selectedUploadIndex - 1);
+                  const item = processedRef.current[nextIdx];
+                  if (!item) return;
+                  setSelectedUploadIndex(nextIdx);
+                  applyUploadedItemAsSelected(item, { persist: true });
+                }}
+              >
+                {t("screens.wordInput.batchUpload.prev")}
+              </Button>
+              <Button
+                size="small"
+                disabled={
+                  savingUpload || selectedUploadIndex >= processedCount - 1
+                }
+                onClick={() => {
+                  const nextIdx = Math.min(
+                    processedCount - 1,
+                    selectedUploadIndex + 1,
+                  );
+                  const item = processedRef.current[nextIdx];
+                  if (!item) return;
+                  setSelectedUploadIndex(nextIdx);
+                  applyUploadedItemAsSelected(item, { persist: true });
+                }}
+              >
+                {t("screens.wordInput.batchUpload.next")}
+              </Button>
+              <Typography.Text type="secondary">
+                {t("screens.wordInput.batchUpload.selected", {
+                  index: Math.min(selectedUploadIndex + 1, processedCount),
+                  total: processedCount,
+                })}
+              </Typography.Text>
+              <InputNumber
+                size="small"
+                min={1}
+                max={processedCount}
+                value={Math.min(selectedUploadIndex + 1, processedCount)}
+                onChange={(v) => {
+                  const n = typeof v === "number" ? v : null;
+                  if (!n) return;
+                  const idx = n - 1;
+                  const item = processedRef.current[idx];
+                  if (!item) return;
+                  setSelectedUploadIndex(idx);
+                  applyUploadedItemAsSelected(item, { persist: true });
+                }}
+              />
+              <Typography.Text type="secondary">
+                {t("screens.wordInput.batchUpload.jumpHint")}
+              </Typography.Text>
+            </Space>
+          )}
 
           {(audioFile || savedUploadedPath) && (
             <>
