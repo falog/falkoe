@@ -1,11 +1,11 @@
 [package]
-name = "Falkoe"
+name = "falkoe"
 version = "0.3.3"
 description = "Falkoe Voice-powered language learning app"
 authors = ["fal"]
 license = "GPL-3.0-or-later"
 edition = "2021"
-default-run = "Falkoe"
+default-run = "falkoe"
 
 [[bin]]
 name = "world_pitch"

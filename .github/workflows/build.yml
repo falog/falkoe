@@ -403,7 +403,7 @@ jobs:
             fi
             
             if (( ${#files[@]} == 1 )); then
-              local new_name="Falkoe_${version}_${arch}${os_suffix}${ext}"
+              local new_name="falkoe_${version}_${arch}${os_suffix}${ext}"
               mv -f "${files[0]}" "${dir}/${new_name}"
               echo "[info] Renamed: ${new_name}"
               return 0
@@ -411,7 +411,7 @@ jobs:
             
             local i=1
             for f in "${files[@]}"; do
-              local new_name="Falkoe_${version}_${arch}${os_suffix}_${i}${ext}"
+              local new_name="falkoe_${version}_${arch}${os_suffix}_${i}${ext}"
               mv -f "$f" "${dir}/${new_name}"
               echo "[info] Renamed: ${new_name}"
               i=$((i+1))
@@ -443,7 +443,7 @@ jobs:
             if ($files.Count -eq 0) { return }
             
             if ($files.Count -eq 1) {
-              $newName = "Falkoe_${version}_${arch}${Extension}"
+              $newName = "falkoe_${version}_${arch}${Extension}"
               $dir = $files[0].DirectoryName
               Rename-Item -Path $files[0].FullName -NewName $newName
               Write-Host "[info] Renamed: $newName"
@@ -452,7 +452,7 @@ jobs:
             
             $i = 1
             foreach ($f in $files) {
-              $newName = "Falkoe_${version}_${arch}_${i}${Extension}"
+              $newName = "falkoe_${version}_${arch}_${i}${Extension}"
               $dir = $f.DirectoryName
               Rename-Item -Path $f.FullName -NewName $newName
               Write-Host "[info] Renamed: $newName"
