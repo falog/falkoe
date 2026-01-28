@@ -357,7 +357,7 @@ jobs:
 
           base="https://www.fon.hum.uva.nl/praat"
           index_html="$(curl -fsSL "${base}/" || true)"
-          asset="$(grep -oE 'praat[0-9]+_linux-intel64-barren\.tar\.gz' <<<"$index_html" | sort -V | tail -n 1)"
+          asset="$(python3 -c 'import re,sys; html=sys.stdin.read(); ms=re.findall(r"praat(\d+)_linux-intel64-barren\.tar\.gz", html); print(f"praat{max(map(int, ms))}_linux-intel64-barren.tar.gz" if ms else "")' <<<"$index_html")"
           if [[ -z "$asset" ]]; then
             # Fallback (known-good at the time of writing). This may 404 in the future,
             # but in that case the index parsing above should be updated.
@@ -437,7 +437,7 @@ jobs:
 
           base="https://www.fon.hum.uva.nl/praat"
           index_html="$(curl -fsSL "${base}/" || true)"
-          asset="$(grep -oE 'praat[0-9]+_mac\.dmg' <<<"$index_html" | sort -V | tail -n 1)"
+          asset="$(python3 -c 'import re,sys; html=sys.stdin.read(); ms=re.findall(r"praat(\d+)_mac\.dmg", html); print(f"praat{max(map(int, ms))}_mac.dmg" if ms else "")' <<<"$index_html")"
           if [[ -z "$asset" ]]; then
             asset="praat6458_mac.dmg"
           fi
