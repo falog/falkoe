@@ -15,8 +15,73 @@ pub const DEFAULT_MODEL_URL: &str =
     "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin";
 pub const DEFAULT_MODEL_FILENAME: &str = "ggml-small.bin";
 
-// Keep this in sync with src-tauri/tauri.conf.json "identifier".
-pub const APP_IDENTIFIER: &str = "net.falog.falkoe";
+// Legacy identifier-based storage dir name used by older builds.
+// (Tauri's app_data_dir historically used the bundle identifier.)
+pub const LEGACY_APP_IDENTIFIER: &str = "net.falog.falkoe";
+
+// Preferred on-disk storage dir name.
+// This intentionally avoids the reverse-DNS identifier so Linux paths are simpler.
+pub const APP_DATA_DIR_NAME: &str = "falkoe";
+
+fn preferred_app_data_dir(app: &AppHandle) -> PathBuf {
+    // `dirs::data_local_dir()` maps to:
+    // - Windows: %LOCALAPPDATA%
+    // - Linux:   ~/.local/share
+    // - macOS:   ~/Library/Application Support
+    // We keep our app-owned state under a stable, human-friendly folder.
+    if let Some(d) = dirs::data_local_dir() {
+        return d.join(APP_DATA_DIR_NAME);
+    }
+
+    // Fallback: platform-specific Tauri directory.
+    app.path().app_data_dir().unwrap()
+}
+
+fn legacy_app_data_dir(app: &AppHandle) -> PathBuf {
+    // Best effort: if the old identifier-based directory exists, migrate from it.
+    // If Tauri fails to resolve, fall back to dirs::data_dir() + identifier.
+    app.path()
+        .app_data_dir()
+        .unwrap_or_else(|_| dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")).join(LEGACY_APP_IDENTIFIER))
+}
+
+fn maybe_migrate_legacy_model(app: &AppHandle, preferred_dir: &PathBuf, spec: &ModelSpec) {
+    let legacy_dir = legacy_app_data_dir(app);
+    if legacy_dir == *preferred_dir {
+        return;
+    }
+    if !legacy_dir.exists() {
+        return;
+    }
+
+    let _ = fs::create_dir_all(preferred_dir);
+
+    // 1) model-variant.txt
+    let legacy_variant = legacy_dir.join(MODEL_VARIANT_FILE);
+    let preferred_variant = preferred_dir.join(MODEL_VARIANT_FILE);
+    if legacy_variant.is_file() && !preferred_variant.exists() {
+        if fs::rename(&legacy_variant, &preferred_variant).is_err() {
+            let _ = fs::copy(&legacy_variant, &preferred_variant);
+        }
+    }
+
+    // 2) model binary + .ok marker (only for the active spec)
+    let legacy_model = legacy_dir.join(&spec.filename);
+    let preferred_model = preferred_dir.join(&spec.filename);
+    let legacy_ok = legacy_model.with_extension("bin.ok");
+    let preferred_ok = preferred_model.with_extension("bin.ok");
+
+    if legacy_model.is_file() && !preferred_model.exists() {
+        if fs::rename(&legacy_model, &preferred_model).is_err() {
+            let _ = fs::copy(&legacy_model, &preferred_model);
+        }
+    }
+    if legacy_ok.is_file() && !preferred_ok.exists() {
+        if fs::rename(&legacy_ok, &preferred_ok).is_err() {
+            let _ = fs::copy(&legacy_ok, &preferred_ok);
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 struct ModelSpec {
@@ -130,12 +195,14 @@ fn model_spec_from_env_with_saved_variant(saved_variant: Option<String>) -> Mode
 }
 
 pub fn get_model_variant(app: &AppHandle) -> String {
-    let dir = app.path().app_data_dir().unwrap();
+    let preferred_dir = preferred_app_data_dir(app);
+    let legacy_dir = legacy_app_data_dir(app);
     env::var("FALKOE_MODEL_VARIANT")
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
-        .or_else(|| read_saved_model_variant_from_dir(&dir))
+        .or_else(|| read_saved_model_variant_from_dir(&preferred_dir))
+        .or_else(|| read_saved_model_variant_from_dir(&legacy_dir))
         .unwrap_or_else(|| DEFAULT_MODEL_VARIANT.to_string())
 }
 
@@ -171,7 +238,7 @@ pub fn set_model_variant(app: &AppHandle, variant: &str) -> anyhow::Result<()> {
         );
     }
 
-    let dir = app.path().app_data_dir().unwrap();
+    let dir = preferred_app_data_dir(app);
     fs::create_dir_all(&dir)?;
     let path = dir.join(MODEL_VARIANT_FILE);
     fs::write(path, format!("{}\n", v))?;
@@ -205,11 +272,21 @@ pub fn find_existing_model_path_noapp() -> Option<PathBuf> {
         }
     }
 
-    let dir = dirs::data_dir()?.join(APP_IDENTIFIER);
-    let saved_variant = read_saved_model_variant_from_dir(&dir);
+    let preferred_dir = dirs::data_local_dir()?.join(APP_DATA_DIR_NAME);
+    let legacy_dir = dirs::data_dir()?.join(LEGACY_APP_IDENTIFIER);
+
+    // Prefer new location but fall back to the legacy identifier-based dir.
+    let saved_variant = read_saved_model_variant_from_dir(&preferred_dir)
+        .or_else(|| read_saved_model_variant_from_dir(&legacy_dir));
     let spec = model_spec_from_env_with_saved_variant(saved_variant);
-    let model_path = dir.join(spec.filename);
-    model_path.is_file().then_some(model_path)
+
+    let preferred_model = preferred_dir.join(&spec.filename);
+    if preferred_model.is_file() {
+        return Some(preferred_model);
+    }
+
+    let legacy_model = legacy_dir.join(&spec.filename);
+    legacy_model.is_file().then_some(legacy_model)
 }
 
 /// setup() で必ず呼ぶ
@@ -232,9 +309,15 @@ pub fn get_model_status() -> String {
 }
 
 pub fn ensure_model(app: &AppHandle) -> anyhow::Result<std::path::PathBuf> {
-    let dir = app.path().app_data_dir().unwrap();
-    let saved_variant = read_saved_model_variant_from_dir(&dir);
+    let dir = preferred_app_data_dir(app);
+    let legacy_dir = legacy_app_data_dir(app);
+    let saved_variant = read_saved_model_variant_from_dir(&dir)
+        .or_else(|| read_saved_model_variant_from_dir(&legacy_dir));
     let spec = model_spec_from_env_with_saved_variant(saved_variant);
+
+    // If coming from an older build, migrate the active spec/model into the new dir.
+    maybe_migrate_legacy_model(app, &dir, &spec);
+
     let model_path = dir.join(&spec.filename);
     let ok_path = model_path.with_extension("bin.ok");
 
