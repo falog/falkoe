@@ -410,6 +410,50 @@ fn make_transcribe_command_with_pref(
     Ok((cmd, picked))
 }
 
+fn is_vulkan_unsupported_error(stderr: &str) -> bool {
+    let s = stderr.to_ascii_lowercase();
+    // Common whisper.cpp / ggml Vulkan failure modes.
+    s.contains("ggml_vulkan")
+        && (s.contains("does not support 16-bit storage")
+            || s.contains("does not support 16 bit storage")
+            || s.contains("vk_error_feature_not_present")
+            || s.contains("vk_error")
+            || s.contains("feature_not_present"))
+}
+
+fn parse_transcribe_stdout_json(
+    app: &AppHandle,
+    stdout: &[u8],
+) -> Result<super::types::Transcript> {
+    let stdout = String::from_utf8_lossy(stdout);
+    let stdout_trimmed = stdout.trim();
+
+    // Some native dependencies (whisper.cpp) may print logs to stdout.
+    // Extract the JSON object from stdout and parse that.
+    if let Ok(t) = serde_json::from_str::<super::types::Transcript>(stdout_trimmed) {
+        return Ok(t);
+    }
+
+    let start = stdout_trimmed.find('{');
+    let end = stdout_trimmed.rfind('}');
+    if let (Some(s), Some(e)) = (start, end) {
+        if s < e {
+            let json_slice = &stdout_trimmed[s..=e];
+            let t = serde_json::from_str::<super::types::Transcript>(json_slice)?;
+            return Ok(t);
+        }
+    }
+
+    crate::logging::log_line(
+        app,
+        format!(
+            "[whisper] transcribe(subprocess): stdout(truncated)={}",
+            crate::logging::truncate_for_log(stdout_trimmed, 2000)
+        ),
+    );
+    bail!("no JSON object found in stdout")
+}
+
 fn transcribe_in_subprocess(
     app: &AppHandle,
     wav_path: &str,
@@ -439,86 +483,58 @@ fn transcribe_in_subprocess(
             ),
         );
 
-        // If Vulkan helper failed, retry once with CPU-only backend.
-        #[cfg(all(target_os = "windows", any(target_arch = "x86", target_arch = "x86_64")))]
-        {
-            if _picked0 == "vulkan" {
-                crate::logging::log_line(app, "[whisper] transcribe(subprocess): vulkan helper failed; retrying with CPU helper".to_string());
+        // If Vulkan helper failed (common on some Linux GPUs lacking 16-bit storage),
+        // retry once with CPU-only backend.
+        let should_retry_cpu = _picked0 == "vulkan" || is_vulkan_unsupported_error(&stderr);
+        if should_retry_cpu {
+            crate::logging::log_line(
+                app,
+                "[whisper] transcribe(subprocess): vulkan failed; retrying with CPU-only backend".to_string(),
+            );
 
-                let (mut cmd1, _picked1) = make_transcribe_command_with_pref(
-                    app,
-                    wav_path,
-                    model_path,
-                    whisper_lang,
-                    TranscribeBackendPref::CpuOnly,
-                )?;
-                if let Some(l) = whisper_lang {
-                    cmd1.arg("--lang");
-                    cmd1.arg(l);
-                }
-                cmd1.env("RUST_BACKTRACE", "1");
-                cmd1.stdout(std::process::Stdio::piped());
-                cmd1.stderr(std::process::Stdio::piped());
-
-                #[cfg(target_os = "windows")]
-                let _err_mode2 = WindowsErrorModeGuard::new_suppress_loader_dialogs();
-                let out2 = cmd1.output()?;
-                let stderr2 = String::from_utf8_lossy(&out2.stderr).trim().to_string();
-                if !out2.status.success() {
-                    crate::logging::log_line(
-                        app,
-                        format!(
-                            "[whisper] transcribe(subprocess): cpu retry failed status={:?} stderr={}",
-                            out2.status.code(),
-                            crate::logging::truncate_for_log(&stderr2, 2000)
-                        ),
-                    );
-                    bail!("transcribe subprocess failed");
-                }
-
-                if !stderr2.is_empty() {
-                    crate::logging::log_line(
-                        app,
-                        format!(
-                            "[whisper] transcribe(subprocess): stderr={}",
-                            crate::logging::truncate_for_log(&stderr2, 2000)
-                        ),
-                    );
-                }
-
-                let stdout2 = String::from_utf8_lossy(&out2.stdout);
-                let stdout2_trimmed = stdout2.trim();
-                // Parse JSON from retry stdout.
-                let parsed2: Result<super::types::Transcript> = (|| {
-                    if let Ok(t) = serde_json::from_str::<super::types::Transcript>(stdout2_trimmed) {
-                        return Ok(t);
-                    }
-                    let start = stdout2_trimmed.find('{');
-                    let end = stdout2_trimmed.rfind('}');
-                    if let (Some(s), Some(e)) = (start, end) {
-                        if s < e {
-                            let json_slice = &stdout2_trimmed[s..=e];
-                            let t = serde_json::from_str::<super::types::Transcript>(json_slice)?;
-                            return Ok(t);
-                        }
-                    }
-                    bail!("no JSON object found in stdout")
-                })();
-
-                return match parsed2 {
-                    Ok(t) => Ok(t),
-                    Err(e) => {
-                        crate::logging::log_line(
-                            app,
-                            format!(
-                                "[whisper] transcribe(subprocess): stdout(truncated)={}",
-                                crate::logging::truncate_for_log(stdout2_trimmed, 2000)
-                            ),
-                        );
-                        Err(e).with_context(|| "failed to parse transcribe subprocess stdout as JSON")
-                    }
-                };
+            let (mut cmd1, _picked1) = make_transcribe_command_with_pref(
+                app,
+                wav_path,
+                model_path,
+                whisper_lang,
+                TranscribeBackendPref::CpuOnly,
+            )?;
+            if let Some(l) = whisper_lang {
+                cmd1.arg("--lang");
+                cmd1.arg(l);
             }
+            cmd1.env("RUST_BACKTRACE", "1");
+            cmd1.stdout(std::process::Stdio::piped());
+            cmd1.stderr(std::process::Stdio::piped());
+
+            #[cfg(target_os = "windows")]
+            let _err_mode2 = WindowsErrorModeGuard::new_suppress_loader_dialogs();
+            let out2 = cmd1.output()?;
+            let stderr2 = String::from_utf8_lossy(&out2.stderr).trim().to_string();
+            if !out2.status.success() {
+                crate::logging::log_line(
+                    app,
+                    format!(
+                        "[whisper] transcribe(subprocess): cpu retry failed status={:?} stderr={}",
+                        out2.status.code(),
+                        crate::logging::truncate_for_log(&stderr2, 2000)
+                    ),
+                );
+                bail!("transcribe subprocess failed");
+            }
+
+            if !stderr2.is_empty() {
+                crate::logging::log_line(
+                    app,
+                    format!(
+                        "[whisper] transcribe(subprocess): stderr={}",
+                        crate::logging::truncate_for_log(&stderr2, 2000)
+                    ),
+                );
+            }
+
+            return parse_transcribe_stdout_json(app, &out2.stdout)
+                .with_context(|| "failed to parse transcribe subprocess stdout as JSON");
         }
 
         bail!("transcribe subprocess failed");
@@ -534,42 +550,8 @@ fn transcribe_in_subprocess(
         );
     }
 
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let stdout_trimmed = stdout.trim();
-
-    // Some native dependencies (whisper.cpp) may print logs to stdout.
-    // Extract the JSON object from stdout and parse that.
-    let parsed: Result<super::types::Transcript> = (|| {
-        if let Ok(t) = serde_json::from_str::<super::types::Transcript>(stdout_trimmed) {
-            return Ok(t);
-        }
-
-        let start = stdout_trimmed.find('{');
-        let end = stdout_trimmed.rfind('}');
-        if let (Some(s), Some(e)) = (start, end) {
-            if s < e {
-                let json_slice = &stdout_trimmed[s..=e];
-                let t = serde_json::from_str::<super::types::Transcript>(json_slice)?;
-                return Ok(t);
-            }
-        }
-
-        bail!("no JSON object found in stdout")
-    })();
-
-    match parsed {
-        Ok(t) => Ok(t),
-        Err(e) => {
-            crate::logging::log_line(
-                app,
-                format!(
-                    "[whisper] transcribe(subprocess): stdout(truncated)={}",
-                    crate::logging::truncate_for_log(stdout_trimmed, 2000)
-                ),
-            );
-            Err(e).with_context(|| "failed to parse transcribe subprocess stdout as JSON")
-        }
-    }
+    parse_transcribe_stdout_json(app, &out.stdout)
+        .with_context(|| "failed to parse transcribe subprocess stdout as JSON")
 }
 
 fn run_whisper_for_wav(app: &AppHandle, wav_path: &str, sentence_hash: &str, lang: &str) -> Result<()> {
