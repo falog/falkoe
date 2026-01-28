@@ -246,9 +246,21 @@
       "loading": "読み込み中…",
       "empty": "データがありません",
       "textNotSaved": "(テキスト未保存)",
+      "searchPlaceholder": "履歴を検索（テキスト / ファイル名 / ID）",
       "open": "開く",
       "takes": "テイク: ",
-      "last": "最終: "
+      "last": "最終: ",
+      "sort": {
+        "label": "並び替え：",
+        "recent": "録音が新しい順",
+        "oldest": "録音が古い順",
+        "takesDesc": "テイク数（多い→少ない）",
+        "takesAsc": "テイク数（少ない→多い）",
+        "filenameAsc": "ファイル名（A→Z）",
+        "filenameDesc": "ファイル名（Z→A）",
+        "textAsc": "テキスト（A→Z）",
+        "textDesc": "テキスト（Z→A）"
+      }
     },
     "commonMistakes": {
       "title": "よくある間違い（録音はあとで追加）",

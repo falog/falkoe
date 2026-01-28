@@ -273,9 +273,21 @@
       "loading": "Loading…",
       "empty": "No Data",
       "textNotSaved": "(No saved text)",
+      "searchPlaceholder": "Search history (text / filename / id)",
       "open": "Open",
       "takes": "Takes: ",
-      "last": "Last: "
+      "last": "Last: ",
+      "sort": {
+        "label": "Sort:",
+        "recent": "Latest recording",
+        "oldest": "Oldest recording",
+        "takesDesc": "Takes (many → few)",
+        "takesAsc": "Takes (few → many)",
+        "filenameAsc": "Filename (A → Z)",
+        "filenameDesc": "Filename (Z → A)",
+        "textAsc": "Text (A → Z)",
+        "textDesc": "Text (Z → A)"
+      }
     },
     "commonMistakes": {
       "title": "Common mistakes (recordings coming later)",
