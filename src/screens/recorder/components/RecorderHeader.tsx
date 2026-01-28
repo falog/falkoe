@@ -4,6 +4,7 @@ import type { MouseEvent } from "react";
 import HeaderAudioPlayButton from "../HeaderAudioPlayButton";
 import type { SentenceAttribution } from "../../../components/ExampleList";
 import { openExternalUrl } from "../../../utils/openExternalUrl";
+import { formatTatoebaCreditText } from "../../../utils/formatTatoebaCreditText";
 
 type Props = {
   headerAudioUrl: string | null;
@@ -60,12 +61,9 @@ export function RecorderHeader({
         </Typography.Title>
         {showTatoebaCredit ? (
           <Typography.Text type="secondary" style={{ display: "block" }}>
-            {t("tatoeba.credit", {
-              sentenceOwner: sentenceAttribution?.sentenceOwner ?? "?",
-              sentenceLicense: sentenceAttribution?.sentenceLicense,
-              audioAuthor: sentenceAttribution?.audioAuthor ?? "?",
-              audioLicense: sentenceAttribution?.audioLicense,
-            })}
+            {sentenceAttribution
+              ? formatTatoebaCreditText(sentenceAttribution, t)
+              : ""}
             {sentenceAttribution?.sentenceUrl ? (
               <>
                 {" "}

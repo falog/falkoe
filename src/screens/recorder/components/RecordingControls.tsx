@@ -118,9 +118,9 @@ export function RecordingControls({
 
       {isRecording && autoStopRemainingMs != null && (
         <Typography.Text type="secondary" style={{ marginTop: 8 }}>
-          {t("screens.recorder.recordingControls.autoStopCountdown", {
-            seconds: Math.ceil(autoStopRemainingMs / 1000),
-          })}
+          {`${t("screens.recorder.recordingControls.autoStopCountdown")} ${Math.ceil(
+            autoStopRemainingMs / 1000,
+          )}`}
         </Typography.Text>
       )}
     </>

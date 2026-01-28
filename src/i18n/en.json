@@ -9,7 +9,10 @@
     }
   },
   "tatoeba": {
-    "credit": "Tatoeba — Sentence: {{sentenceOwner}} ({{sentenceLicense}}) / Audio: {{audioAuthor}} ({{audioLicense}})",
+    "credit": "Tatoeba credit",
+    "creditPrefix": "Tatoeba —",
+    "creditSentenceLabel": "Sentence",
+    "creditAudioLabel": "Audio",
     "source": "Source",
     "audioCredit": "Audio credit"
   },
@@ -124,9 +127,9 @@
         "ok": "OK"
       },
       "batchUpload": {
-        "progress": "Processing: {{done}}/{{total}}",
-        "queued": "Queued: {{queued}}",
-        "current": "Now: {{filename}}",
+        "progress": "Processing:",
+        "queued": "Queued:",
+        "current": "Now:",
         "pause": "Pause",
         "resume": "Resume",
         "cancelRemaining": "Cancel remaining",
@@ -139,7 +142,7 @@
         "notFound": "Not found",
         "prev": "Prev",
         "next": "Next",
-        "selected": "File: {{index}}/{{total}}",
+        "selected": "File:",
         "jumpHint": "Jump"
       }
     },
@@ -152,7 +155,7 @@
         "stopRecording": "Stop recording",
         "keep": "Keep",
         "discard": "Discard",
-        "autoStopCountdown": "Silence detected. Auto-stop in: {{seconds}}",
+        "autoStopCountdown": "Silence detected. Auto-stop in:",
         "keepOrDiscard": {
           "title": "Keep this recording?",
           "content": "This recording is not saved yet.\nChoose Keep to save it, or Discard to delete it."
@@ -167,7 +170,9 @@
           "symbol": "Symbol",
           "weak": "Unstressed"
         },
-        "stressCount": "Primary: {{primary}} / Secondary: {{secondary}}"
+        "stressCount": "Primary / Secondary",
+        "stressCountPrimaryLabel": "Primary",
+        "stressCountSecondaryLabel": "Secondary"
       },
       "modelTranscript": {
         "label": "Model transcript:",

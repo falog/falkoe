@@ -9,7 +9,10 @@
     }
   },
   "tatoeba": {
-    "credit": "Tatoeba — 文: {{sentenceOwner}} ({{sentenceLicense}}) / 音声: {{audioAuthor}} ({{audioLicense}})",
+    "credit": "Tatoeba クレジット",
+    "creditPrefix": "Tatoeba —",
+    "creditSentenceLabel": "文",
+    "creditAudioLabel": "音声",
     "source": "出典",
     "audioCredit": "音声クレジット"
   },
@@ -116,9 +119,9 @@
         "ok": "OK"
       },
       "batchUpload": {
-        "progress": "処理中: {{done}}/{{total}}",
-        "queued": "待ち: {{queued}}",
-        "current": "今: {{filename}}",
+        "progress": "処理中:",
+        "queued": "待ち:",
+        "current": "今:",
         "pause": "一時停止",
         "resume": "再開",
         "cancelRemaining": "残りをキャンセル",
@@ -131,7 +134,7 @@
         "notFound": "見つかりませんでした",
         "prev": "前へ",
         "next": "次へ",
-        "selected": "ファイル: {{index}}/{{total}}",
+        "selected": "ファイル:",
         "jumpHint": "番号移動"
       }
     },
@@ -144,7 +147,7 @@
         "stopRecording": "録音停止",
         "keep": "残す",
         "discard": "破棄",
-        "autoStopCountdown": "無音です 録音停止まで：{{seconds}}",
+        "autoStopCountdown": "無音です 録音停止まで：",
         "keepOrDiscard": {
           "title": "この録音を残しますか？",
           "content": "録音はまだ確定保存されていません。\n「残す」で保存、「破棄」で削除します。"
@@ -159,7 +162,9 @@
           "symbol": "記号",
           "weak": "弱"
         },
-        "stressCount": "強勢: {{primary}} / 副強勢: {{secondary}}"
+        "stressCount": "強勢・副強勢",
+        "stressCountPrimaryLabel": "強勢",
+        "stressCountSecondaryLabel": "副強勢"
       },
       "header": {
         "recognizeUploaded": "アップロード音声を音声認識する",

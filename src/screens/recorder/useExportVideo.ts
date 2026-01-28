@@ -13,6 +13,7 @@ import { message, Modal } from "antd";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import type { SentenceAttribution } from "../../components/ExampleList";
+import { formatTatoebaCreditText } from "../../utils/formatTatoebaCreditText";
 import {
   buildPitchAlignmentChartSvg,
   type PitchChartSvgOptions,
@@ -520,12 +521,7 @@ export function useExportVideo(params: {
 
       const creditText =
         sentenceAttribution?.provider === "tatoeba"
-          ? t("tatoeba.credit", {
-              sentenceOwner: sentenceAttribution.sentenceOwner ?? "?",
-              sentenceLicense: sentenceAttribution.sentenceLicense,
-              audioAuthor: sentenceAttribution.audioAuthor ?? "?",
-              audioLicense: sentenceAttribution.audioLicense,
-            })
+          ? formatTatoebaCreditText(sentenceAttribution, t)
               .split(" / ")
               .join("\n")
           : null;

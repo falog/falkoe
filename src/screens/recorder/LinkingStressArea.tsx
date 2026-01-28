@@ -40,7 +40,7 @@ export default function LinkingStressArea({
   async function playIpaTok(
     tok: string,
     audioPath: string,
-    event: "enter" | "click"
+    event: "enter" | "click",
   ) {
     try {
       await playBundledAudio(audioPath);
@@ -51,7 +51,7 @@ export default function LinkingStressArea({
           message.info(t("screens.commonMistakes.audioUnlockHint"));
         } else {
           message.error(
-            `${t("screens.commonMistakes.playFailed")}${tok} (${msg})`
+            `${t("screens.commonMistakes.playFailed")}${tok} (${msg})`,
           );
         }
       }
@@ -62,7 +62,7 @@ export default function LinkingStressArea({
   function requestPlayIpaTok(
     tok: string,
     audioPath: string,
-    event: "enter" | "click"
+    event: "enter" | "click",
   ) {
     if (event === "enter") {
       const now = Date.now();
@@ -235,7 +235,7 @@ export default function LinkingStressArea({
             >
               {sym}
               {seg}
-            </Typography.Text>
+            </Typography.Text>,
           );
           continue;
         }
@@ -247,7 +247,7 @@ export default function LinkingStressArea({
         out.push(
           <span key={`u-${start}`} style={{ fontSize }}>
             {seg}
-          </span>
+          </span>,
         );
       }
 
@@ -590,10 +590,9 @@ export default function LinkingStressArea({
           type="secondary"
           style={{ display: "block", marginBottom: 10, lineHeight: 1.7 }}
         >
-          {t("screens.recorder.linking.stressCount", {
-            primary: p,
-            secondary: s,
-          })}
+          {`${t("screens.recorder.linking.stressCountPrimaryLabel")}: ${p} / ${t(
+            "screens.recorder.linking.stressCountSecondaryLabel",
+          )}: ${s}`}
         </Typography.Text>
       )}
 

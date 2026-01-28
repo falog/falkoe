@@ -3,6 +3,7 @@ import { PlayCircleOutlined } from "@ant-design/icons";
 import type { MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { openExternalUrl } from "../utils/openExternalUrl";
+import { formatTatoebaCreditText } from "../utils/formatTatoebaCreditText";
 
 export type SentenceAttribution = {
   provider: "tatoeba";
@@ -81,12 +82,7 @@ const ExampleList = ({ sentences, onSelect, disabled }: ExampleListProps) => {
                   disabled={disabled}
                   style={{ display: "block", marginTop: 4 }}
                 >
-                  {t("tatoeba.credit", {
-                    sentenceOwner: item.attribution.sentenceOwner ?? "?",
-                    sentenceLicense: item.attribution.sentenceLicense,
-                    audioAuthor: item.attribution.audioAuthor ?? "?",
-                    audioLicense: item.attribution.audioLicense,
-                  })}
+                  {formatTatoebaCreditText(item.attribution, t)}
                   {item.attribution.sentenceUrl ? (
                     <>
                       {" "}

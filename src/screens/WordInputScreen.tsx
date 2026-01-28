@@ -749,21 +749,12 @@ const WordInputScreen = ({
 
           {(uploadTotal > 0 || queuedCount > 0 || savingUpload) && (
             <Typography.Text type="secondary">
-              {t("screens.wordInput.batchUpload.progress", {
-                done: uploadDone,
-                total: uploadTotal,
-              })}
+              {`${t("screens.wordInput.batchUpload.progress")} ${uploadDone}/${uploadTotal}`}
               {queuedCount > 0
-                ? " " +
-                  t("screens.wordInput.batchUpload.queued", {
-                    queued: queuedCount,
-                  })
+                ? ` ${t("screens.wordInput.batchUpload.queued")} ${queuedCount}`
                 : ""}
               {currentUploadFilename
-                ? " " +
-                  t("screens.wordInput.batchUpload.current", {
-                    filename: currentUploadFilename,
-                  })
+                ? ` ${t("screens.wordInput.batchUpload.current")} ${currentUploadFilename}`
                 : ""}
             </Typography.Text>
           )}
@@ -939,10 +930,10 @@ const WordInputScreen = ({
                 {t("screens.wordInput.batchUpload.next")}
               </Button>
               <Typography.Text type="secondary">
-                {t("screens.wordInput.batchUpload.selected", {
-                  index: Math.min(selectedUploadIndex + 1, processedCount),
-                  total: processedCount,
-                })}
+                {`${t("screens.wordInput.batchUpload.selected")} ${Math.min(
+                  selectedUploadIndex + 1,
+                  processedCount,
+                )}/${processedCount}`}
               </Typography.Text>
               <InputNumber
                 size="small"
