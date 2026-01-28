@@ -37,12 +37,17 @@ fn preferred_app_data_dir(app: &AppHandle) -> PathBuf {
     app.path().app_data_dir().unwrap()
 }
 
-fn legacy_app_data_dir(app: &AppHandle) -> PathBuf {
-    // Best effort: if the old identifier-based directory exists, migrate from it.
-    // If Tauri fails to resolve, fall back to dirs::data_dir() + identifier.
-    app.path()
-        .app_data_dir()
-        .unwrap_or_else(|_| dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")).join(LEGACY_APP_IDENTIFIER))
+fn legacy_app_data_dir(_app: &AppHandle) -> PathBuf {
+    // Legacy location used by old builds.
+    // Do not use `app.path().app_data_dir()` here because it depends on the current
+    // bundle identifier, which may have changed.
+    if let Some(d) = dirs::data_local_dir() {
+        return d.join(LEGACY_APP_IDENTIFIER);
+    }
+
+    dirs::data_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(LEGACY_APP_IDENTIFIER)
 }
 
 fn maybe_migrate_legacy_model(app: &AppHandle, preferred_dir: &PathBuf, spec: &ModelSpec) {
@@ -273,7 +278,7 @@ pub fn find_existing_model_path_noapp() -> Option<PathBuf> {
     }
 
     let preferred_dir = dirs::data_local_dir()?.join(APP_DATA_DIR_NAME);
-    let legacy_dir = dirs::data_dir()?.join(LEGACY_APP_IDENTIFIER);
+    let legacy_dir = dirs::data_local_dir()?.join(LEGACY_APP_IDENTIFIER);
 
     // Prefer new location but fall back to the legacy identifier-based dir.
     let saved_variant = read_saved_model_variant_from_dir(&preferred_dir)
