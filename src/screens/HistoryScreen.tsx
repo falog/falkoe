@@ -17,6 +17,7 @@ type HistoryItem = {
   modelWavPath: string | null;
   tatoebaMp3Path: string | null;
   uploadedPath: string | null;
+  uploadedOriginalFilename: string | null;
 };
 
 type Props = {
@@ -42,6 +43,20 @@ export default function HistoryScreen({
   const [items, setItems] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
 
+  const basename = (p: string): string => {
+    const parts = p.split(/[\\/]/).filter(Boolean);
+    return parts[parts.length - 1] ?? p;
+  };
+
+  const displayFilename = (it: HistoryItem): string | null => {
+    if (it.uploadedOriginalFilename?.trim()) return it.uploadedOriginalFilename;
+    if (it.uploadedPath) return basename(it.uploadedPath);
+    const headerPath =
+      it.tatoebaMp3Path ?? it.modelWavPath ?? it.lastRecordingWavPath;
+    if (headerPath) return basename(headerPath);
+    return null;
+  };
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -66,10 +81,12 @@ export default function HistoryScreen({
 
     // Prefer opening as uploaded if we have a persisted uploaded file.
     if (it.uploadedPath) {
+      const originalFilename =
+        it.uploadedOriginalFilename?.trim() || basename(it.uploadedPath);
       onOpenFromHistory({
         kind: "uploaded",
         savedPath: it.uploadedPath,
-        originalFilename: "uploaded",
+        originalFilename,
         sentenceHash: it.audioId,
         text,
         attribution: it.attribution ?? undefined,
@@ -130,7 +147,7 @@ export default function HistoryScreen({
                 <Typography.Text strong>
                   {it.text?.trim()
                     ? it.text
-                    : t("screens.history.textNotSaved")}
+                    : `${t("screens.history.textNotSaved")} ${displayFilename(it) ?? it.audioId}`}
                 </Typography.Text>
                 <Typography.Text type="secondary">[{it.lang}]</Typography.Text>
               </Space>

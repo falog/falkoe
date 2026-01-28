@@ -1098,7 +1098,11 @@ const WordInputScreen = ({
                     onUseSpeech({
                       kind: "uploaded",
                       savedPath: savedUploadedPath,
-                      originalFilename: savedUploadedFilename || "uploaded",
+                      originalFilename:
+                        savedUploadedFilename ||
+                        currentUploadFilename ||
+                        savedUploadedPath.split(/[\\/]/).pop() ||
+                        "uploaded",
                       sentenceHash: savedUploadedSentenceHash || undefined,
                       text: useRecognition ? undefined : sentence || undefined,
                       lang,

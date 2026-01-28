@@ -40,6 +40,7 @@ pub struct SentenceHistoryItem {
     pub model_wav_path: Option<String>,
     pub tatoeba_mp3_path: Option<String>,
     pub uploaded_path: Option<String>,
+    pub uploaded_original_filename: Option<String>,
 }
 
 fn sentences_root(app: &AppHandle) -> Result<PathBuf, String> {
@@ -164,6 +165,17 @@ pub fn list_sentence_history(app: AppHandle) -> Result<Vec<SentenceHistoryItem>,
         let uploaded_path = pick_uploaded_path(&uploaded_dir)
             .map(|p| p.to_string_lossy().to_string());
 
+        let uploaded_original_filename = uploaded_dir
+            .join("original_filename.txt")
+            .exists()
+            .then(|| {
+                fs::read_to_string(uploaded_dir.join("original_filename.txt"))
+                    .ok()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+            })
+            .flatten();
+
         // If we don't know the language yet (manifest missing), still list the item.
         // Default to "eng" so the UI can open it for playback; the user can later
         // recreate/overwrite manifest.json by opening the sentence normally.
@@ -180,6 +192,7 @@ pub fn list_sentence_history(app: AppHandle) -> Result<Vec<SentenceHistoryItem>,
             model_wav_path,
             tatoeba_mp3_path,
             uploaded_path,
+            uploaded_original_filename,
         });
     }
 

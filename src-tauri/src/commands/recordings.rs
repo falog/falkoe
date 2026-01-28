@@ -75,6 +75,15 @@ pub fn save_uploaded_audio(
 
     fs::create_dir_all(&base_dir).map_err(|e| e.to_string())?;
 
+    // 元のファイル名を保存（UIの履歴で判別できるようにする）
+    let original_filename_path = base_dir.join("original_filename.txt");
+    if let Err(e) = fs::write(&original_filename_path, &original_filename) {
+        eprintln!(
+            "failed to write uploaded original filename: {:?}: {}",
+            original_filename_path, e
+        );
+    }
+
     // 拡張子を保持
     let ext = std::path::Path::new(&original_filename)
         .extension()
@@ -122,6 +131,19 @@ pub fn get_uploaded_audio_info(
 
     let filename = format!("uploaded.{}", ext);
     let dest = base_dir.join(&filename);
+
+    // 既存アップロードがある場合、元ファイル名が未保存なら補完する
+    if dest.exists() {
+        let original_filename_path = base_dir.join("original_filename.txt");
+        if !original_filename_path.exists() {
+            if let Err(e) = fs::write(&original_filename_path, &original_filename) {
+                eprintln!(
+                    "failed to backfill uploaded original filename: {:?}: {}",
+                    original_filename_path, e
+                );
+            }
+        }
+    }
 
     Ok(UploadedAudioInfo {
         exists: dest.exists(),
