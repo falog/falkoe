@@ -1,0 +1,101 @@
+name: Bundle ffmpeg
+description: Bundle ffmpeg binaries into src-tauri/resources/bin
+runs:
+  using: composite
+  steps:
+    - name: Bundle ffmpeg (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p src-tauri/resources/bin
+
+        asset="ffmpeg-n8.0-latest-linux64-gpl-8.0.tar.xz"
+        url="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/${asset}"
+        tmpdir="$(mktemp -d)"
+
+        curl -fsSL -o "$tmpdir/ffmpeg.tar.xz" "$url"
+        tar -C "$tmpdir" -xf "$tmpdir/ffmpeg.tar.xz"
+
+        ffdir="$(find "$tmpdir" -maxdepth 1 -type d -name 'ffmpeg-*' | head -n 1)"
+        if [[ -z "$ffdir" || ! -f "$ffdir/bin/ffmpeg" ]]; then
+          echo "[error] ffmpeg download/extract failed"
+          exit 1
+        fi
+
+        cp -f "$ffdir/bin/ffmpeg" src-tauri/resources/bin/ffmpeg
+        chmod +x src-tauri/resources/bin/ffmpeg
+        echo "[info] bundled: $(src-tauri/resources/bin/ffmpeg -version | head -n1)"
+
+        conf="$(src-tauri/resources/bin/ffmpeg -buildconf 2>/dev/null || true)"
+        if ! grep -q -- '--enable-gpl' <<<"$conf"; then
+          echo "[error] bundled ffmpeg is not a GPL build"
+          exit 1
+        fi
+        if grep -q -- '--enable-nonfree' <<<"$conf"; then
+          echo "[error] bundled ffmpeg is nonfree; abort"
+          exit 1
+        fi
+
+    - name: Bundle ffmpeg (Windows)
+      if: runner.os == 'Windows'
+      shell: powershell
+      run: |
+        $ErrorActionPreference = 'Stop'
+        New-Item -ItemType Directory -Force -Path 'src-tauri/resources/bin' | Out-Null
+
+        $asset = 'ffmpeg-n8.0-latest-win64-gpl-shared-8.0.zip'
+        $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/$asset"
+        $tmp = Join-Path $env:RUNNER_TEMP 'ffmpeg'
+        $zip = Join-Path $tmp $asset
+        $out = Join-Path $tmp 'out'
+
+        New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+        if (Test-Path $out) { Remove-Item -Recurse -Force $out }
+        New-Item -ItemType Directory -Force -Path $out | Out-Null
+
+        Invoke-WebRequest -Uri $url -OutFile $zip
+        Expand-Archive -Path $zip -DestinationPath $out -Force
+
+        $ffmpegExe = Get-ChildItem -Path $out -Recurse -File -Filter 'ffmpeg.exe' | Select-Object -First 1
+        if (-not $ffmpegExe) { throw 'ffmpeg.exe not found' }
+        $ffmpegDir = $ffmpegExe.Directory.FullName
+
+        $ver = (& $ffmpegExe.FullName -version 2>&1 | Out-String)
+        if ($ver -notmatch '--enable-gpl') { throw 'Bundled ffmpeg is not a GPL build' }
+        if ($ver -match '--enable-nonfree') { throw 'Bundled ffmpeg is nonfree; abort' }
+
+        Copy-Item -Force $ffmpegExe.FullName 'src-tauri/resources/bin/ffmpeg.exe'
+        Get-ChildItem -Path $ffmpegDir -Filter '*.dll' -File -ErrorAction SilentlyContinue |
+          ForEach-Object { Copy-Item -Force $_.FullName 'src-tauri/resources/bin/' }
+
+        Write-Host "[info] bundled ffmpeg.exe (GPL build)"
+
+    - name: Bundle ffmpeg (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p src-tauri/resources/bin
+
+        curl -fsSL -o /tmp/ffmpeg.zip "https://evermeet.cx/ffmpeg/getrelease/zip"
+        unzip -q -o /tmp/ffmpeg.zip -d /tmp/ffmpeg
+
+        if [[ ! -f /tmp/ffmpeg/ffmpeg ]]; then
+          echo "[error] ffmpeg unzip failed"
+          exit 1
+        fi
+
+        cp -f /tmp/ffmpeg/ffmpeg src-tauri/resources/bin/ffmpeg
+        chmod +x src-tauri/resources/bin/ffmpeg
+        echo "[info] bundled: $(src-tauri/resources/bin/ffmpeg -version | head -n1)"
+
+        conf="$(src-tauri/resources/bin/ffmpeg -buildconf 2>/dev/null || true)"
+        if ! grep -q -- '--enable-gpl' <<<"$conf"; then
+          echo "[error] bundled ffmpeg is not a GPL build"
+          exit 1
+        fi
+        if grep -q -- '--enable-nonfree' <<<"$conf"; then
+          echo "[error] bundled ffmpeg is nonfree; abort"
+          exit 1
+        fi

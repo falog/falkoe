@@ -1,0 +1,117 @@
+name: Verify bundled tools
+description: Verify bundled binaries exist and run basic smoke tests
+runs:
+  using: composite
+  steps:
+    - name: Verify bundled tools (Linux/macOS)
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "[info] bundled tools directory listing:"
+        ls -la src-tauri/resources/bin || true
+        echo "[info] bundled praat scripts directory listing:"
+        ls -la src-tauri/resources/praat || true
+
+        test -e src-tauri/resources/bin/ffmpeg
+        test -e src-tauri/resources/bin/praat
+
+        if [[ "${RUNNER_OS:-}" == "macOS" ]]; then
+          test -x src-tauri/resources/bin/Praat.app/Contents/MacOS/Praat || test -x src-tauri/resources/bin/praat.bin
+        fi
+
+        test -e src-tauri/resources/bin/mecab
+        test -e src-tauri/resources/mecab/ipadic/dicrc
+        test -e src-tauri/resources/mecab/ipadic/sys.dic
+        test -e src-tauri/resources/mecab/ipadic/unk.dic
+
+        echo "[info] checksums (sha256):"
+        (command -v sha256sum >/dev/null 2>&1 && sha256sum src-tauri/resources/bin/ffmpeg src-tauri/resources/bin/praat src-tauri/resources/bin/mecab) || true
+
+    - name: Smoke test Praat (Linux/macOS)
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        set -euo pipefail
+        tmpdir="$(mktemp -d)"
+        wav="$tmpdir/test.wav"
+        out="$tmpdir/out.tsv"
+
+        echo "[info] generating test wav with bundled ffmpeg"
+        src-tauri/resources/bin/ffmpeg -hide_banner -loglevel error -y \
+          -f lavfi -i "sine=frequency=440:duration=1" -ac 1 -ar 16000 "$wav"
+
+        echo "[info] running bundled praat --run"
+        python3 - "$wav" "$out" <<'PY'
+        import subprocess
+        import sys
+
+        cmd = [
+            'src-tauri/resources/bin/praat',
+            '--run',
+            'src-tauri/resources/praat/extract_pitch_to_tsv.praat',
+            sys.argv[1],
+            sys.argv[2],
+            '0.01',
+            '75',
+            '500',
+        ]
+
+        try:
+            subprocess.run(cmd, check=True, timeout=15)
+        except subprocess.TimeoutExpired:
+            print('[error] Praat smoke test timed out', file=sys.stderr)
+            raise
+        PY
+
+        if [[ ! -s "$out" ]]; then
+          echo "[error] praat smoke test failed: output tsv missing/empty"
+          exit 1
+        fi
+        echo "[info] praat smoke test ok: $(wc -l < "$out") lines"
+
+    - name: Verify bundled tools (Windows)
+      if: runner.os == 'Windows'
+      shell: powershell
+      run: |
+        $ErrorActionPreference = 'Stop'
+        Write-Host "[info] bundled tools directory listing:"
+        Get-ChildItem -Path 'src-tauri/resources/bin' -File | Sort-Object Name | Format-Table Name,Length
+
+        if (!(Test-Path 'src-tauri/resources/bin/ffmpeg.exe')) { throw 'missing bundled ffmpeg.exe' }
+        if (!(Test-Path 'src-tauri/resources/bin/praat.exe')) { throw 'missing bundled praat.exe' }
+        if (!(Test-Path 'src-tauri/resources/bin/mecab.exe')) { throw 'missing bundled mecab.exe' }
+
+        foreach ($dll in @('libmecab-2.dll','libiconv-2.dll','libintl-8.dll','libcharset-1.dll')) {
+          if (!(Test-Path (Join-Path 'src-tauri/resources/bin' $dll))) { throw "missing bundled MeCab DLL: $dll" }
+        }
+        foreach ($f in @('dicrc','sys.dic','unk.dic')) {
+          if (!(Test-Path (Join-Path 'src-tauri/resources/mecab/ipadic' $f))) { throw "missing bundled MeCab dictionary file: $f" }
+        }
+
+    - name: Smoke test Praat (Windows)
+      if: runner.os == 'Windows'
+      shell: powershell
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $tmp = Join-Path $env:RUNNER_TEMP 'praat-smoke'
+        New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+        $wav = Join-Path $tmp 'test.wav'
+        $out = Join-Path $tmp 'out.tsv'
+        $ffmpeg = Resolve-Path 'src-tauri/resources/bin/ffmpeg.exe'
+        $praat = Resolve-Path 'src-tauri/resources/bin/praat.exe'
+        $script = Resolve-Path 'src-tauri/resources/praat/extract_pitch_to_tsv.praat'
+
+        Write-Host "[info] generating test wav"
+        & $ffmpeg -hide_banner -loglevel error -y -f lavfi -i "sine=frequency=440:duration=1" -ac 1 -ar 16000 $wav
+
+        Write-Host "[info] running bundled praat"
+        $p = Start-Process -FilePath $praat -ArgumentList @('--run', $script, $wav, $out, '0.01', '75', '500') -PassThru
+        $ok = $p.WaitForExit(15000)
+        if (-not $ok) {
+          try { $p.Kill() } catch {}
+          throw 'Praat smoke test timed out'
+        }
+        if ($p.ExitCode -ne 0) { throw "Praat failed with exit code $($p.ExitCode)" }
+        if (!(Test-Path $out) -or (Get-Item $out).Length -le 0) { throw 'Praat output missing/empty' }
+        Write-Host "[info] praat smoke test ok"

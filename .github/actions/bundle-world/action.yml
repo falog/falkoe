@@ -1,0 +1,29 @@
+name: Bundle WORLD helper
+description: Build + bundle the WORLD pitch helper into src-tauri/resources/bin
+runs:
+  using: composite
+  steps:
+    - name: Build + bundle WORLD helper (Linux/macOS)
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p src-tauri/resources/bin
+        pushd src-tauri >/dev/null
+        cargo build --release --bin world_pitch
+        popd >/dev/null
+        cp -f src-tauri/target/release/world_pitch src-tauri/resources/bin/world_pitch
+        chmod +x src-tauri/resources/bin/world_pitch
+        echo "[info] bundled WORLD helper: world_pitch"
+
+    - name: Build + bundle WORLD helper (Windows)
+      if: runner.os == 'Windows'
+      shell: powershell
+      run: |
+        $ErrorActionPreference = 'Stop'
+        New-Item -ItemType Directory -Force -Path 'src-tauri/resources/bin' | Out-Null
+        pushd src-tauri
+        cargo build --release --bin world_pitch
+        popd
+        Copy-Item -Force 'src-tauri/target/release/world_pitch.exe' 'src-tauri/resources/bin/world_pitch.exe'
+        Write-Host "[info] bundled WORLD helper: world_pitch.exe"

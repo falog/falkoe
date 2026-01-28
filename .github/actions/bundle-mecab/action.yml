@@ -1,0 +1,153 @@
+name: Bundle MeCab
+description: Bundle MeCab binary and ipadic dictionary into src-tauri/resources
+runs:
+  using: composite
+  steps:
+    - name: Bundle MeCab (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p src-tauri/resources/bin
+        mkdir -p src-tauri/resources/mecab/ipadic
+
+        if ! command -v mecab >/dev/null 2>&1; then
+          echo "[error] mecab not found"
+          exit 1
+        fi
+
+        cp -f "$(command -v mecab)" src-tauri/resources/bin/mecab
+        chmod +x src-tauri/resources/bin/mecab
+        echo "[info] bundled mecab binary"
+
+        dic_dir=""
+        for candidate in \
+          /var/lib/mecab/dic/ipadic-utf8 \
+          /usr/share/mecab/dic/ipadic-utf8 \
+          /var/lib/mecab/dic/ipadic \
+          /usr/share/mecab/dic/ipadic
+        do
+          if [[ -d "$candidate" && -f "$candidate/dicrc" ]]; then
+            dic_dir="$candidate"
+            break
+          fi
+        done
+
+        if [[ -z "$dic_dir" ]]; then
+          echo "[error] ipadic not found"
+          exit 1
+        fi
+
+        cp -RL "$dic_dir"/* src-tauri/resources/mecab/ipadic/
+
+        for file in dicrc sys.dic unk.dic; do
+          if [[ ! -f "src-tauri/resources/mecab/ipadic/$file" ]]; then
+            echo "[error] failed to copy $file"
+            exit 1
+          fi
+        done
+
+        echo "[info] bundled ipadic from $dic_dir"
+
+    - name: Bundle MeCab (Windows)
+      if: runner.os == 'Windows'
+      shell: msys2 {0}
+      run: |
+        set -euo pipefail
+        mkdir -p src-tauri/resources/bin
+        mkdir -p src-tauri/resources/mecab/ipadic
+
+        if [[ ! -f src-tauri/resources/mecab/ipadic/dicrc ]]; then
+          echo "[error] bundled ipadic dictionary is missing (dicrc not found)." >&2
+          echo "[info] expected at: src-tauri/resources/mecab/ipadic" >&2
+          ls -la src-tauri/resources/mecab/ipadic || true
+          exit 1
+        fi
+
+        pacman -S --noconfirm --needed mingw-w64-x86_64-mecab mingw-w64-x86_64-gettext
+
+        if ! command -v mecab >/dev/null 2>&1; then
+          echo "[error] mecab not found on PATH"
+          exit 1
+        fi
+
+        mecab_path="$(command -v mecab)"
+        echo "[info] mecab path: $mecab_path"
+        cp -f "$mecab_path" src-tauri/resources/bin/mecab.exe
+
+        mecab_dir="$(dirname "$mecab_path")"
+        echo "[info] copying DLLs from $mecab_dir"
+
+        cp -f "$mecab_dir"/libmecab*.dll src-tauri/resources/bin/ 2>/dev/null || true
+        cp -f "$mecab_dir"/libiconv-2.dll src-tauri/resources/bin/ 2>/dev/null || true
+        cp -f "$mecab_dir"/libintl-8.dll src-tauri/resources/bin/ 2>/dev/null || true
+        cp -f "$mecab_dir"/libcharset-1.dll src-tauri/resources/bin/ 2>/dev/null || true
+        cp -f "$mecab_dir"/libgcc_s_seh*.dll src-tauri/resources/bin/ 2>/dev/null || true
+        cp -f "$mecab_dir"/libstdc++*.dll src-tauri/resources/bin/ 2>/dev/null || true
+        cp -f "$mecab_dir"/libwinpthread*.dll src-tauri/resources/bin/ 2>/dev/null || true
+
+        for dll in libmecab-2.dll libiconv-2.dll libintl-8.dll libcharset-1.dll; do
+          if [[ ! -f "src-tauri/resources/bin/$dll" ]]; then
+            echo "[error] missing required MeCab DLL in bundle: $dll"
+            exit 1
+          fi
+        done
+
+        echo "[info] bundled mecab.exe and DLLs"
+        echo "[info] bundled ipadic dictionary (shared artifact)"
+
+    - name: Bundle MeCab (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p src-tauri/resources/bin
+        mkdir -p src-tauri/resources/mecab/ipadic
+
+        if ! command -v mecab >/dev/null 2>&1; then
+          echo "[error] mecab not found"
+          exit 1
+        fi
+
+        cp -f "$(command -v mecab)" src-tauri/resources/bin/mecab
+        chmod +x src-tauri/resources/bin/mecab
+        echo "[info] bundled mecab binary"
+
+        if ! command -v mecab-config >/dev/null 2>&1; then
+          echo "[error] mecab-config not found"
+          exit 1
+        fi
+
+        dic_dir="$(mecab-config --dicdir)/ipadic"
+        echo "[info] looking for ipadic at: $dic_dir"
+
+        if [[ ! -d "$dic_dir" ]]; then
+          echo "[error] ipadic directory not found at $dic_dir"
+          ls -la "$(mecab-config --dicdir)" || true
+          exit 1
+        fi
+
+        echo "[info] ipadic contents:"
+        ls -la "$dic_dir" || true
+
+        for file in dicrc sys.dic unk.dic; do
+          if [[ ! -f "$dic_dir/$file" ]]; then
+            echo "[error] required file not found: $dic_dir/$file"
+            exit 1
+          fi
+        done
+
+        rm -rf src-tauri/resources/mecab/ipadic/*
+        cp -RL "$dic_dir"/* src-tauri/resources/mecab/ipadic/
+
+        echo "[info] bundled files:"
+        ls -la src-tauri/resources/mecab/ipadic/ || true
+
+        for file in dicrc sys.dic unk.dic; do
+          if [[ ! -f "src-tauri/resources/mecab/ipadic/$file" ]]; then
+            echo "[error] failed to copy $file"
+            exit 1
+          fi
+        done
+
+        echo "[info] bundled ipadic from $dic_dir"

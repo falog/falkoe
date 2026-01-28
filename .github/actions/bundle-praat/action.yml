@@ -1,0 +1,153 @@
+name: Bundle Praat
+description: Bundle Praat into src-tauri/resources/bin
+runs:
+  using: composite
+  steps:
+    - name: Bundle Praat (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p src-tauri/resources/bin
+
+        base="https://www.fon.hum.uva.nl/praat"
+        index_html="$(curl -fsSL "${base}/" || true)"
+        asset="$(python3 -c 'import re,sys; html=sys.stdin.read(); ms=re.findall(r"praat(\d+)_linux-intel64-barren\.tar\.gz", html); print(f"praat{max(map(int, ms))}_linux-intel64-barren.tar.gz" if ms else "")' <<<"$index_html")"
+        if [[ -z "$asset" ]]; then
+          # Fallback (known-good at the time of writing). This may 404 in the future,
+          # but in that case the index parsing above should be updated.
+          asset="praat6458_linux-intel64-barren.tar.gz"
+        fi
+        url="${base}/${asset}"
+        tmpdir="$(mktemp -d)"
+
+        curl -fsSL -o "$tmpdir/praat.tar.gz" "$url"
+        tar -C "$tmpdir" -xzf "$tmpdir/praat.tar.gz"
+
+        praat_bin=""
+        if [[ -f "$tmpdir/praat" ]]; then
+          praat_bin="$tmpdir/praat"
+        elif [[ -f "$tmpdir/praat_barren" ]]; then
+          praat_bin="$tmpdir/praat_barren"
+        fi
+
+        if [[ -z "$praat_bin" ]]; then
+          echo "[error] praat binary not found after extract"
+          ls -la "$tmpdir" || true
+          exit 1
+        fi
+
+        cp -f "$praat_bin" src-tauri/resources/bin/praat
+        chmod +x src-tauri/resources/bin/praat
+        echo "[info] bundled praat (barren)"
+
+    - name: Bundle Praat (Windows)
+      if: runner.os == 'Windows'
+      shell: powershell
+      run: |
+        $ErrorActionPreference = 'Stop'
+        New-Item -ItemType Directory -Force -Path 'src-tauri/resources/bin' | Out-Null
+
+        $base = 'https://www.fon.hum.uva.nl/praat'
+        $fallbackAsset = 'praat6458_win-intel64.zip'
+        try {
+          $html = Invoke-WebRequest -Uri "$base/" -UseBasicParsing
+          $matches = [regex]::Matches($html.Content, 'praat(\d+)_win-intel64\.zip')
+          if ($matches.Count -gt 0) {
+            $max = ($matches | ForEach-Object { [int]$_.Groups[1].Value } | Measure-Object -Maximum).Maximum
+            $asset = "praat$max`_win-intel64.zip"
+          } else {
+            $asset = $fallbackAsset
+          }
+        } catch {
+          $asset = $fallbackAsset
+        }
+        $url = "$base/$asset"
+        $tmp = Join-Path $env:RUNNER_TEMP 'praat'
+        $zip = Join-Path $tmp $asset
+        $out = Join-Path $tmp 'out'
+
+        New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+        if (Test-Path $out) { Remove-Item -Recurse -Force $out }
+        New-Item -ItemType Directory -Force -Path $out | Out-Null
+
+        Invoke-WebRequest -Uri $url -OutFile $zip
+        Expand-Archive -Path $zip -DestinationPath $out -Force
+
+        $praatExe = Get-ChildItem -Path $out -Recurse -File -Filter 'Praat.exe' | Select-Object -First 1
+        if (-not $praatExe) {
+          $praatExe = Get-ChildItem -Path $out -Recurse -File -Filter 'praat.exe' | Select-Object -First 1
+        }
+        if (-not $praatExe) { throw 'Praat.exe not found' }
+
+        Copy-Item -Force $praatExe.FullName 'src-tauri/resources/bin/praat.exe'
+        Write-Host "[info] bundled praat.exe"
+
+    - name: Bundle Praat (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p src-tauri/resources/bin
+
+        base="https://www.fon.hum.uva.nl/praat"
+        index_html="$(curl -fsSL "${base}/" || true)"
+        asset="$(python3 -c 'import re,sys; html=sys.stdin.read(); ms=re.findall(r"praat(\d+)_mac\.dmg", html); print(f"praat{max(map(int, ms))}_mac.dmg" if ms else "")' <<<"$index_html")"
+        if [[ -z "$asset" ]]; then
+          asset="praat6458_mac.dmg"
+        fi
+        url="${base}/${asset}"
+        tmpdir="$(mktemp -d)"
+
+        curl -fsSL -o "$tmpdir/praat.dmg" "$url"
+        mnt="$tmpdir/mnt"
+        mkdir -p "$mnt"
+
+        hdiutil attach "$tmpdir/praat.dmg" -mountpoint "$mnt" -nobrowse -quiet
+        if [[ -d "$mnt/Praat.app" && -f "$mnt/Praat.app/Contents/MacOS/Praat" ]]; then
+          rm -rf src-tauri/resources/bin/Praat.app
+          cp -R "$mnt/Praat.app" src-tauri/resources/bin/Praat.app
+        elif [[ -f "$mnt/Praat" ]]; then
+          cp -f "$mnt/Praat" src-tauri/resources/bin/praat.bin
+        else
+          ls -la "$mnt" || true
+          hdiutil detach "$mnt" -quiet || true
+          echo "[error] Praat app/binary not found in DMG"
+          exit 1
+        fi
+        hdiutil detach "$mnt" -quiet
+
+        if [[ -d src-tauri/resources/bin/Praat.app ]]; then
+          chmod -R a+rX src-tauri/resources/bin/Praat.app || true
+        fi
+        if [[ -f src-tauri/resources/bin/praat.bin ]]; then
+          chmod a+rX src-tauri/resources/bin/praat.bin || true
+        fi
+
+        cat > src-tauri/resources/bin/praat <<'SH'
+        #!/usr/bin/env bash
+        set -euo pipefail
+        here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+        if [[ -x "$here/Praat.app/Contents/MacOS/Praat" ]]; then
+          exec "$here/Praat.app/Contents/MacOS/Praat" "$@"
+        elif [[ -x "$here/praat.bin" ]]; then
+          exec "$here/praat.bin" "$@"
+        else
+          echo "[error] Praat not bundled correctly" >&2
+          exit 1
+        fi
+        SH
+
+        chmod +x src-tauri/resources/bin/praat
+        if [[ -f src-tauri/resources/bin/praat.bin ]]; then
+          chmod +x src-tauri/resources/bin/praat.bin
+        fi
+
+        if command -v xattr >/dev/null 2>&1; then
+          xattr -dr com.apple.quarantine src-tauri/resources/bin/Praat.app 2>/dev/null || true
+          xattr -d com.apple.quarantine src-tauri/resources/bin/praat.bin 2>/dev/null || true
+          xattr -d com.apple.quarantine src-tauri/resources/bin/praat 2>/dev/null || true
+        fi
+
+        echo "[info] bundled praat"
