@@ -355,8 +355,15 @@ jobs:
           set -euo pipefail
           mkdir -p src-tauri/resources/bin
 
-          asset="praat6452_linux-intel64-barren.tar.gz"
-          url="https://www.fon.hum.uva.nl/praat/${asset}"
+          base="https://www.fon.hum.uva.nl/praat"
+          index_html="$(curl -fsSL "${base}/" || true)"
+          asset="$(grep -oE 'praat[0-9]+_linux-intel64-barren\.tar\.gz' <<<"$index_html" | sort -V | tail -n 1)"
+          if [[ -z "$asset" ]]; then
+            # Fallback (known-good at the time of writing). This may 404 in the future,
+            # but in that case the index parsing above should be updated.
+            asset="praat6458_linux-intel64-barren.tar.gz"
+          fi
+          url="${base}/${asset}"
           tmpdir="$(mktemp -d)"
 
           curl -fsSL -o "$tmpdir/praat.tar.gz" "$url"
@@ -386,8 +393,21 @@ jobs:
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force -Path 'src-tauri/resources/bin' | Out-Null
 
-          $asset = 'praat6452_win-intel64.zip'
-          $url = "https://www.fon.hum.uva.nl/praat/$asset"
+          $base = 'https://www.fon.hum.uva.nl/praat'
+          $fallbackAsset = 'praat6458_win-intel64.zip'
+          try {
+            $html = Invoke-WebRequest -Uri "$base/" -UseBasicParsing
+            $matches = [regex]::Matches($html.Content, 'praat(\d+)_win-intel64\.zip')
+            if ($matches.Count -gt 0) {
+              $max = ($matches | ForEach-Object { [int]$_.Groups[1].Value } | Measure-Object -Maximum).Maximum
+              $asset = "praat$max`_win-intel64.zip"
+            } else {
+              $asset = $fallbackAsset
+            }
+          } catch {
+            $asset = $fallbackAsset
+          }
+          $url = "$base/$asset"
           $tmp = Join-Path $env:RUNNER_TEMP 'praat'
           $zip = Join-Path $tmp $asset
           $out = Join-Path $tmp 'out'
@@ -415,8 +435,13 @@ jobs:
           set -euo pipefail
           mkdir -p src-tauri/resources/bin
 
-          asset="praat6452_mac.dmg"
-          url="https://www.fon.hum.uva.nl/praat/${asset}"
+          base="https://www.fon.hum.uva.nl/praat"
+          index_html="$(curl -fsSL "${base}/" || true)"
+          asset="$(grep -oE 'praat[0-9]+_mac\.dmg' <<<"$index_html" | sort -V | tail -n 1)"
+          if [[ -z "$asset" ]]; then
+            asset="praat6458_mac.dmg"
+          fi
+          url="${base}/${asset}"
           tmpdir="$(mktemp -d)"
 
           curl -fsSL -o "$tmpdir/praat.dmg" "$url"
