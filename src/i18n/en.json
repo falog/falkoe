@@ -143,7 +143,13 @@
         "prev": "Prev",
         "next": "Next",
         "selected": "File:",
-        "jumpHint": "Jump"
+        "jumpHint": "Jump",
+        "leaveDuringImport": {
+          "title": "Import in progress",
+          "content": "If you leave this screen while importing, the remaining queue will be reset. Leave anyway?",
+          "ok": "Leave",
+          "cancel": "Stay"
+        }
       }
     },
     "recorder": {

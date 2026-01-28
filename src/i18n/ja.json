@@ -135,7 +135,13 @@
         "prev": "前へ",
         "next": "次へ",
         "selected": "ファイル:",
-        "jumpHint": "番号移動"
+        "jumpHint": "番号移動",
+        "leaveDuringImport": {
+          "title": "取り込み中です",
+          "content": "取り込み中に画面を移動すると、未完了のキューがリセットされます。移動しますか？",
+          "ok": "移動する",
+          "cancel": "このまま"
+        }
       }
     },
     "recorder": {

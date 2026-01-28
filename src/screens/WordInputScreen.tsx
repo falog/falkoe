@@ -403,6 +403,31 @@ const WordInputScreen = ({
   const batchModeRef = useRef(false);
   const persistedAfterBatchRef = useRef(false);
   const [hydrated, setHydrated] = useState(false);
+
+  const isBatchImportActive = savingUpload || queuedCount > 0;
+
+  function confirmLeaveDuringBatchImport(): Promise<boolean> {
+    return new Promise((resolve) => {
+      Modal.confirm({
+        title: t("screens.wordInput.batchUpload.leaveDuringImport.title"),
+        content: t("screens.wordInput.batchUpload.leaveDuringImport.content"),
+        okText: t("screens.wordInput.batchUpload.leaveDuringImport.ok"),
+        cancelText: t("screens.wordInput.batchUpload.leaveDuringImport.cancel"),
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+  }
+
+  const guardedNavigate = (fn: () => void) => async () => {
+    if (!isBatchImportActive) {
+      fn();
+      return;
+    }
+    const ok = await confirmLeaveDuringBatchImport();
+    if (!ok) return;
+    fn();
+  };
   const [translateTo, setTranslateTo] = useState<string>(NONE_TRANSLATION);
   const translateOptions = [
     { value: NONE_TRANSLATION, label: "None" },
@@ -717,11 +742,11 @@ const WordInputScreen = ({
     <Space orientation="vertical" style={{ width: "100%" }}>
       <TopNav
         current="word"
-        onOpenHistory={onOpenHistory}
-        onOpenIpaList={onOpenIpaList}
-        onOpenSettings={onOpenSettings}
-        onOpenDevelopersMistakes={onOpenDevelopersMistakes}
-        onOpenCommonMistakes={onOpenCommonMistakes}
+        onOpenHistory={guardedNavigate(onOpenHistory)}
+        onOpenIpaList={guardedNavigate(onOpenIpaList)}
+        onOpenSettings={guardedNavigate(onOpenSettings)}
+        onOpenDevelopersMistakes={guardedNavigate(onOpenDevelopersMistakes)}
+        onOpenCommonMistakes={guardedNavigate(onOpenCommonMistakes)}
       />
       <Typography.Title level={4}>
         {t("screens.wordInput.title")}
