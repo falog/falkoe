@@ -70,17 +70,30 @@ fn is_slash_only(text: &str) -> bool {
 }
 
 fn is_whisper_encoder_failure_minus6(msg: &str) -> bool {
-    // whisper.cpp error often surfaces as: "Error code: -6"
-    msg.contains("Error code: -6") || msg.contains("code: -6")
+    msg.contains("Error code: -6") || msg.contains("code: -6") || msg.contains("code -6")
+}
+
+fn is_whisper_error_minus9(msg: &str) -> bool {
+    msg.contains("Error code: -9") || msg.contains("code: -9") || msg.contains("code -9")
 }
 
 fn format_cutter_whisper_error(msg: String) -> String {
-    if is_whisper_encoder_failure_minus6(&msg) {
+    if is_whisper_encoder_failure_minus6(&msg) || is_whisper_error_minus9(&msg) {
         return format!(
-            "{msg}\n\nヒント: このエラー(-6)はスレッド数が多い環境で起きることがあります。`FALKOE_WHISPER_THREADS=2` などで改善する場合があります。"
+            "{msg}\n\nヒント: このエラー(-6/-9)は環境によって発生することがあります。`FALKOE_WHISPER_THREADS=2` に下げる、またはGPUバックエンドが原因の場合は `FALKOE_WHISPER_USE_GPU=0` でCPUに切り替えると改善する場合があります。"
         );
     }
     msg
+}
+
+fn env_bool(key: &str) -> Option<bool> {
+    let value = std::env::var(key).ok()?;
+    let value = value.trim().to_ascii_lowercase();
+    match value.as_str() {
+        "1" | "true" | "yes" | "on" => Some(true),
+        "0" | "false" | "no" | "off" => Some(false),
+        _ => None,
+    }
 }
 
 fn strip_trailing_quotes_and_brackets(mut s: &str) -> &str {
@@ -439,57 +452,88 @@ pub async fn cutter_suggest_segments(
             thread_attempts.push(1);
         }
 
+        let force_use_gpu = env_bool("FALKOE_WHISPER_USE_GPU");
+        let backend_attempts: Vec<bool> = match force_use_gpu {
+            Some(false) => vec![false],
+            Some(true) => vec![true],
+            None => vec![true, false],
+        };
+
         let mut last_err: Option<anyhow::Error> = None;
 
-        for (idx, n_threads) in thread_attempts.iter().copied().enumerate() {
-            if idx > 0 {
-                crate::logging::log_line(
-                    &app_for_cb,
-                    format!("[cutter] retry transcribe due to -6 with n_threads={n_threads}"),
-                );
+        for use_gpu in backend_attempts {
+            if !use_gpu {
+                crate::logging::log_line(&app_for_cb, "[cutter] trying CPU backend (use_gpu=0)");
             }
 
-            let mut last_progress: i32 = -1;
-            let res = transcribe_with_callbacks(
-                &wav_str,
-                &model_path,
-                whisper_lang.as_deref(),
-                n_threads,
-                {
-                    let app_for_cb = app_for_cb.clone();
-                    let cutter_id_for_cb = cutter_id_for_cb.clone();
-                    move |p| {
-                        if p == last_progress {
-                            return;
-                        }
-                        last_progress = p;
-                        let _ = app_for_cb.emit(
-                            "cutter-detect-progress",
-                            CutterDetectProgressPayload {
-                                cutter_id: cutter_id_for_cb.clone(),
-                                progress: p,
-                            },
-                        );
-                    }
-                },
-                {
-                    let abort_for_cb = abort_for_cb.clone();
-                    move || abort_for_cb.load(Ordering::Relaxed)
-                },
-            );
-
-            match res {
-                Ok(t) => return Ok(t),
-                Err(e) => {
-                    let msg = e.to_string();
+            for (idx, n_threads) in thread_attempts.iter().copied().enumerate() {
+                if idx > 0 {
                     crate::logging::log_line(
                         &app_for_cb,
-                        format!("[cutter] transcribe failed n_threads={n_threads}: {msg}"),
+                        format!("[cutter] retry transcribe with n_threads={n_threads} use_gpu={}", if use_gpu { 1 } else { 0 }),
                     );
-                    let should_retry = is_whisper_encoder_failure_minus6(&msg) && n_threads > 1;
-                    last_err = Some(e);
-                    if !should_retry {
-                        break;
+                }
+
+                let mut last_progress: i32 = -1;
+                let res = transcribe_with_callbacks(
+                    &wav_str,
+                    &model_path,
+                    whisper_lang.as_deref(),
+                    n_threads,
+                    use_gpu,
+                    {
+                        let app_for_cb = app_for_cb.clone();
+                        let cutter_id_for_cb = cutter_id_for_cb.clone();
+                        move |p| {
+                            if p == last_progress {
+                                return;
+                            }
+                            last_progress = p;
+                            let _ = app_for_cb.emit(
+                                "cutter-detect-progress",
+                                CutterDetectProgressPayload {
+                                    cutter_id: cutter_id_for_cb.clone(),
+                                    progress: p,
+                                },
+                            );
+                        }
+                    },
+                    {
+                        let abort_for_cb = abort_for_cb.clone();
+                        move || abort_for_cb.load(Ordering::Relaxed)
+                    },
+                );
+
+                match res {
+                    Ok(t) => return Ok(t),
+                    Err(e) => {
+                        let msg = e.to_string();
+                        crate::logging::log_line(
+                            &app_for_cb,
+                            format!(
+                                "[cutter] transcribe failed n_threads={n_threads} use_gpu={}: {msg}",
+                                if use_gpu { 1 } else { 0 }
+                            ),
+                        );
+                        let should_retry_threads =
+                            (is_whisper_encoder_failure_minus6(&msg) || is_whisper_error_minus9(&msg))
+                                && n_threads > 1;
+
+                        // If GPU backend fails with these codes, also try CPU backend.
+                        let should_try_cpu = use_gpu
+                            && (is_whisper_encoder_failure_minus6(&msg) || is_whisper_error_minus9(&msg));
+
+                        last_err = Some(e);
+
+                        if should_retry_threads {
+                            continue;
+                        }
+
+                        if should_try_cpu {
+                            break;
+                        }
+
+                        return Err(last_err.unwrap());
                     }
                 }
             }
@@ -564,57 +608,86 @@ pub async fn cutter_suggest_segments_raw(
             thread_attempts.push(1);
         }
 
+        let force_use_gpu = env_bool("FALKOE_WHISPER_USE_GPU");
+        let backend_attempts: Vec<bool> = match force_use_gpu {
+            Some(false) => vec![false],
+            Some(true) => vec![true],
+            None => vec![true, false],
+        };
+
         let mut last_err: Option<anyhow::Error> = None;
 
-        for (idx, n_threads) in thread_attempts.iter().copied().enumerate() {
-            if idx > 0 {
-                crate::logging::log_line(
-                    &app_for_cb,
-                    format!("[cutter] retry transcribe due to -6 with n_threads={n_threads}"),
-                );
+        for use_gpu in backend_attempts {
+            if !use_gpu {
+                crate::logging::log_line(&app_for_cb, "[cutter] trying CPU backend (use_gpu=0)");
             }
 
-            let mut last_progress: i32 = -1;
-            let res = transcribe_with_callbacks(
-                &wav_str,
-                &model_path,
-                whisper_lang.as_deref(),
-                n_threads,
-                {
-                    let app_for_cb = app_for_cb.clone();
-                    let cutter_id_for_cb = cutter_id_for_cb.clone();
-                    move |p| {
-                        if p == last_progress {
-                            return;
-                        }
-                        last_progress = p;
-                        let _ = app_for_cb.emit(
-                            "cutter-detect-progress",
-                            CutterDetectProgressPayload {
-                                cutter_id: cutter_id_for_cb.clone(),
-                                progress: p,
-                            },
-                        );
-                    }
-                },
-                {
-                    let abort_for_cb = abort_for_cb.clone();
-                    move || abort_for_cb.load(Ordering::Relaxed)
-                },
-            );
-
-            match res {
-                Ok(t) => return Ok(t),
-                Err(e) => {
-                    let msg = e.to_string();
+            for (idx, n_threads) in thread_attempts.iter().copied().enumerate() {
+                if idx > 0 {
                     crate::logging::log_line(
                         &app_for_cb,
-                        format!("[cutter] transcribe failed n_threads={n_threads}: {msg}"),
+                        format!("[cutter] retry transcribe with n_threads={n_threads} use_gpu={}", if use_gpu { 1 } else { 0 }),
                     );
-                    let should_retry = is_whisper_encoder_failure_minus6(&msg) && n_threads > 1;
-                    last_err = Some(e);
-                    if !should_retry {
-                        break;
+                }
+
+                let mut last_progress: i32 = -1;
+                let res = transcribe_with_callbacks(
+                    &wav_str,
+                    &model_path,
+                    whisper_lang.as_deref(),
+                    n_threads,
+                    use_gpu,
+                    {
+                        let app_for_cb = app_for_cb.clone();
+                        let cutter_id_for_cb = cutter_id_for_cb.clone();
+                        move |p| {
+                            if p == last_progress {
+                                return;
+                            }
+                            last_progress = p;
+                            let _ = app_for_cb.emit(
+                                "cutter-detect-progress",
+                                CutterDetectProgressPayload {
+                                    cutter_id: cutter_id_for_cb.clone(),
+                                    progress: p,
+                                },
+                            );
+                        }
+                    },
+                    {
+                        let abort_for_cb = abort_for_cb.clone();
+                        move || abort_for_cb.load(Ordering::Relaxed)
+                    },
+                );
+
+                match res {
+                    Ok(t) => return Ok(t),
+                    Err(e) => {
+                        let msg = e.to_string();
+                        crate::logging::log_line(
+                            &app_for_cb,
+                            format!(
+                                "[cutter] transcribe failed n_threads={n_threads} use_gpu={}: {msg}",
+                                if use_gpu { 1 } else { 0 }
+                            ),
+                        );
+                        let should_retry_threads =
+                            (is_whisper_encoder_failure_minus6(&msg) || is_whisper_error_minus9(&msg))
+                                && n_threads > 1;
+                        let should_try_cpu = use_gpu
+                            && (is_whisper_encoder_failure_minus6(&msg) || is_whisper_error_minus9(&msg));
+
+                        last_err = Some(e);
+
+                        if should_retry_threads {
+                            continue;
+                        }
+
+                        if should_try_cpu {
+                            break;
+                        }
+
+                        return Err(last_err.unwrap());
                     }
                 }
             }

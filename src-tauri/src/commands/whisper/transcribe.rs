@@ -39,6 +39,25 @@ fn env_usize(key: &str) -> Option<usize> {
     value.trim().parse::<usize>().ok()
 }
 
+fn default_use_gpu() -> bool {
+    // whisper-rs sets this based on whether it was compiled with a GPU backend.
+    WhisperContextParameters::default().use_gpu
+}
+
+fn env_use_gpu() -> Option<bool> {
+    env_bool("FALKOE_WHISPER_USE_GPU")
+}
+
+fn whisper_use_gpu() -> bool {
+    env_use_gpu().unwrap_or_else(default_use_gpu)
+}
+
+fn whisper_gpu_device() -> i32 {
+    env_usize("FALKOE_WHISPER_GPU_DEVICE")
+        .unwrap_or(0)
+        .clamp(0, i32::MAX as usize) as i32
+}
+
 pub(crate) fn whisper_n_threads() -> i32 {
     // override example: FALKOE_WHISPER_THREADS=8
     if let Some(n) = env_usize("FALKOE_WHISPER_THREADS") {
@@ -121,6 +140,55 @@ fn ctx_cache_key(model_path: &Path, dtw_preset: Option<DtwModelPreset>) -> Strin
         Some(preset) => format!("{}|dtw=preset:{preset:?}", p),
         None => format!("{}|dtw=off", p),
     }
+}
+
+fn ctx_cache_key_with_backend(
+    model_path: &Path,
+    dtw_preset: Option<DtwModelPreset>,
+    use_gpu: bool,
+    gpu_device: i32,
+) -> String {
+    format!(
+        "{}|gpu={}|gpu_device={}",
+        ctx_cache_key(model_path, dtw_preset),
+        if use_gpu { 1 } else { 0 },
+        gpu_device
+    )
+}
+
+fn build_ctx_params(
+    model_path: &Path,
+    whisper_lang: Option<&str>,
+    use_gpu: bool,
+) -> (WhisperContextParameters<'static>, Option<DtwModelPreset>) {
+    let mut ctx_params = WhisperContextParameters::default();
+    ctx_params.use_gpu = use_gpu;
+    if use_gpu {
+        ctx_params.gpu_device = whisper_gpu_device();
+    }
+
+    let mut dtw_preset: Option<DtwModelPreset> = None;
+    if should_enable_dtw(whisper_lang) {
+        if let Some(preset) = dtw_preset_for_model_path(model_path) {
+            dtw_preset = Some(preset.clone());
+            ctx_params.dtw_parameters.mode = DtwMode::ModelPreset {
+                model_preset: preset,
+            };
+        } else {
+            eprintln!(
+                "DTW enabled (ja), but model filename is unknown; DTW disabled to avoid init failure: {:?}",
+                model_path
+            );
+        }
+    }
+
+    (ctx_params, dtw_preset)
+}
+
+fn is_whisper_error_code(msg: &str, code: i32) -> bool {
+    msg.contains(&format!("Error code: {code}"))
+        || msg.contains(&format!("code: {code}"))
+        || msg.contains(&format!("code {code}"))
 }
 
 fn whisper_sampling_strategy() -> SamplingStrategy {
@@ -265,165 +333,168 @@ fn transcribe_streaming(app: &AppHandle, wav_path: &str) -> Result<Vec<Segment>>
 pub fn transcribe(wav_path: &str, model_path: &Path, whisper_lang: Option<&str>) -> Result<Transcript> {
     let audio = load_wav_as_f32(wav_path)?;
 
-    let mut ctx_params = WhisperContextParameters::default();
-    let mut dtw_preset: Option<DtwModelPreset> = None;
-    if should_enable_dtw(whisper_lang) {
-        if let Some(preset) = dtw_preset_for_model_path(model_path) {
-            dtw_preset = Some(preset.clone());
-            ctx_params.dtw_parameters.mode = DtwMode::ModelPreset {
-                model_preset: preset,
-            };
-        } else {
-            eprintln!(
-                "DTW enabled (ja), but model filename is unknown; DTW disabled to avoid init failure: {:?}",
-                model_path
-            );
-        }
-    }
+    fn run_once(
+        audio: &[f32],
+        model_path: &Path,
+        whisper_lang: Option<&str>,
+        use_gpu: bool,
+    ) -> Result<Transcript> {
+        let (ctx_params, dtw_preset) = build_ctx_params(model_path, whisper_lang, use_gpu);
 
-    // Loading the Whisper model can be very expensive; cache the context for the
-    // currently selected model to speed up repeated transcriptions.
-    let key = ctx_cache_key(model_path, dtw_preset);
-    let ctx_mutex = MAIN_CTX.get_or_init(|| Mutex::new(None));
-    let mut cached = ctx_mutex.lock().unwrap();
-    let needs_reload = cached.as_ref().map(|c| c.key != key).unwrap_or(true);
-    if needs_reload {
-        let ctx = WhisperContext::new_with_params(model_path.to_str().unwrap(), ctx_params)?;
-        *cached = Some(CachedWhisperContext { key, ctx });
-    }
-
-    // Keep the lock guard alive while the state exists.
-    let ctx_ref = &cached.as_ref().unwrap().ctx;
-    let mut state = ctx_ref.create_state()?;
-
-    let mut params = FullParams::new(whisper_sampling_strategy());
-    params.set_n_threads(whisper_n_threads());
-
-    params.set_language(whisper_lang);
-    params.set_translate(false);
-    params.set_temperature(0.0);
-
-    // Token-level timestamps.
-    params.set_token_timestamps(true);
-    // Prefer word-ish splitting only for whitespace-separated languages.
-    params.set_split_on_word(should_split_on_word(whisper_lang));
-
-    state.full(params, &audio)?;
-
-    let mut segments: Vec<Segment> = Vec::new();
-    let mut tokens: Vec<TokenTimestamp> = Vec::new();
-    let mut token_bytes: Vec<(f32, f32, Vec<u8>)> = Vec::new();
-    // When DTW is enabled, token_data().t_dtw provides a more stable end timestamp.
-    // Use it to keep token/word overlays aligned (not just for Japanese).
-    let mut prev_end_for_dtw: Option<f32> = None;
-
-    for s in state.as_iter() {
-        let text = strip_whisper_special_tokens(&s.to_string()).trim().to_string();
-
-        if text.is_empty()
-            || text == "[BLANK_AUDIO]"
-            || (text.starts_with('(') && text.ends_with(')'))
-            || (text.starts_with('[') && text.ends_with(']'))
-        {
-            continue;
+        // Loading the Whisper model can be very expensive; cache the context for the
+        // currently selected model+backend to speed up repeated transcriptions.
+        let key = ctx_cache_key_with_backend(
+            model_path,
+            dtw_preset,
+            ctx_params.use_gpu,
+            ctx_params.gpu_device,
+        );
+        let ctx_mutex = MAIN_CTX.get_or_init(|| Mutex::new(None));
+        let mut cached = ctx_mutex.lock().unwrap();
+        let needs_reload = cached.as_ref().map(|c| c.key != key).unwrap_or(true);
+        if needs_reload {
+            let ctx = WhisperContext::new_with_params(model_path.to_str().unwrap(), ctx_params)?;
+            *cached = Some(CachedWhisperContext { key, ctx });
         }
 
-        segments.push(Segment {
-            start: s.start_timestamp() as f32 / 100.0,
-            end: s.end_timestamp() as f32 / 100.0,
-            text,
-        });
+        // Keep the lock guard alive while the state exists.
+        let ctx_ref = &cached.as_ref().unwrap().ctx;
+        let mut state = ctx_ref.create_state()?;
 
-        let token_count = s.n_tokens();
-        for token_idx in 0..token_count {
-            let Some(tok) = s.get_token(token_idx) else {
-                continue;
-            };
+        let mut params = FullParams::new(whisper_sampling_strategy());
+        params.set_n_threads(whisper_n_threads());
 
-            // Use raw bytes because Whisper may split tokens away from UTF-8 boundaries (common in JA).
-            let bytes = match tok.to_bytes() {
-                Ok(b) => b,
-                Err(_) => continue,
-            };
-            let token_text = std::str::from_utf8(bytes)
-                .map(|s| s.to_string())
-                .unwrap_or_else(|_| String::from_utf8_lossy(bytes).into_owned());
+        params.set_language(whisper_lang);
+        params.set_translate(false);
+        params.set_temperature(0.0);
 
-            // Skip whisper timestamp pseudo tokens if they show up.
-            if token_text.starts_with("<|") && token_text.ends_with("|>") {
+        // Token-level timestamps.
+        params.set_token_timestamps(true);
+        // Prefer word-ish splitting only for whitespace-separated languages.
+        params.set_split_on_word(should_split_on_word(whisper_lang));
+
+        state.full(params, audio)?;
+
+        let mut segments: Vec<Segment> = Vec::new();
+        let mut tokens: Vec<TokenTimestamp> = Vec::new();
+        let mut token_bytes: Vec<(f32, f32, Vec<u8>)> = Vec::new();
+        let mut prev_end_for_dtw: Option<f32> = None;
+
+        for s in state.as_iter() {
+            let text = strip_whisper_special_tokens(&s.to_string()).trim().to_string();
+
+            if text.is_empty()
+                || text == "[BLANK_AUDIO]"
+                || (text.starts_with('(') && text.ends_with(')'))
+                || (text.starts_with('[') && text.ends_with(']'))
+            {
                 continue;
             }
 
-            if is_nonling_text(&token_text) {
-                continue;
-            }
-
-            if token_text.trim().is_empty() {
-                continue;
-            }
-
-            let td = tok.token_data();
-            let raw_start = td.t0 as f32 / 100.0;
-            let raw_end = if td.t1 > td.t0 {
-                td.t1 as f32 / 100.0
-            } else {
-                raw_start
-            };
-            let raw_dur = (raw_end - raw_start).max(0.0);
-
-            let dtw = if td.t_dtw > 0 {
-                Some(td.t_dtw as f32 / 100.0)
-            } else {
-                None
-            };
-
-            let (start, end) = if let Some(dtw_end) = dtw {
-                // DTW provides a more reliable end timestamp; back-compute a plausible start.
-                // Also enforce monotonicity to avoid overlaps when tokens jitter.
-                let capped_dur = raw_dur.clamp(0.04, 0.30);
-                let start = match prev_end_for_dtw {
-                    Some(prev) if prev <= dtw_end => prev,
-                    _ => (dtw_end - capped_dur.max(0.25)).max(0.0),
-                };
-                let end = dtw_end.max(start);
-                prev_end_for_dtw = Some(end);
-                (start, end)
-            } else {
-                (raw_start, raw_end)
-            };
-
-            let (start, end) = if end <= start {
-                (start, start + 0.04)
-            } else {
-                (start, end)
-            };
-
-            if dtw.is_some() {
-                prev_end_for_dtw = Some(end);
-            }
-
-            tokens.push(TokenTimestamp {
-                start,
-                end,
-                text: token_text,
-                dtw,
+            segments.push(Segment {
+                start: s.start_timestamp() as f32 / 100.0,
+                end: s.end_timestamp() as f32 / 100.0,
+                text,
             });
 
-            token_bytes.push((start, end, bytes.to_vec()));
+            let token_count = s.n_tokens();
+            for token_idx in 0..token_count {
+                let Some(tok) = s.get_token(token_idx) else {
+                    continue;
+                };
+
+                let bytes = match tok.to_bytes() {
+                    Ok(b) => b,
+                    Err(_) => continue,
+                };
+                let token_text = std::str::from_utf8(bytes)
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|_| String::from_utf8_lossy(bytes).into_owned());
+
+                if token_text.starts_with("<|") && token_text.ends_with("|>") {
+                    continue;
+                }
+                if is_nonling_text(&token_text) {
+                    continue;
+                }
+                if token_text.trim().is_empty() {
+                    continue;
+                }
+
+                let td = tok.token_data();
+                let raw_start = td.t0 as f32 / 100.0;
+                let raw_end = if td.t1 > td.t0 {
+                    td.t1 as f32 / 100.0
+                } else {
+                    raw_start
+                };
+                let raw_dur = (raw_end - raw_start).max(0.0);
+
+                let dtw = if td.t_dtw > 0 {
+                    Some(td.t_dtw as f32 / 100.0)
+                } else {
+                    None
+                };
+
+                let (start, end) = if let Some(dtw_end) = dtw {
+                    let capped_dur = raw_dur.clamp(0.04, 0.30);
+                    let start = match prev_end_for_dtw {
+                        Some(prev) if prev <= dtw_end => prev,
+                        _ => (dtw_end - capped_dur.max(0.25)).max(0.0),
+                    };
+                    let end = dtw_end.max(start);
+                    prev_end_for_dtw = Some(end);
+                    (start, end)
+                } else {
+                    (raw_start, raw_end)
+                };
+
+                let (start, end) = if end <= start {
+                    (start, start + 0.04)
+                } else {
+                    (start, end)
+                };
+
+                if dtw.is_some() {
+                    prev_end_for_dtw = Some(end);
+                }
+
+                tokens.push(TokenTimestamp {
+                    start,
+                    end,
+                    text: token_text,
+                    dtw,
+                });
+
+                token_bytes.push((start, end, bytes.to_vec()));
+            }
         }
+
+        let words: Vec<WordTimestamp> = if matches!(whisper_lang, Some("ja")) {
+            build_words_from_token_bytes(&token_bytes)
+        } else {
+            build_words_from_tokens(&tokens)
+        };
+
+        Ok(Transcript {
+            segments,
+            tokens: Some(tokens),
+            words: Some(words),
+        })
     }
 
-    let words: Vec<WordTimestamp> = if matches!(whisper_lang, Some("ja")) {
-        build_words_from_token_bytes(&token_bytes)
-    } else {
-        build_words_from_tokens(&tokens)
-    };
-
-    Ok(Transcript {
-        segments,
-        tokens: Some(tokens),
-        words: Some(words),
-    })
+    let want_gpu = whisper_use_gpu();
+    match run_once(&audio, model_path, whisper_lang, want_gpu) {
+        Ok(t) => Ok(t),
+        Err(e) => {
+            let msg = e.to_string();
+            if want_gpu && default_use_gpu() && (is_whisper_error_code(&msg, -6) || is_whisper_error_code(&msg, -9)) {
+                // Some GPU backends can fail on certain drivers/inputs; retry on CPU.
+                return run_once(&audio, model_path, whisper_lang, false);
+            }
+            Err(e)
+        }
+    }
 }
 
 pub fn transcribe_with_callbacks<P, A>(
@@ -431,6 +502,7 @@ pub fn transcribe_with_callbacks<P, A>(
     model_path: &Path,
     whisper_lang: Option<&str>,
     n_threads: i32,
+    use_gpu: bool,
     progress_callback: P,
     abort_callback: A,
 ) -> Result<Transcript>
@@ -440,25 +512,16 @@ where
 {
     let audio = load_wav_as_f32(wav_path)?;
 
-    let mut ctx_params = WhisperContextParameters::default();
-    let mut dtw_preset: Option<DtwModelPreset> = None;
-    if should_enable_dtw(whisper_lang) {
-        if let Some(preset) = dtw_preset_for_model_path(model_path) {
-            dtw_preset = Some(preset.clone());
-            ctx_params.dtw_parameters.mode = DtwMode::ModelPreset {
-                model_preset: preset,
-            };
-        } else {
-            eprintln!(
-                "DTW enabled (ja), but model filename is unknown; DTW disabled to avoid init failure: {:?}",
-                model_path
-            );
-        }
-    }
+    let (ctx_params, dtw_preset) = build_ctx_params(model_path, whisper_lang, use_gpu);
 
     // Loading the Whisper model can be very expensive; cache the context for the
     // currently selected model to speed up repeated transcriptions.
-    let key = ctx_cache_key(model_path, dtw_preset);
+    let key = ctx_cache_key_with_backend(
+        model_path,
+        dtw_preset,
+        ctx_params.use_gpu,
+        ctx_params.gpu_device,
+    );
     let ctx_mutex = MAIN_CTX.get_or_init(|| Mutex::new(None));
     let mut cached = ctx_mutex.lock().unwrap();
     let needs_reload = cached.as_ref().map(|c| c.key != key).unwrap_or(true);
