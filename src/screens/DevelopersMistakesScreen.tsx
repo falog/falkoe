@@ -21,6 +21,7 @@ type Props = {
   onBack: () => void;
   onOpenHistory: () => void;
   onOpenIpaList: () => void;
+  onOpenAudioCutter: () => void;
   onOpenCommonMistakes: () => void;
   onOpenSettings: () => void;
   initialFocus?: "j" | "r" | "oo";
@@ -30,6 +31,7 @@ export default function DevelopersMistakesScreen({
   onBack,
   onOpenHistory,
   onOpenIpaList,
+  onOpenAudioCutter,
   onOpenCommonMistakes,
   onOpenSettings,
   initialFocus,
@@ -61,9 +63,9 @@ export default function DevelopersMistakesScreen({
         pageMistakes
           .filter((m) => simpleKeys.has(m.key))
           .flatMap((m) =>
-            m.buttons.filter((b) => b.kind === "explain").map((b) => b.tok)
-          )
-      )
+            m.buttons.filter((b) => b.kind === "explain").map((b) => b.tok),
+          ),
+      ),
     );
 
     (async () => {
@@ -75,7 +77,7 @@ export default function DevelopersMistakesScreen({
         if (key in updates) continue;
 
         const candidates = sampleResourceCandidates(speaker, tok).map((p) =>
-          p.replace(/\.wav$/i, "_explain.wav")
+          p.replace(/\.wav$/i, "_explain.wav"),
         );
 
         let ok = false;
@@ -182,7 +184,7 @@ export default function DevelopersMistakesScreen({
         }
         if (
           /not found|no such file|failed to (resolve|load)|os error\s*2/i.test(
-            msg
+            msg,
           )
         ) {
           // try next candidate
@@ -196,15 +198,15 @@ export default function DevelopersMistakesScreen({
 
     message.info(
       `${t("screens.developersMistakes.noAudioWithCandidates")}${tok} (${candidates.join(
-        " / "
-      )})`
+        " / ",
+      )})`,
     );
     void lastErr;
   }
 
   async function playSampleExplain(speaker: SampleSpeaker, tok: string) {
     const candidates = sampleResourceCandidates(speaker, tok).map((p) =>
-      p.replace(/\.wav$/i, "_explain.wav")
+      p.replace(/\.wav$/i, "_explain.wav"),
     );
     let lastErr: unknown = null;
 
@@ -221,7 +223,7 @@ export default function DevelopersMistakesScreen({
         }
         if (
           /not found|no such file|failed to (resolve|load)|os error\s*2/i.test(
-            msg
+            msg,
           )
         ) {
           // try next candidate
@@ -229,7 +231,7 @@ export default function DevelopersMistakesScreen({
         }
         //message.error(`再生に失敗: ${tok} (${msg})`);
         message.info(
-          `${t("screens.developersMistakes.noAudioForToken")}${tok}`
+          `${t("screens.developersMistakes.noAudioForToken")}${tok}`,
         );
         return;
       }
@@ -256,6 +258,7 @@ export default function DevelopersMistakesScreen({
           onBack={onBack}
           onOpenHistory={onOpenHistory}
           onOpenIpaList={onOpenIpaList}
+          onOpenAudioCutter={onOpenAudioCutter}
           onOpenSettings={onOpenSettings}
           onOpenDevelopersMistakes={() => {
             // already here
@@ -387,12 +390,12 @@ export default function DevelopersMistakesScreen({
                         const audioTokSet = new Set(
                           item.buttons
                             .filter((b) => b.kind === "audio")
-                            .map((b) => b.tok)
+                            .map((b) => b.tok),
                         );
                         const explainTokSet = new Set(
                           item.buttons
                             .filter((b) => b.kind === "explain")
-                            .map((b) => b.tok)
+                            .map((b) => b.tok),
                         );
 
                         const tokenOrderByKey: Record<string, string[]> = {
@@ -421,7 +424,7 @@ export default function DevelopersMistakesScreen({
                                 >
                                   {tok}{" "}
                                   {t(
-                                    "screens.developersMistakes.buttons.pronounceWithTok"
+                                    "screens.developersMistakes.buttons.pronounceWithTok",
                                   )}
                                 </Button>,
                                 explainTokSet.has(tok) &&
@@ -436,7 +439,7 @@ export default function DevelopersMistakesScreen({
                                   >
                                     {tok}{" "}
                                     {t(
-                                      "screens.developersMistakes.buttons.explainWithTok"
+                                      "screens.developersMistakes.buttons.explainWithTok",
                                     )}
                                   </Button>
                                 ) : null,
@@ -449,7 +452,7 @@ export default function DevelopersMistakesScreen({
                                 >
                                   {tok}{" "}
                                   {t(
-                                    "screens.developersMistakes.buttons.native"
+                                    "screens.developersMistakes.buttons.native",
                                   )}
                                 </Button>,
                               ].filter(Boolean);
@@ -459,7 +462,7 @@ export default function DevelopersMistakesScreen({
                                   <div
                                     key={`${item.key}-${tok}-break`}
                                     style={{ flexBasis: "100%", height: 0 }}
-                                  />
+                                  />,
                                 );
                               }
 
@@ -479,8 +482,8 @@ export default function DevelopersMistakesScreen({
                             item.buttons
                               .filter((b) => b.kind === "audio")
                               .map((b) => b.tok)
-                              .filter((tok) => !abcExcluded.has(tok))
-                          )
+                              .filter((tok) => !abcExcluded.has(tok)),
+                          ),
                         );
 
                         if (abcToks.length === 0) return null;
@@ -501,7 +504,7 @@ export default function DevelopersMistakesScreen({
                                     }
                                   >
                                     {t(
-                                      "screens.developersMistakes.buttons.failed"
+                                      "screens.developersMistakes.buttons.failed",
                                     )}
                                   </Button>
                                   <Button
@@ -511,7 +514,7 @@ export default function DevelopersMistakesScreen({
                                     }
                                   >
                                     {t(
-                                      "screens.developersMistakes.buttons.native"
+                                      "screens.developersMistakes.buttons.native",
                                     )}
                                   </Button>
                                 </Space>

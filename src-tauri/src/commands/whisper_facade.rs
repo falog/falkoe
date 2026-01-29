@@ -26,6 +26,9 @@ pub use audio::load_wav_as_f32;
 pub use manifest::SentenceAttribution;
 pub use manifest::SentenceManifest;
 pub use transcribe_impl::{transcribe, transcribe_preview};
+pub(crate) use transcribe_impl::transcribe_with_callbacks;
+pub(crate) use ffmpeg::{ffmpeg_convert_to_wav, ffmpeg_trim_with_padding_wav};
+pub(crate) use lang::whisper_language;
 pub use types::{
     FinalResult, PartialSegment, PreviewResult, Segment, TokenTimestamp, Transcript, WordTimestamp,
 };

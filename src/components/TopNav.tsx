@@ -5,6 +5,7 @@ export type TopNavCurrent =
   | "word"
   | "record"
   | "history"
+  | "cutter"
   | "ipa"
   | "mistakes"
   | "common"
@@ -14,6 +15,7 @@ type Props = {
   current: TopNavCurrent;
   onBack?: () => void;
   onOpenHistory?: () => void;
+  onOpenAudioCutter?: () => void;
   onOpenIpaList: () => void;
   onOpenSettings: () => void;
   onOpenDevelopersMistakes: () => void;
@@ -24,6 +26,7 @@ export default function TopNav({
   current,
   onBack,
   onOpenHistory,
+  onOpenAudioCutter,
   onOpenIpaList,
   onOpenSettings,
   onOpenDevelopersMistakes,
@@ -38,6 +41,12 @@ export default function TopNav({
       {onOpenHistory && (
         <Button disabled={current === "history"} onClick={onOpenHistory}>
           {t("nav.history")}
+        </Button>
+      )}
+
+      {onOpenAudioCutter && (
+        <Button disabled={current === "cutter"} onClick={onOpenAudioCutter}>
+          {t("nav.audioCutter")}
         </Button>
       )}
 

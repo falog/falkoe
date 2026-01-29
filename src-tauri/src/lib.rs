@@ -3,6 +3,10 @@ use crate::commands::linking::render_linking;
 use crate::commands::recordings::{
     get_uploaded_audio_info, list_recordings, move_recorded_audio, save_uploaded_audio,
 };
+use crate::commands::cutter::{
+    cutter_cancel_detect, cutter_export_segments, cutter_preview_segment, cutter_suggest_segments,
+    cutter_suggest_segments_raw, save_cutter_audio,
+};
 use crate::commands::sentences::{
     find_audio_by_sentence,
     list_sentence_history,
@@ -68,6 +72,12 @@ pub fn run() {
             run_whisper,
             run_whisper_model,
             run_whisper_uploaded,
+            save_cutter_audio,
+            cutter_suggest_segments,
+            cutter_suggest_segments_raw,
+            cutter_cancel_detect,
+            cutter_preview_segment,
+            cutter_export_segments,
             crate::commands::pitch::analyze_pitch,
             crate::commands::video::export_practice_video,
             list_recordings,

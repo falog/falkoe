@@ -22,6 +22,7 @@
   "nav": {
     "back": "← Back",
     "history": "History",
+    "audioCutter": "Audio cutter",
     "ipaList": "IPA list",
     "developersMistakes": "Developer’s mistakes",
     "commonMistakes": "Common mistakes",
@@ -79,6 +80,76 @@
     }
   },
   "screens": {
+    "audioCutter": {
+      "title": "Audio cutter",
+      "description": "Split long audio into clips using Whisper timestamps. Adds margins and short silence padding.",
+      "lang": "Language",
+      "saving": "Saving…",
+      "savedPath": "Saved",
+      "found": "Found: {{count}}",
+      "detectModal": {
+        "title": "Detecting segments (Whisper)",
+        "body": "This can take a while. Please keep this window open.",
+        "note": "The first run may take longer due to model loading.",
+        "cancel": "Cancel"
+      },
+      "fullText": {
+        "label": "Full text (one line = one clip)",
+        "placeholder": "After detection, the transcript will appear here.",
+        "apply": "Apply text → update cuts",
+        "reset": "Reset from current segments",
+        "applyHelp": "Adjust the current segments to match this text (1 line = 1 clip). If there are fewer lines than segments, adjacent segments are merged from the start.",
+        "resetHelp": "Rebuilds this full-text box from the current segments' text. Timing is unchanged; this only resets the text area.",
+        "hint": "Tip: delete a line break to merge clips"
+      },
+      "options": {
+        "rawSegments": "Re-analyze (no merging)",
+        "rawSegmentsHelp": "Uses Whisper's raw timestamp segments without the post-merge heuristics. Useful when merging makes clips too large, or when you want to split/adjust times manually."
+      },
+      "manualSplit": {
+        "label": "Split",
+        "at": "at (s)",
+        "split": "Split",
+        "atHelp": "Choose a time within the selected segment's start–end range. You can't split outside the range.",
+        "hint": "Splits the selected segment at the given time"
+      },
+      "manualTime": {
+        "start": "Start",
+        "end": "End"
+      },
+      "hint": "Select an audio file to start.",
+      "marginBefore": "Margin before (s)",
+      "marginBeforeHelp": "Moves the cut start earlier to reduce truncated onsets (includes real audio before the segment).",
+      "marginAfter": "Margin after (s)",
+      "marginAfterHelp": "Moves the cut end later to reduce truncated endings.",
+      "silence": "Silence before clip (s)",
+      "silenceHelp": "Adds silence at the beginning of the exported clip (does not extend the source range). Useful to avoid clipped consonants at playback start.",
+      "buttons": {
+        "detect": "Detect segments (Whisper)",
+        "preview": "Preview",
+        "export": "Export selected",
+        "selectAll": "Select all",
+        "selectNone": "Select none"
+      },
+      "messages": {
+        "saved": "Saved audio",
+        "saveFailed": "Failed to save: ",
+        "detected": "Segments detected",
+        "detectFailed": "Failed to detect segments: ",
+        "cancelRequested": "Cancel requested (aborting…)",
+        "cancelFailed": "Failed to cancel: ",
+        "cancelled": "Detection cancelled",
+        "textEmpty": "Text is empty",
+        "textTooManyLines": "Too many lines ({{lines}}) for segments ({{segs}}). You cannot split more than Whisper segments.",
+        "textApplied": "Applied text. Clips: {{count}}",
+        "splitOutOfRange": "Split time must be within the segment ({{start}}–{{end}})",
+        "splitOk": "Split applied",
+        "nothingSelected": "No segments selected",
+        "exported": "Exported {{count}} clips. First: {{head}}",
+        "exportFailed": "Export failed: ",
+        "previewFailed": "Preview failed: "
+      }
+    },
     "wordInput": {
       "title": "Example search",
       "useSpeech": "Select an audio file to fetch example sentences",
@@ -183,7 +254,14 @@
       "modelTranscript": {
         "label": "Model transcript:",
         "transcribing": "Transcribing…",
-        "notTranscribed": "Not transcribed yet"
+        "notTranscribed": "Not transcribed yet",
+        "edit": "Edit text",
+        "useTranscript": "Use transcript",
+        "save": "Save",
+        "cancel": "Cancel",
+        "saved": "Saved",
+        "emptyError": "Text is empty",
+        "saveFailed": "Failed to save: "
       },
       "pitch": {
         "extractor": "Pitch extractor:",

@@ -6,5 +6,6 @@ pub mod sentences;
 pub mod status;
 pub mod video;
 pub mod temp_recordings;
+pub mod cutter;
 #[path = "whisper_facade.rs"]
 pub mod whisper;

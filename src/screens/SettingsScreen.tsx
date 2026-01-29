@@ -33,6 +33,7 @@ type Props = {
   onBack: () => void;
   onOpenIpaList: () => void;
   onOpenHistory: () => void;
+  onOpenAudioCutter: () => void;
   onOpenDevelopersMistakes: () => void;
   onOpenCommonMistakes: () => void;
   onOpenSettings: () => void;
@@ -42,6 +43,7 @@ export default function SettingsScreen({
   onBack,
   onOpenIpaList,
   onOpenHistory,
+  onOpenAudioCutter,
   onOpenDevelopersMistakes,
   onOpenCommonMistakes,
   onOpenSettings,
@@ -136,7 +138,7 @@ export default function SettingsScreen({
         label: t("settings.model.variants.large-v3-turbo"),
       },
     ],
-    [t, i18n.language]
+    [t, i18n.language],
   );
 
   const uiLanguageOptions = useMemo(
@@ -144,7 +146,7 @@ export default function SettingsScreen({
       { value: "en" as const, label: t("app.language.english") },
       { value: "ja" as const, label: t("app.language.japanese") },
     ],
-    [t, i18n.language]
+    [t, i18n.language],
   );
 
   const changeUiLanguage = async (next: UiLanguage) => {
@@ -173,6 +175,7 @@ export default function SettingsScreen({
         current="settings"
         onBack={onBack}
         onOpenHistory={onOpenHistory}
+        onOpenAudioCutter={onOpenAudioCutter}
         onOpenIpaList={onOpenIpaList}
         onOpenDevelopersMistakes={onOpenDevelopersMistakes}
         onOpenCommonMistakes={onOpenCommonMistakes}

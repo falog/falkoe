@@ -17,30 +17,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { SpeechSource } from "../types/speech";
 import { sha256Bytes } from "../utils/hash";
 import TopNav from "../components/TopNav";
-
-const LANG_OPTIONS = [
-  { value: "eng", label: "English" },
-  { value: "jpn", label: "Japanese" },
-  { value: "spa", label: "Spanish" },
-  { value: "fra", label: "French" },
-  { value: "deu", label: "German" },
-  { value: "ita", label: "Italian" },
-  { value: "por", label: "Portuguese" },
-  { value: "rus", label: "Russian" },
-  { value: "kor", label: "Korean" },
-  { value: "cmn", label: "Chinese (Mandarin)" },
-  { value: "yue", label: "Chinese (Cantonese)" },
-  { value: "ara", label: "Arabic" },
-  { value: "hin", label: "Hindi" },
-  { value: "tur", label: "Turkish" },
-  { value: "vie", label: "Vietnamese" },
-  { value: "tha", label: "Thai" },
-  { value: "ind", label: "Indonesian" },
-  { value: "ukr", label: "Ukrainian" },
-  { value: "pol", label: "Polish" },
-  { value: "nld", label: "Dutch" },
-  { value: "swe", label: "Swedish" },
-];
+import { LANG_OPTIONS } from "../data/langOptions";
 
 const NONE_TRANSLATION = "none";
 
@@ -70,6 +47,7 @@ type WordInputScreenProps = {
   onUseSpeech: (source: SpeechSource) => void;
   onOpenHistory: () => void;
   onOpenIpaList: () => void;
+  onOpenAudioCutter: () => void;
   onOpenSettings: () => void;
   onOpenDevelopersMistakes: () => void;
   onOpenCommonMistakes: () => void;
@@ -274,6 +252,7 @@ const WordInputScreen = ({
   onUseSpeech,
   onOpenHistory,
   onOpenIpaList,
+  onOpenAudioCutter,
   onOpenSettings,
   onOpenDevelopersMistakes,
   onOpenCommonMistakes,
@@ -744,6 +723,7 @@ const WordInputScreen = ({
         current="word"
         onOpenHistory={guardedNavigate(onOpenHistory)}
         onOpenIpaList={guardedNavigate(onOpenIpaList)}
+        onOpenAudioCutter={guardedNavigate(onOpenAudioCutter)}
         onOpenSettings={guardedNavigate(onOpenSettings)}
         onOpenDevelopersMistakes={guardedNavigate(onOpenDevelopersMistakes)}
         onOpenCommonMistakes={guardedNavigate(onOpenCommonMistakes)}

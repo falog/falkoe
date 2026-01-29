@@ -96,7 +96,9 @@ export function RecorderHeader({
       <Button
         onClick={onRecognizeModel}
         loading={waitingModel || autoRecognizingUploaded}
-        disabled={modelRecognizeDisabled || autoRecognizingUploaded}
+        disabled={
+          modelRecognizeDisabled || autoRecognizingUploaded || waitingModel
+        }
       >
         {sourceKind === "uploaded"
           ? t("screens.recorder.header.recognizeUploaded")
