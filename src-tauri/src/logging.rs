@@ -182,11 +182,18 @@ fn select_log_file_path(app: &AppHandle) -> Option<std::path::PathBuf> {
     None
 }
 
-pub(crate) fn log_line(app: &AppHandle, line: impl AsRef<str>) {
-    let Some(path) = LOG_PATH
+pub(crate) fn log_path(app: &AppHandle) -> Option<std::path::PathBuf> {
+    LOG_PATH
         .get_or_init(|| select_log_file_path(app))
         .clone()
-    else {
+}
+
+pub(crate) fn log_path_string(app: &AppHandle) -> Option<String> {
+    log_path(app).map(|p| p.to_string_lossy().to_string())
+}
+
+pub(crate) fn log_line(app: &AppHandle, line: impl AsRef<str>) {
+    let Some(path) = log_path(app) else {
         // Best-effort: if we can't resolve app_data_dir, at least emit something.
         eprintln!("[log] {}", line.as_ref());
         return;

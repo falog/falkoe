@@ -1,5 +1,6 @@
 pub mod audio;
 pub mod linking;
+pub mod logs;
 pub mod pitch;
 pub mod recordings;
 pub mod sentences;

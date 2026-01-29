@@ -39,7 +39,7 @@ fn env_usize(key: &str) -> Option<usize> {
     value.trim().parse::<usize>().ok()
 }
 
-fn whisper_n_threads() -> i32 {
+pub(crate) fn whisper_n_threads() -> i32 {
     // override example: FALKOE_WHISPER_THREADS=8
     if let Some(n) = env_usize("FALKOE_WHISPER_THREADS") {
         // Too many threads can increase per-thread scratch memory and cause
@@ -430,6 +430,7 @@ pub fn transcribe_with_callbacks<P, A>(
     wav_path: &str,
     model_path: &Path,
     whisper_lang: Option<&str>,
+    n_threads: i32,
     progress_callback: P,
     abort_callback: A,
 ) -> Result<Transcript>
@@ -471,7 +472,7 @@ where
     let mut state = ctx_ref.create_state()?;
 
     let mut params = FullParams::new(whisper_sampling_strategy());
-    params.set_n_threads(whisper_n_threads());
+    params.set_n_threads(n_threads.clamp(1, 64));
 
     params.set_language(whisper_lang);
     params.set_translate(false);

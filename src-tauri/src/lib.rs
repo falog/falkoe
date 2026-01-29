@@ -14,6 +14,7 @@ use crate::commands::sentences::{
     upsert_sentence_manifest_text,
 };
 use crate::commands::status::{get_model_status, get_model_variant, set_model_variant};
+use crate::commands::logs::{get_backend_log_dir, get_backend_log_path};
 use crate::commands::temp_recordings::delete_temp_recording;
 use crate::commands::whisper::run_whisper;
 use crate::commands::whisper::{run_whisper_model, run_whisper_uploaded};
@@ -69,6 +70,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(mic_recorder())
         .invoke_handler(tauri::generate_handler![
+            get_backend_log_path,
+            get_backend_log_dir,
             run_whisper,
             run_whisper_model,
             run_whisper_uploaded,

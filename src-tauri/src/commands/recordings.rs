@@ -78,9 +78,12 @@ pub fn save_uploaded_audio(
     // 元のファイル名を保存（UIの履歴で判別できるようにする）
     let original_filename_path = base_dir.join("original_filename.txt");
     if let Err(e) = fs::write(&original_filename_path, &original_filename) {
-        eprintln!(
-            "failed to write uploaded original filename: {:?}: {}",
-            original_filename_path, e
+        crate::logging::log_line(
+            &app,
+            format!(
+                "[recordings] failed to write uploaded original filename: {:?}: {}",
+                original_filename_path, e
+            ),
         );
     }
 
@@ -137,9 +140,12 @@ pub fn get_uploaded_audio_info(
         let original_filename_path = base_dir.join("original_filename.txt");
         if !original_filename_path.exists() {
             if let Err(e) = fs::write(&original_filename_path, &original_filename) {
-                eprintln!(
-                    "failed to backfill uploaded original filename: {:?}: {}",
-                    original_filename_path, e
+                crate::logging::log_line(
+                    &app,
+                    format!(
+                        "[recordings] failed to backfill uploaded original filename: {:?}: {}",
+                        original_filename_path, e
+                    ),
                 );
             }
         }

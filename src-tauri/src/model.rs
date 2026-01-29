@@ -413,7 +413,7 @@ pub fn ensure_model(app: &AppHandle) -> anyhow::Result<std::path::PathBuf> {
     let _ = app.emit("model-progress", 100u8);
     set_status(app, "ready");
 
-    println!("ensure_model: return");
+    crate::logging::log_line(app, "[model] ensure_model: ready");
     Ok(model_path)
 }
 

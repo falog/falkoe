@@ -1,7 +1,7 @@
 use crate::model::ensure_model;
 use crate::commands::whisper::{
     ffmpeg_convert_to_wav, ffmpeg_trim_with_padding_wav, transcribe_with_callbacks,
-    whisper_language, Segment,
+    whisper_language, whisper_n_threads, Segment,
 };
 use chrono::Local;
 use serde::Serialize;
@@ -67,6 +67,20 @@ fn sha256_hex(bytes: &[u8]) -> String {
 fn is_slash_only(text: &str) -> bool {
     let t = text.trim();
     t == "/" || t == "／"
+}
+
+fn is_whisper_encoder_failure_minus6(msg: &str) -> bool {
+    // whisper.cpp error often surfaces as: "Error code: -6"
+    msg.contains("Error code: -6") || msg.contains("code: -6")
+}
+
+fn format_cutter_whisper_error(msg: String) -> String {
+    if is_whisper_encoder_failure_minus6(&msg) {
+        return format!(
+            "{msg}\n\nヒント: このエラー(-6)はスレッド数が多い環境で起きることがあります。`FALKOE_WHISPER_THREADS=2` などで改善する場合があります。"
+        );
+    }
+    msg
 }
 
 fn strip_trailing_quotes_and_brackets(mut s: &str) -> &str {
@@ -413,26 +427,75 @@ pub async fn cutter_suggest_segments(
 
     let join = tauri::async_runtime::spawn_blocking(move || {
         let model_path = ensure_model(&app_for_cb)?;
-        let mut last_progress: i32 = -1;
-        transcribe_with_callbacks(
-            &wav_str,
-            &model_path,
-            whisper_lang.as_deref(),
-            move |p| {
-                if p == last_progress {
-                    return;
-                }
-                last_progress = p;
-                let _ = app_for_cb.emit(
-                    "cutter-detect-progress",
-                    CutterDetectProgressPayload {
-                        cutter_id: cutter_id_for_cb.clone(),
-                        progress: p,
-                    },
+
+        let base_threads = whisper_n_threads().max(1);
+        let mut thread_attempts: Vec<i32> = Vec::new();
+        for n in [base_threads, (base_threads / 2).max(1), 2, 1] {
+            if n <= base_threads && !thread_attempts.contains(&n) {
+                thread_attempts.push(n);
+            }
+        }
+        if thread_attempts.is_empty() {
+            thread_attempts.push(1);
+        }
+
+        let mut last_err: Option<anyhow::Error> = None;
+
+        for (idx, n_threads) in thread_attempts.iter().copied().enumerate() {
+            if idx > 0 {
+                crate::logging::log_line(
+                    &app_for_cb,
+                    format!("[cutter] retry transcribe due to -6 with n_threads={n_threads}"),
                 );
-            },
-            move || abort_for_cb.load(Ordering::Relaxed),
-        )
+            }
+
+            let mut last_progress: i32 = -1;
+            let res = transcribe_with_callbacks(
+                &wav_str,
+                &model_path,
+                whisper_lang.as_deref(),
+                n_threads,
+                {
+                    let app_for_cb = app_for_cb.clone();
+                    let cutter_id_for_cb = cutter_id_for_cb.clone();
+                    move |p| {
+                        if p == last_progress {
+                            return;
+                        }
+                        last_progress = p;
+                        let _ = app_for_cb.emit(
+                            "cutter-detect-progress",
+                            CutterDetectProgressPayload {
+                                cutter_id: cutter_id_for_cb.clone(),
+                                progress: p,
+                            },
+                        );
+                    }
+                },
+                {
+                    let abort_for_cb = abort_for_cb.clone();
+                    move || abort_for_cb.load(Ordering::Relaxed)
+                },
+            );
+
+            match res {
+                Ok(t) => return Ok(t),
+                Err(e) => {
+                    let msg = e.to_string();
+                    crate::logging::log_line(
+                        &app_for_cb,
+                        format!("[cutter] transcribe failed n_threads={n_threads}: {msg}"),
+                    );
+                    let should_retry = is_whisper_encoder_failure_minus6(&msg) && n_threads > 1;
+                    last_err = Some(e);
+                    if !should_retry {
+                        break;
+                    }
+                }
+            }
+        }
+
+        Err(last_err.unwrap_or_else(|| anyhow::anyhow!("transcribe failed")))
     })
     .await;
 
@@ -446,7 +509,7 @@ pub async fn cutter_suggest_segments(
             if abort_flag.load(Ordering::Relaxed) {
                 return Err("cancelled".to_string());
             }
-            return Err(e.to_string());
+            return Err(format_cutter_whisper_error(e.to_string()));
         }
     };
 
@@ -489,26 +552,75 @@ pub async fn cutter_suggest_segments_raw(
 
     let join = tauri::async_runtime::spawn_blocking(move || {
         let model_path = ensure_model(&app_for_cb)?;
-        let mut last_progress: i32 = -1;
-        transcribe_with_callbacks(
-            &wav_str,
-            &model_path,
-            whisper_lang.as_deref(),
-            move |p| {
-                if p == last_progress {
-                    return;
-                }
-                last_progress = p;
-                let _ = app_for_cb.emit(
-                    "cutter-detect-progress",
-                    CutterDetectProgressPayload {
-                        cutter_id: cutter_id_for_cb.clone(),
-                        progress: p,
-                    },
+
+        let base_threads = whisper_n_threads().max(1);
+        let mut thread_attempts: Vec<i32> = Vec::new();
+        for n in [base_threads, (base_threads / 2).max(1), 2, 1] {
+            if n <= base_threads && !thread_attempts.contains(&n) {
+                thread_attempts.push(n);
+            }
+        }
+        if thread_attempts.is_empty() {
+            thread_attempts.push(1);
+        }
+
+        let mut last_err: Option<anyhow::Error> = None;
+
+        for (idx, n_threads) in thread_attempts.iter().copied().enumerate() {
+            if idx > 0 {
+                crate::logging::log_line(
+                    &app_for_cb,
+                    format!("[cutter] retry transcribe due to -6 with n_threads={n_threads}"),
                 );
-            },
-            move || abort_for_cb.load(Ordering::Relaxed),
-        )
+            }
+
+            let mut last_progress: i32 = -1;
+            let res = transcribe_with_callbacks(
+                &wav_str,
+                &model_path,
+                whisper_lang.as_deref(),
+                n_threads,
+                {
+                    let app_for_cb = app_for_cb.clone();
+                    let cutter_id_for_cb = cutter_id_for_cb.clone();
+                    move |p| {
+                        if p == last_progress {
+                            return;
+                        }
+                        last_progress = p;
+                        let _ = app_for_cb.emit(
+                            "cutter-detect-progress",
+                            CutterDetectProgressPayload {
+                                cutter_id: cutter_id_for_cb.clone(),
+                                progress: p,
+                            },
+                        );
+                    }
+                },
+                {
+                    let abort_for_cb = abort_for_cb.clone();
+                    move || abort_for_cb.load(Ordering::Relaxed)
+                },
+            );
+
+            match res {
+                Ok(t) => return Ok(t),
+                Err(e) => {
+                    let msg = e.to_string();
+                    crate::logging::log_line(
+                        &app_for_cb,
+                        format!("[cutter] transcribe failed n_threads={n_threads}: {msg}"),
+                    );
+                    let should_retry = is_whisper_encoder_failure_minus6(&msg) && n_threads > 1;
+                    last_err = Some(e);
+                    if !should_retry {
+                        break;
+                    }
+                }
+            }
+        }
+
+        Err(last_err.unwrap_or_else(|| anyhow::anyhow!("transcribe failed")))
     })
     .await;
 
@@ -522,7 +634,7 @@ pub async fn cutter_suggest_segments_raw(
             if abort_flag.load(Ordering::Relaxed) {
                 return Err("cancelled".to_string());
             }
-            return Err(e.to_string());
+            return Err(format_cutter_whisper_error(e.to_string()));
         }
     };
 

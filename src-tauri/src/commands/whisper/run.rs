@@ -555,8 +555,7 @@ fn transcribe_in_subprocess(
 }
 
 fn run_whisper_for_wav(app: &AppHandle, wav_path: &str, sentence_hash: &str, lang: &str) -> Result<()> {
-    println!("=== run_whisper START ===");
-    println!("wav_path = {}", wav_path);
+    // Note: stdout/stderr may be invisible on Windows (GUI subsystem), so prefer file logging.
     crate::logging::log_line(
         app,
         format!(
@@ -1190,12 +1189,10 @@ pub(crate) fn run_whisper_model_impl(
         match res {
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
-                eprintln!("whisper model error: {e}");
                 crate::logging::log_line(&app, format!("[whisper] model error: {e}"));
             }
             Err(payload) => {
                 let msg = crate::logging::panic_payload_to_string(&*payload);
-                eprintln!("whisper model panic (caught): {msg}");
                 crate::logging::log_line(&app, format!("[whisper] model panic (caught): {msg}"));
             }
         }
@@ -1217,12 +1214,10 @@ pub(crate) fn run_whisper_uploaded_impl(
         match res {
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
-                eprintln!("whisper uploaded error: {e}");
                 crate::logging::log_line(&app, format!("[whisper] uploaded error: {e}"));
             }
             Err(payload) => {
                 let msg = crate::logging::panic_payload_to_string(&*payload);
-                eprintln!("whisper uploaded panic (caught): {msg}");
                 crate::logging::log_line(&app, format!("[whisper] uploaded panic (caught): {msg}"));
             }
         }
@@ -1244,12 +1239,10 @@ pub(crate) fn run_whisper_impl(
         match res {
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
-                eprintln!("whisper error: {e}");
                 crate::logging::log_line(&app_handle, format!("[whisper] error: {e}"));
             }
             Err(payload) => {
                 let msg = crate::logging::panic_payload_to_string(&*payload);
-                eprintln!("whisper panic (caught): {msg}");
                 crate::logging::log_line(&app_handle, format!("[whisper] panic (caught): {msg}"));
             }
         }

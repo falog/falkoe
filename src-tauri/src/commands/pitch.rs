@@ -57,24 +57,30 @@ pub fn analyze_pitch(
             Ok(v) => (Some("praat".to_string()), v),
             Err(e_praat) => {
                 if debug_external_tools_enabled() {
-                    eprintln!(
-                        "[pitch] Praat extraction failed; trying WORLD helper: {}",
-                        e_praat
+                    crate::logging::log_line(
+                        &app,
+                        format!(
+                            "[pitch] Praat extraction failed; trying WORLD helper: {}",
+                            e_praat
+                        ),
                     );
                 } else {
-                    eprintln!("[pitch] Praat extraction failed; trying WORLD helper");
+                    crate::logging::log_line(&app, "[pitch] Praat extraction failed; trying WORLD helper");
                 }
                 match extract_f0_with_world(&app, wav_path, time_step, pitch_floor, pitch_ceiling)
                 {
                     Ok(v) => (Some("world".to_string()), v),
                     Err(e_world) => {
                         if debug_external_tools_enabled() {
-                            eprintln!(
-                                "[pitch] WORLD extraction failed; falling back to YIN: {}",
-                                e_world
+                            crate::logging::log_line(
+                                &app,
+                                format!(
+                                    "[pitch] WORLD extraction failed; falling back to YIN: {}",
+                                    e_world
+                                ),
                             );
                         } else {
-                            eprintln!("[pitch] WORLD extraction failed; falling back to YIN");
+                            crate::logging::log_line(&app, "[pitch] WORLD extraction failed; falling back to YIN");
                         }
                         let (samples, sr) = read_wav_mono_f32(wav_path)?;
                         (
