@@ -6,8 +6,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 use tauri::Manager;
 
+use std::sync::Once;
+
 static LOG_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 static LOG_PATH: OnceLock<Option<std::path::PathBuf>> = OnceLock::new();
+static LOGGER_INIT: Once = Once::new();
 
 const DEFAULT_ROTATE_MAX_BYTES: u64 = 5 * 1024 * 1024; // 5 MiB
 const DEFAULT_ROTATE_KEEP_FILES: usize = 10;
@@ -192,13 +195,38 @@ pub(crate) fn log_path_string(app: &AppHandle) -> Option<String> {
     log_path(app).map(|p| p.to_string_lossy().to_string())
 }
 
-pub(crate) fn log_line(app: &AppHandle, line: impl AsRef<str>) {
-    let Some(path) = log_path(app) else {
-        // Best-effort: if we can't resolve app_data_dir, at least emit something.
-        eprintln!("[log] {}", line.as_ref());
-        return;
-    };
+fn env_level_filter() -> log::LevelFilter {
+    let s = std::env::var("FALKOE_LOG_LEVEL")
+        .ok()
+        .unwrap_or_else(|| "info".to_string());
+    match s.trim().to_ascii_lowercase().as_str() {
+        "off" => log::LevelFilter::Off,
+        "error" => log::LevelFilter::Error,
+        "warn" | "warning" => log::LevelFilter::Warn,
+        "info" => log::LevelFilter::Info,
+        "debug" => log::LevelFilter::Debug,
+        "trace" => log::LevelFilter::Trace,
+        _ => log::LevelFilter::Info,
+    }
+}
 
+fn env_bool(name: &str) -> Option<bool> {
+    std::env::var(name)
+        .ok()
+        .map(|s| s.trim().to_ascii_lowercase())
+        .as_deref()
+        .and_then(|v| match v {
+            "1" | "true" | "yes" | "on" => Some(true),
+            "0" | "false" | "no" | "off" => Some(false),
+            _ => None,
+        })
+}
+
+fn log_to_stderr_enabled() -> bool {
+    env_bool("FALKOE_LOG_STDERR").unwrap_or(false)
+}
+
+fn write_line_to_path(path: &std::path::PathBuf, line: &str) {
     let _guard = LOG_LOCK
         .get_or_init(|| Mutex::new(()))
         .lock()
@@ -213,15 +241,70 @@ pub(crate) fn log_line(app: &AppHandle, line: impl AsRef<str>) {
         .map(|d| d.as_millis())
         .unwrap_or(0);
 
-    // Size-based rotation: if backend.log grows too large, rename it and start a new file.
-    // Defaults are intentionally modest; override via env vars if needed:
-    // - FALKOE_LOG_ROTATE_MAX_BYTES (u64)
-    // - FALKOE_LOG_ROTATE_KEEP_FILES (usize)
-    maybe_rotate_log_file(&path, ts);
+    maybe_rotate_log_file(path, ts);
 
-    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&path) {
-        let _ = writeln!(f, "[{ts}] {}", line.as_ref());
+    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(f, "[{ts}] {line}");
     }
+}
+
+pub(crate) fn log_raw(line: impl AsRef<str>) {
+    let line = line.as_ref();
+    if log_to_stderr_enabled() {
+        eprintln!("{line}");
+    }
+    let Some(path) = LOG_PATH.get().and_then(|p| p.clone()) else {
+        return;
+    };
+    write_line_to_path(&path, line);
+}
+
+struct FileLogger;
+
+impl log::Log for FileLogger {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        metadata.level() <= log::max_level()
+    }
+
+    fn log(&self, record: &log::Record) {
+        if !self.enabled(record.metadata()) {
+            return;
+        }
+        // Keep it single-line-ish; whisper/ggml often includes trailing newlines.
+        let msg = format!("[{}] {}", record.level(), record.args());
+        log_raw(msg.trim_end_matches(['\n', '\r']));
+    }
+
+    fn flush(&self) {}
+}
+
+pub(crate) fn init(app: &AppHandle) {
+    // Resolve log path early so even GPU/whisper init logs have a destination.
+    let _ = log_path(app);
+
+    LOGGER_INIT.call_once(|| {
+        let _ = log::set_boxed_logger(Box::new(FileLogger));
+        log::set_max_level(env_level_filter());
+
+        // Route whisper.cpp / ggml logs into the Rust `log` backend.
+        // With `log_backend` enabled, this captures Vulkan backend lines like `ggml_vulkan: ...`.
+        whisper_rs::install_logging_hooks();
+    });
+
+    // Write an explicit marker so we know logging initialized.
+    if let Some(p) = log_path_string(app) {
+        log_raw(format!("[log] initialized backend.log path={}", p));
+    }
+}
+
+pub(crate) fn log_line(app: &AppHandle, line: impl AsRef<str>) {
+    let Some(path) = log_path(app) else {
+        // Best-effort: if we can't resolve app_data_dir, at least emit something.
+        eprintln!("[log] {}", line.as_ref());
+        return;
+    };
+
+    write_line_to_path(&path, line.as_ref());
 }
 
 pub(crate) fn panic_payload_to_string(payload: &(dyn Any + Send)) -> String {

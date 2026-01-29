@@ -5608,6 +5608,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "71ea5d2401f30f51d08126a2d133fee4c1955136519d7ac6cf6f5ac0a91e6bc8"
 dependencies = [
  "libc",
+ "log",
  "whisper-rs-sys",
 ]
 

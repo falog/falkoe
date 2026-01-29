@@ -34,6 +34,9 @@ pub fn run() {
         .setup(|app| {
             model::init_model_state();
 
+            // Initialize file-backed logging early (also captures ggml/whisper GPU logs).
+            crate::logging::init(&app.handle());
+
             // Log any uncaught panics to backend.log.
             // Note: this does not catch aborts/segfaults (native crashes), but helps when a panic
             // would otherwise terminate the process without a clear trace.
