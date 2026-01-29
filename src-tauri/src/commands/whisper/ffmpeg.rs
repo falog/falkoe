@@ -113,6 +113,93 @@ pub(crate) fn ffmpeg_convert_to_wav(app: &AppHandle, input: &Path, output_wav: &
     Ok(())
 }
 
+pub(crate) fn ffmpeg_trim_with_padding_wav(
+    app: &AppHandle,
+    input: &Path,
+    start_sec: f32,
+    end_sec: f32,
+    pad_start_sec: f32,
+    pad_end_sec: f32,
+    output_wav: &Path,
+) -> Result<()> {
+    if !(start_sec.is_finite() && end_sec.is_finite() && pad_start_sec.is_finite() && pad_end_sec.is_finite()) {
+        bail!("invalid trim args (non-finite)");
+    }
+    if start_sec < 0.0 {
+        bail!("invalid start_sec (must be >= 0)");
+    }
+    if end_sec <= start_sec {
+        bail!("invalid end_sec (must be > start_sec)");
+    }
+    if pad_start_sec < 0.0 || pad_end_sec < 0.0 {
+        bail!("invalid padding (must be >= 0)");
+    }
+
+    let cmd = resolve_bundled_tool(app, "ffmpeg").unwrap_or_else(|| PathBuf::from("ffmpeg"));
+
+    let s = format!("{:.3}", start_sec);
+    let e = format!("{:.3}", end_sec);
+    let ps = format!("{:.3}", pad_start_sec);
+    let pe = format!("{:.3}", pad_end_sec);
+
+    let filter = if pad_start_sec <= 0.0 && pad_end_sec <= 0.0 {
+        format!("[0:a]atrim=start={s}:end={e},asetpts=PTS-STARTPTS[out]")
+    } else if pad_start_sec <= 0.0 {
+        format!(
+            "[0:a]atrim=start={s}:end={e},asetpts=PTS-STARTPTS[a];anullsrc=r=16000:cl=mono:d={pe}[sil];[a][sil]concat=n=2:v=0:a=1[out]"
+        )
+    } else if pad_end_sec <= 0.0 {
+        format!(
+            "[0:a]atrim=start={s}:end={e},asetpts=PTS-STARTPTS[a];anullsrc=r=16000:cl=mono:d={ps}[sil];[sil][a]concat=n=2:v=0:a=1[out]"
+        )
+    } else {
+        format!(
+            "[0:a]atrim=start={s}:end={e},asetpts=PTS-STARTPTS[a];anullsrc=r=16000:cl=mono:d={ps}[s0];anullsrc=r=16000:cl=mono:d={pe}[s1];[s0][a][s1]concat=n=3:v=0:a=1[out]"
+        )
+    };
+
+    let args = vec![
+        "-y".into(),
+        "-i".into(),
+        input
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("invalid input path"))?
+            .to_string(),
+        "-filter_complex".into(),
+        filter,
+        "-map".into(),
+        "[out]".into(),
+        "-ar".into(),
+        "16000".into(),
+        "-ac".into(),
+        "1".into(),
+        output_wav
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("invalid output path"))?
+            .to_string(),
+    ];
+
+    let out = Command::new(&cmd).args(&args).output().with_context(|| {
+        format!("failed to spawn ffmpeg for trim: {:?}", cmd)
+    })?;
+
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let tail = stderr
+            .lines()
+            .rev()
+            .take(60)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join("\n");
+        bail!("ffmpeg trim failed\nstderr (tail):\n{tail}");
+    }
+
+    Ok(())
+}
+
 fn build_convert_to_wav_args(input: &Path, output_wav: &Path) -> Result<Vec<String>> {
     Ok(vec![
         "-y".into(),

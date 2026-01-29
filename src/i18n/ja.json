@@ -22,6 +22,7 @@
   "nav": {
     "back": "← 戻る",
     "history": "録音履歴",
+    "audioCutter": "音声カット",
     "ipaList": "IPA 発音一覧",
     "developersMistakes": "デベロッパーズミステイク",
     "commonMistakes": "よくある間違い",
@@ -71,6 +72,76 @@
     }
   },
   "screens": {
+    "audioCutter": {
+      "title": "音声カット",
+      "description": "長い音声から Whisper のタイムスタンプで区間を抽出し、前後に余裕（margin）と短い無音を追加して書き出します。",
+      "lang": "言語",
+      "saving": "保存中…",
+      "savedPath": "保存先",
+      "found": "検出数: {{count}}",
+      "detectModal": {
+        "title": "区間検出中（Whisper）",
+        "body": "解析には時間がかかります。画面はそのままお待ちください。",
+        "note": "初回はモデルの読み込みで特に時間がかかることがあります。",
+        "cancel": "キャンセル"
+      },
+      "fullText": {
+        "label": "全文（1行=1クリップ）",
+        "placeholder": "区間検出後、ここに全文が入ります",
+        "apply": "テキストを適用（行でカット）",
+        "reset": "現在の区間から再生成",
+        "applyHelp": "このテキスト（1行=1クリップ）に合わせて、現在の区間を結合/ラベル変更します。行数が区間数より少ない場合は前から順に結合します。",
+        "resetHelp": "現在の区間テキスト（各区間の text）から、全文テキスト欄を作り直します。時間は変えず、テキスト欄だけをリセットします。",
+        "hint": "ヒント: 改行を消すとクリップを結合できます"
+      },
+      "options": {
+        "rawSegments": "再解析（結合なし）",
+        "rawSegmentsHelp": "Whisperの元セグメント（時間つき断片）を結合せず、そのまま一覧にします。自動結合で区間が大きくなりすぎる時や、手動で分割/時間調整したい時に便利です。"
+      },
+      "manualSplit": {
+        "label": "手動分割",
+        "at": "分割位置 (秒)",
+        "split": "分割",
+        "atHelp": "選んだ区間の start〜end の範囲内で指定してください。範囲外だと分割できません。",
+        "hint": "指定した秒数で区間を2つに分割します"
+      },
+      "manualTime": {
+        "start": "開始",
+        "end": "終了"
+      },
+      "hint": "まず音声ファイルを選択してください。",
+      "marginBefore": "前余白 (秒)",
+      "marginBeforeHelp": "切り出し開始を少し前にずらして、頭が切れにくくします（元音声の直前の実音も含まれます）。",
+      "marginAfter": "後余白 (秒)",
+      "marginAfterHelp": "切り出し終了を少し後ろにずらして、語尾が切れにくくします。",
+      "silence": "文頭の無音 (秒)",
+      "silenceHelp": "クリップの先頭に無音を追加します（元音声の範囲は増やしません）。再生開始で子音が欠けるのを防ぐのに有効です。",
+      "buttons": {
+        "detect": "区間検出（Whisper）",
+        "preview": "プレビュー再生",
+        "export": "取り込み",
+        "selectAll": "全選択",
+        "selectNone": "全解除"
+      },
+      "messages": {
+        "saved": "音声を保存しました",
+        "saveFailed": "保存に失敗しました: ",
+        "detected": "区間を検出しました",
+        "detectFailed": "区間検出に失敗しました: ",
+        "cancelRequested": "キャンセルしました（中断処理中）",
+        "cancelFailed": "キャンセルに失敗しました: ",
+        "cancelled": "区間検出をキャンセルしました",
+        "textEmpty": "テキストが空です",
+        "textTooManyLines": "行数（{{lines}}）が区間数（{{segs}}）より多いので分割できません（Whisper区間より細かくは切れません）",
+        "textApplied": "テキストを適用しました（{{count}}個）",
+        "splitOutOfRange": "分割位置は区間内（{{start}}–{{end}}）にしてください",
+        "splitOk": "分割しました",
+        "nothingSelected": "選択された区間がありません",
+        "exported": "{{count}}個を書き出しました。先頭: {{head}}",
+        "exportFailed": "書き出しに失敗しました: ",
+        "previewFailed": "プレビューに失敗しました: "
+      }
+    },
     "wordInput": {
       "title": "例文検索",
       "useSpeech": "音声ファイルを選択して例文を取得する",
@@ -171,6 +242,18 @@
         "stressCount": "強勢・副強勢",
         "stressCountPrimaryLabel": "強勢",
         "stressCountSecondaryLabel": "副強勢"
+      },
+      "modelTranscript": {
+        "label": "認識結果:",
+        "transcribing": "音声認識中…",
+        "notTranscribed": "まだ音声認識されていません",
+        "edit": "テキストを編集",
+        "useTranscript": "認識結果を入れる",
+        "save": "保存",
+        "cancel": "キャンセル",
+        "saved": "保存しました",
+        "emptyError": "テキストが空です",
+        "saveFailed": "保存に失敗しました: "
       },
       "header": {
         "recognizeUploaded": "アップロード音声を音声認識する",

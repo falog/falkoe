@@ -14,7 +14,7 @@ mod types;
 pub use audio::load_wav_as_f32;
 pub use manifest::SentenceManifest;
 pub use run::{run_whisper, run_whisper_model, run_whisper_uploaded};
-pub use transcribe::{transcribe, transcribe_preview};
+pub use transcribe::{transcribe, transcribe_preview, transcribe_with_callbacks};
 pub use types::{
     FinalResult, PartialSegment, PreviewResult, Segment, TokenTimestamp, Transcript, WordTimestamp,
 };
@@ -1073,6 +1073,14 @@ pub fn transcribe(
     let mut state = ctx.create_state()?;
 
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+
+    // Avoid starving the UI thread: leave a couple of cores free.
+    // (This is especially important in Tauri because the WebView shares the same process.)
+    let n_threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+    let n_threads = n_threads.saturating_sub(2).max(1).min(8);
+    params.set_n_threads(n_threads as i32);
 
     println!("set_language {:?}", whisper_lang);
     println!("model_path = {:?}", model_path);

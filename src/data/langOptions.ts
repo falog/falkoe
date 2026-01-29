@@ -1,0 +1,25 @@
+export type LangOption = { value: string; label: string };
+
+export const LANG_OPTIONS: LangOption[] = [
+  { value: "eng", label: "English" },
+  { value: "jpn", label: "Japanese" },
+  { value: "spa", label: "Spanish" },
+  { value: "fra", label: "French" },
+  { value: "deu", label: "German" },
+  { value: "ita", label: "Italian" },
+  { value: "por", label: "Portuguese" },
+  { value: "rus", label: "Russian" },
+  { value: "kor", label: "Korean" },
+  { value: "cmn", label: "Chinese (Mandarin)" },
+  { value: "yue", label: "Chinese (Cantonese)" },
+  { value: "ara", label: "Arabic" },
+  { value: "hin", label: "Hindi" },
+  { value: "tur", label: "Turkish" },
+  { value: "vie", label: "Vietnamese" },
+  { value: "tha", label: "Thai" },
+  { value: "ind", label: "Indonesian" },
+  { value: "ukr", label: "Ukrainian" },
+  { value: "pol", label: "Polish" },
+  { value: "nld", label: "Dutch" },
+  { value: "swe", label: "Swedish" },
+];

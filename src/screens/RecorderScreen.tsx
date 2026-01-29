@@ -15,6 +15,7 @@ type RecorderScreenProps = {
   onBack: () => void;
   onOpenHistory: () => void;
   onOpenIpaList: () => void;
+  onOpenAudioCutter: () => void;
   onOpenSettings: () => void;
   onOpenDevelopersMistakes: () => void;
   onOpenCommonMistakes: () => void;
@@ -25,6 +26,7 @@ const RecorderScreen = ({
   onBack,
   onOpenHistory,
   onOpenIpaList,
+  onOpenAudioCutter,
   onOpenSettings,
   onOpenDevelopersMistakes,
   onOpenCommonMistakes,
@@ -46,6 +48,7 @@ const RecorderScreen = ({
     modelText,
     waitingModel,
     displayText,
+    setDisplayText,
     linkingDisplayMode,
     setLinkingDisplayMode,
     ipaIndex,
@@ -86,6 +89,7 @@ const RecorderScreen = ({
           current="record"
           onBack={onBack ? () => navigateSafely(onBack) : undefined}
           onOpenHistory={() => navigateSafely(onOpenHistory)}
+          onOpenAudioCutter={() => navigateSafely(onOpenAudioCutter)}
           onOpenIpaList={() => navigateSafely(onOpenIpaList)}
           onOpenSettings={() => navigateSafely(onOpenSettings)}
           onOpenDevelopersMistakes={() =>
@@ -116,6 +120,8 @@ const RecorderScreen = ({
             modelText={modelText}
             sentenceHash={sentenceHash}
             lang={sentence.lang}
+            displayText={displayText}
+            setDisplayText={setDisplayText}
             modelAudioUrl={headerAudioUrl}
             sourceKind={sourceKind}
             linkingResult={linkingResult}

@@ -18,6 +18,7 @@ type Props = {
   onBack: () => void;
   onOpenHistory: () => void;
   onOpenIpaList: () => void;
+  onOpenAudioCutter: () => void;
   onOpenDevelopersMistakes: () => void;
   onOpenCommonMistakes: () => void;
   onOpenSettings: () => void;
@@ -27,6 +28,7 @@ export default function CommonMistakesScreen({
   onBack,
   onOpenHistory,
   onOpenIpaList,
+  onOpenAudioCutter,
   onOpenDevelopersMistakes,
   onOpenCommonMistakes,
   onOpenSettings,
@@ -71,7 +73,7 @@ export default function CommonMistakesScreen({
         }
         if (
           /not found|no such file|failed to (resolve|load)|os error\s*2/i.test(
-            msg
+            msg,
           )
         ) {
           continue;
@@ -104,7 +106,7 @@ export default function CommonMistakesScreen({
         message.info(t("screens.commonMistakes.audioUnlockHint"));
       } else {
         message.error(
-          `${t("screens.commonMistakes.playFailed")}${tok} (${msg})`
+          `${t("screens.commonMistakes.playFailed")}${tok} (${msg})`,
         );
       }
     }
@@ -127,6 +129,7 @@ export default function CommonMistakesScreen({
         onBack={onBack}
         onOpenHistory={onOpenHistory}
         onOpenIpaList={onOpenIpaList}
+        onOpenAudioCutter={onOpenAudioCutter}
         onOpenSettings={onOpenSettings}
         onOpenDevelopersMistakes={onOpenDevelopersMistakes}
         onOpenCommonMistakes={onOpenCommonMistakes}

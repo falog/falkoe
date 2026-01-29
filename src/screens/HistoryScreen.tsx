@@ -33,6 +33,7 @@ type HistorySortKey =
 type Props = {
   onBack: () => void;
   onOpenIpaList: () => void;
+  onOpenAudioCutter: () => void;
   onOpenDevelopersMistakes: () => void;
   onOpenCommonMistakes: () => void;
   onOpenHistory: () => void;
@@ -43,6 +44,7 @@ type Props = {
 export default function HistoryScreen({
   onBack,
   onOpenIpaList,
+  onOpenAudioCutter,
   onOpenDevelopersMistakes,
   onOpenCommonMistakes,
   onOpenHistory,
@@ -241,6 +243,7 @@ export default function HistoryScreen({
         current="history"
         onBack={onBack}
         onOpenIpaList={onOpenIpaList}
+        onOpenAudioCutter={onOpenAudioCutter}
         onOpenDevelopersMistakes={onOpenDevelopersMistakes}
         onOpenCommonMistakes={onOpenCommonMistakes}
         onOpenHistory={onOpenHistory}

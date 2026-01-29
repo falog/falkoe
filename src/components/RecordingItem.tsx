@@ -117,7 +117,7 @@ export default function RecordingItem({
             setAccentError(
               words === null
                 ? `アクセント情報 (${accentPath.split(/[\\/]/).pop() ?? "accent.json"}) を1分待ちましたが読み込めませんでした。`
-                : null
+                : null,
             );
           } catch {
             // ignore; fall back to pitch.words/segments
@@ -143,7 +143,7 @@ export default function RecordingItem({
           setAccentError(
             words === null
               ? `アクセント情報 (${accentPath.split(/[\\/]/).pop() ?? "accent.json"}) を1分待ちましたが読み込めませんでした。`
-              : null
+              : null,
           );
         } catch {
           // ignore
@@ -237,8 +237,12 @@ export default function RecordingItem({
           {rec.dateLabel ? <> / {rec.dateLabel}</> : null}
         </div>
         <Flex gap={8}>
-          {transcript === null && recognize && !recognizing && (
-            <Button loading={!!recognizing} onClick={handleRecognizeClick}>
+          {transcript === null && recognize && (
+            <Button
+              loading={!!recognizing}
+              disabled={!!recognizing}
+              onClick={handleRecognizeClick}
+            >
               音声認識
             </Button>
           )}

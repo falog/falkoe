@@ -1,4 +1,4 @@
-import { Button, Space, Spin, Typography } from "antd";
+import { Button, Input, Space, Spin, Typography, message } from "antd";
 import { invoke } from "@tauri-apps/api/core";
 import { documentDir, join } from "@tauri-apps/api/path";
 import { readTextFile } from "@tauri-apps/plugin-fs";
@@ -11,6 +11,12 @@ import type { ModelStatus } from "../../../types/model";
 import type { PitchAnalysis, WordPitch } from "../../../types/pitch";
 import { PitchAlignmentChart } from "../../../components/PitchAlignmentChart";
 import type { SourceKind } from "../../../types/speech";
+
+type UpsertManifestTextResult = {
+  status: "created" | "updated" | "conflict";
+  manifestPath: string;
+  previousText?: string | null;
+};
 
 type AccentOut = {
   words: WordPitch[];
@@ -38,6 +44,8 @@ type Props = {
   modelText: string | null;
   sentenceHash: string;
   lang: string;
+  displayText: string;
+  setDisplayText: (v: string) => void;
   modelAudioUrl: string | null;
   sourceKind: SourceKind;
   linkingResult: RenderLinkingResult | null;
@@ -54,6 +62,8 @@ export function ModelTranscriptSection({
   modelText,
   sentenceHash,
   lang,
+  displayText,
+  setDisplayText,
   modelAudioUrl,
   sourceKind,
   linkingResult,
@@ -76,7 +86,12 @@ export function ModelTranscriptSection({
       .replace(/\s+/g, " ")
       .trim();
 
+  const modelTextClean = modelText ? stripWhisperSpecialTokens(modelText) : "";
+
   const hasModelText = Boolean(modelText?.trim());
+  const [isEditingText, setIsEditingText] = useState(false);
+  const [draftText, setDraftText] = useState<string>(displayText ?? "");
+  const [savingText, setSavingText] = useState(false);
   const [pitch, setPitch] = useState<PitchAnalysis | null>(null);
   const [accentWords, setAccentWords] = useState<WordPitch[] | null>(null);
   const [accentError, setAccentError] = useState<string | null>(null);
@@ -101,6 +116,10 @@ export function ModelTranscriptSection({
     setPlayheadTime(null);
     lastSetRef.current = 0;
   }, [sentenceHash, sourceKind]);
+
+  useEffect(() => {
+    if (!isEditingText) setDraftText(displayText ?? "");
+  }, [displayText, isEditingText]);
 
   useEffect(() => {
     const el = audioRef.current;
@@ -179,7 +198,7 @@ export function ModelTranscriptSection({
           "sentences",
           sentenceHash,
           cacheSubdir,
-          `${cacheStem}.wav`
+          `${cacheStem}.wav`,
         );
 
         // Prefer cached pitch analysis if present.
@@ -190,7 +209,7 @@ export function ModelTranscriptSection({
             "sentences",
             sentenceHash,
             cacheSubdir,
-            `${cacheStem}.pitch.json`
+            `${cacheStem}.pitch.json`,
           );
           const cached = await readTextFile(pitchPath);
           const parsed = JSON.parse(cached) as PitchAnalysis;
@@ -204,7 +223,7 @@ export function ModelTranscriptSection({
               "sentences",
               sentenceHash,
               cacheSubdir,
-              `${cacheStem}.accent.json`
+              `${cacheStem}.accent.json`,
             );
             const words = await waitForAccentWords(accentPath, 60000);
             if (!cancelled) {
@@ -212,7 +231,7 @@ export function ModelTranscriptSection({
               setAccentError(
                 words === null
                   ? `アクセント情報 (${accentPath.split(/[\\/]/).pop() ?? "accent.json"}) を1分待ちましたが読み込めませんでした。`
-                  : null
+                  : null,
               );
             }
           }
@@ -236,7 +255,7 @@ export function ModelTranscriptSection({
             "sentences",
             sentenceHash,
             cacheSubdir,
-            `${cacheStem}.accent.json`
+            `${cacheStem}.accent.json`,
           );
           const words = await waitForAccentWords(accentPath, 60000);
           if (!cancelled) {
@@ -245,7 +264,7 @@ export function ModelTranscriptSection({
             setAccentError(
               words === null
                 ? `${t("screens.recorder.pitch.accentTimeoutPrefix")}${filename}${t("screens.recorder.pitch.accentTimeoutSuffix")}`
-                : null
+                : null,
             );
           }
         }
@@ -278,7 +297,7 @@ export function ModelTranscriptSection({
             {t("screens.recorder.modelTranscript.label")}
           </strong>{" "}
           {modelText ? (
-            stripWhisperSpecialTokens(modelText)
+            modelTextClean
           ) : (
             <Typography.Text type="secondary">
               {t("screens.recorder.modelTranscript.notTranscribed")}
@@ -287,6 +306,95 @@ export function ModelTranscriptSection({
         </Typography.Paragraph>
 
         {headerRight && <div style={{ flex: "0 0 auto" }}>{headerRight}</div>}
+      </div>
+
+      <div style={{ marginTop: 8 }}>
+        {!isEditingText ? (
+          <Button
+            size="small"
+            onClick={() => {
+              const initial = (displayText || "").trim() || modelTextClean;
+              setDraftText(initial);
+              setIsEditingText(true);
+            }}
+          >
+            {t("screens.recorder.modelTranscript.edit")}
+          </Button>
+        ) : (
+          <Space direction="vertical" style={{ width: "100%" }}>
+            <Input.TextArea
+              value={draftText}
+              onChange={(e) => setDraftText(e.target.value)}
+              autoSize={{ minRows: 2, maxRows: 8 }}
+              placeholder={
+                modelTextClean ||
+                t("screens.recorder.modelTranscript.notTranscribed")
+              }
+            />
+            <Space wrap>
+              <Button
+                size="small"
+                disabled={!modelTextClean}
+                onClick={() => setDraftText(modelTextClean)}
+              >
+                {t("screens.recorder.modelTranscript.useTranscript")}
+              </Button>
+              <Button
+                size="small"
+                type="primary"
+                loading={savingText}
+                disabled={savingText}
+                onClick={async () => {
+                  const next = (draftText ?? "").trim();
+                  const l = (lang ?? "").trim();
+                  if (!next) {
+                    message.warning(
+                      t("screens.recorder.modelTranscript.emptyError"),
+                    );
+                    return;
+                  }
+                  if (!sentenceHash || !l) return;
+
+                  setSavingText(true);
+                  try {
+                    await invoke<UpsertManifestTextResult>(
+                      "upsert_sentence_manifest_text",
+                      {
+                        audioId: sentenceHash,
+                        lang: l,
+                        text: next,
+                        overwrite: true,
+                      },
+                    );
+                    setDisplayText(next);
+                    setIsEditingText(false);
+                    message.success(
+                      t("screens.recorder.modelTranscript.saved"),
+                    );
+                  } catch (e: any) {
+                    message.error(
+                      t("screens.recorder.modelTranscript.saveFailed") +
+                        String(e),
+                    );
+                  } finally {
+                    setSavingText(false);
+                  }
+                }}
+              >
+                {t("screens.recorder.modelTranscript.save")}
+              </Button>
+              <Button
+                size="small"
+                onClick={() => {
+                  setIsEditingText(false);
+                  setDraftText(displayText ?? "");
+                }}
+              >
+                {t("screens.recorder.modelTranscript.cancel")}
+              </Button>
+            </Space>
+          </Space>
+        )}
       </div>
 
       {/* hidden audio element to drive playhead sync */}

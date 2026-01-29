@@ -9,6 +9,7 @@ import CommonMistakesScreen from "./screens/CommonMistakesScreen.tsx";
 import SettingsScreen from "./screens/SettingsScreen";
 import LanguageSelectScreen from "./screens/LanguageSelectScreen";
 import { Sentence } from "./components/ExampleList";
+import AudioCutterScreen from "./screens/AudioCutterScreen";
 import type { SpeechSource } from "./types/speech";
 import type { MistakeFocus } from "./data/commonMistakes";
 import { finishBackgroundTranscriptionByWavPath } from "./state/backgroundTranscription";
@@ -27,6 +28,7 @@ const App = () => {
     | "ipa"
     | "mistakes"
     | "common"
+    | "cutter"
     | "settings"
   >(() => (getStoredUiLanguage() ? "word" : "language"));
   const [screenBeforeSettings, setScreenBeforeSettings] =
@@ -35,6 +37,7 @@ const App = () => {
         | "word"
         | "record"
         | "history"
+        | "cutter"
         | "ipa"
         | "mistakes"
         | "common"
@@ -65,7 +68,7 @@ const App = () => {
         if (typeof wavPath === "string" && wavPath) {
           finishBackgroundTranscriptionByWavPath(wavPath);
         }
-      }
+      },
     );
 
     return () => {
@@ -95,6 +98,7 @@ const App = () => {
           onWordcount={setWordcount}
           onOpenIpaList={() => setScreen("ipa")}
           onOpenHistory={() => setScreen("history")}
+          onOpenAudioCutter={() => setScreen("cutter")}
           onOpenSettings={openSettings}
           onOpenDevelopersMistakes={() => {
             setMistakeFocus(null);
@@ -121,6 +125,26 @@ const App = () => {
           onBack={() => setScreen("word")}
           onOpenIpaList={() => setScreen("ipa")}
           onOpenHistory={() => setScreen("history")}
+          onOpenAudioCutter={() => setScreen("cutter")}
+          onOpenSettings={openSettings}
+          onOpenDevelopersMistakes={() => {
+            setMistakeFocus(null);
+            setScreen("mistakes");
+          }}
+          onOpenCommonMistakes={() => setScreen("common")}
+        />
+      )}
+
+      {screen === "cutter" && (
+        <AudioCutterScreen
+          lang={lang}
+          setLang={setLang}
+          onBack={() => setScreen("word")}
+          onOpenHistory={() => setScreen("history")}
+          onOpenIpaList={() => setScreen("ipa")}
+          onOpenAudioCutter={() => {
+            // already here
+          }}
           onOpenSettings={openSettings}
           onOpenDevelopersMistakes={() => {
             setMistakeFocus(null);
@@ -134,6 +158,7 @@ const App = () => {
         <HistoryScreen
           onBack={() => setScreen("word")}
           onOpenIpaList={() => setScreen("ipa")}
+          onOpenAudioCutter={() => setScreen("cutter")}
           onOpenHistory={() => {
             // already here
           }}
@@ -154,6 +179,7 @@ const App = () => {
         <IpaListScreen
           onBack={() => setScreen("word")}
           onOpenHistory={() => setScreen("history")}
+          onOpenAudioCutter={() => setScreen("cutter")}
           onOpenDevelopersMistakes={(focus) => {
             setMistakeFocus(focus ?? null);
             setScreen("mistakes");
@@ -174,6 +200,7 @@ const App = () => {
             setMistakeFocus(null);
             setScreen("ipa");
           }}
+          onOpenAudioCutter={() => setScreen("cutter")}
           onOpenSettings={openSettings}
           onOpenCommonMistakes={() => {
             setMistakeFocus(null);
@@ -188,6 +215,7 @@ const App = () => {
           onBack={() => setScreen("word")}
           onOpenHistory={() => setScreen("history")}
           onOpenIpaList={() => setScreen("ipa")}
+          onOpenAudioCutter={() => setScreen("cutter")}
           onOpenSettings={openSettings}
           onOpenDevelopersMistakes={() => {
             setMistakeFocus(null);
@@ -204,6 +232,7 @@ const App = () => {
           onBack={() => setScreen(screenBeforeSettings)}
           onOpenHistory={() => setScreen("history")}
           onOpenIpaList={() => setScreen("ipa")}
+          onOpenAudioCutter={() => setScreen("cutter")}
           onOpenDevelopersMistakes={() => {
             setMistakeFocus(null);
             setScreen("mistakes");

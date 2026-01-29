@@ -12,6 +12,7 @@ import TopNav from "../components/TopNav";
 type Props = {
   onBack: () => void;
   onOpenHistory: () => void;
+  onOpenAudioCutter: () => void;
   onOpenDevelopersMistakes: (focus?: "j" | "r" | "oo") => void;
   onOpenCommonMistakes: () => void;
   onOpenSettings: () => void;
@@ -23,7 +24,7 @@ type GroupedEntry = {
 };
 
 function categoryForEntry(
-  entry: IpaIndexEntry
+  entry: IpaIndexEntry,
 ): "consonants" | "vowels" | "others" {
   const p = (entry.audio ?? entry.explainAudio ?? "").toLowerCase();
   if (p.includes("/consonants/")) return "consonants";
@@ -34,6 +35,7 @@ function categoryForEntry(
 export default function IpaListScreen({
   onBack,
   onOpenHistory,
+  onOpenAudioCutter,
   onOpenDevelopersMistakes,
   onOpenCommonMistakes,
   onOpenSettings,
@@ -218,6 +220,7 @@ export default function IpaListScreen({
           current="ipa"
           onBack={onBack}
           onOpenHistory={onOpenHistory}
+          onOpenAudioCutter={onOpenAudioCutter}
           onOpenIpaList={() => {
             // already here
           }}
@@ -252,15 +255,15 @@ export default function IpaListScreen({
           <Space orientation="vertical" style={{ width: "100%" }}>
             {renderSection(
               byCategory.consonants,
-              t("screens.ipaList.category.consonants")
+              t("screens.ipaList.category.consonants"),
             )}
             {renderSection(
               byCategory.vowels,
-              t("screens.ipaList.category.vowels")
+              t("screens.ipaList.category.vowels"),
             )}
             {renderSection(
               byCategory.others,
-              t("screens.ipaList.category.others")
+              t("screens.ipaList.category.others"),
             )}
           </Space>
         )}
