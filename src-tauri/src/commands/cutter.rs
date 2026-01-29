@@ -1,7 +1,7 @@
 use crate::model::ensure_model;
 use crate::commands::whisper::{
     ffmpeg_convert_to_wav, ffmpeg_trim_with_padding_wav, transcribe_with_callbacks,
-    whisper_language, whisper_n_threads, Segment,
+    whisper_gpu_backend_available, whisper_language, whisper_n_threads, Segment,
 };
 use chrono::Local;
 use serde::Serialize;
@@ -78,11 +78,6 @@ fn is_whisper_error_minus9(msg: &str) -> bool {
 }
 
 fn format_cutter_whisper_error(msg: String) -> String {
-    if is_whisper_encoder_failure_minus6(&msg) || is_whisper_error_minus9(&msg) {
-        return format!(
-            "{msg}\n\nヒント: このエラー(-6/-9)は環境によって発生することがあります。`FALKOE_WHISPER_THREADS=2` に下げる、またはGPUバックエンドが原因の場合は `FALKOE_WHISPER_USE_GPU=0` でCPUに切り替えると改善する場合があります。"
-        );
-    }
     msg
 }
 
@@ -455,8 +450,24 @@ pub async fn cutter_suggest_segments(
         let force_use_gpu = env_bool("FALKOE_WHISPER_USE_GPU");
         let backend_attempts: Vec<bool> = match force_use_gpu {
             Some(false) => vec![false],
-            Some(true) => vec![true],
-            None => vec![true, false],
+            Some(true) => {
+                if whisper_gpu_backend_available() {
+                    vec![true]
+                } else {
+                    crate::logging::log_line(
+                        &app_for_cb,
+                        "[cutter] FALKOE_WHISPER_USE_GPU=1 but this build has no GPU backend; using CPU",
+                    );
+                    vec![false]
+                }
+            }
+            None => {
+                if whisper_gpu_backend_available() {
+                    vec![true, false]
+                } else {
+                    vec![false]
+                }
+            }
         };
 
         let mut last_err: Option<anyhow::Error> = None;
@@ -611,8 +622,24 @@ pub async fn cutter_suggest_segments_raw(
         let force_use_gpu = env_bool("FALKOE_WHISPER_USE_GPU");
         let backend_attempts: Vec<bool> = match force_use_gpu {
             Some(false) => vec![false],
-            Some(true) => vec![true],
-            None => vec![true, false],
+            Some(true) => {
+                if whisper_gpu_backend_available() {
+                    vec![true]
+                } else {
+                    crate::logging::log_line(
+                        &app_for_cb,
+                        "[cutter] FALKOE_WHISPER_USE_GPU=1 but this build has no GPU backend; using CPU",
+                    );
+                    vec![false]
+                }
+            }
+            None => {
+                if whisper_gpu_backend_available() {
+                    vec![true, false]
+                } else {
+                    vec![false]
+                }
+            }
         };
 
         let mut last_err: Option<anyhow::Error> = None;

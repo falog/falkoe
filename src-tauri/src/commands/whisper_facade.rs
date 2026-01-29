@@ -27,6 +27,7 @@ pub use manifest::SentenceAttribution;
 pub use manifest::SentenceManifest;
 pub use transcribe_impl::{transcribe, transcribe_preview};
 pub(crate) use transcribe_impl::transcribe_with_callbacks;
+pub(crate) use transcribe_impl::whisper_gpu_backend_available;
 pub(crate) use transcribe_impl::whisper_n_threads;
 pub(crate) use ffmpeg::{ffmpeg_convert_to_wav, ffmpeg_trim_with_padding_wav};
 pub(crate) use lang::whisper_language;

@@ -18,6 +18,7 @@ use super::types::{PreviewResult, Segment, TokenTimestamp, Transcript, WordTimes
 
 static TINY_CTX: OnceLock<Mutex<WhisperContext>> = OnceLock::new();
 static MAIN_CTX: OnceLock<Mutex<Option<CachedWhisperContext>>> = OnceLock::new();
+static WARNED_GPU_BACKEND_UNAVAILABLE: OnceLock<()> = OnceLock::new();
 
 struct CachedWhisperContext {
     key: String,
@@ -39,7 +40,7 @@ fn env_usize(key: &str) -> Option<usize> {
     value.trim().parse::<usize>().ok()
 }
 
-fn default_use_gpu() -> bool {
+pub(crate) fn whisper_gpu_backend_available() -> bool {
     // whisper-rs sets this based on whether it was compiled with a GPU backend.
     WhisperContextParameters::default().use_gpu
 }
@@ -49,7 +50,22 @@ fn env_use_gpu() -> Option<bool> {
 }
 
 fn whisper_use_gpu() -> bool {
-    env_use_gpu().unwrap_or_else(default_use_gpu)
+    let requested = env_use_gpu();
+    let available = whisper_gpu_backend_available();
+
+    match requested {
+        Some(true) if !available => {
+            // If the binary wasn't compiled with a GPU backend, don't pretend we can use it.
+            WARNED_GPU_BACKEND_UNAVAILABLE.get_or_init(|| {
+                log::warn!(
+                    "FALKOE_WHISPER_USE_GPU=1 was requested but this build has no GPU backend; falling back to CPU"
+                );
+            });
+            false
+        }
+        Some(v) => v,
+        None => available,
+    }
 }
 
 fn whisper_gpu_device() -> i32 {
@@ -175,8 +191,8 @@ fn build_ctx_params(
                 model_preset: preset,
             };
         } else {
-            eprintln!(
-                "DTW enabled (ja), but model filename is unknown; DTW disabled to avoid init failure: {:?}",
+            log::warn!(
+                "DTW enabled, but model filename is unknown; DTW disabled to avoid init failure: {:?}",
                 model_path
             );
         }
@@ -488,7 +504,10 @@ pub fn transcribe(wav_path: &str, model_path: &Path, whisper_lang: Option<&str>)
         Ok(t) => Ok(t),
         Err(e) => {
             let msg = e.to_string();
-            if want_gpu && default_use_gpu() && (is_whisper_error_code(&msg, -6) || is_whisper_error_code(&msg, -9)) {
+            if want_gpu
+                && whisper_gpu_backend_available()
+                && (is_whisper_error_code(&msg, -6) || is_whisper_error_code(&msg, -9))
+            {
                 // Some GPU backends can fail on certain drivers/inputs; retry on CPU.
                 return run_once(&audio, model_path, whisper_lang, false);
             }
