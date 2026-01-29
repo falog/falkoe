@@ -1,7 +1,8 @@
 use crate::model::ensure_model;
 use crate::commands::whisper::{
     ffmpeg_convert_to_wav, ffmpeg_trim_with_padding_wav, transcribe_with_callbacks,
-    whisper_gpu_backend_available, whisper_language, whisper_n_threads, Segment,
+    transcribe_in_subprocess_with_overrides, whisper_gpu_backend_available, whisper_language,
+    whisper_n_threads, Segment,
 };
 use chrono::Local;
 use serde::Serialize;
@@ -419,7 +420,7 @@ pub async fn cutter_suggest_segments(
 
     let wav_path = base_dir.join("input_16k.wav");
     ffmpeg_convert_to_wav(&app, Path::new(&input_path), &wav_path).map_err(|e| e.to_string())?;
-    let whisper_lang = whisper_language(&lang).map(|s| s.to_string());
+    let whisper_lang = whisper_language(&lang);
 
     let wav_str = wav_path
         .to_str()
@@ -486,34 +487,80 @@ pub async fn cutter_suggest_segments(
                 }
 
                 let mut last_progress: i32 = -1;
-                let res = transcribe_with_callbacks(
-                    &wav_str,
-                    &model_path,
-                    whisper_lang.as_deref(),
-                    n_threads,
-                    use_gpu,
-                    {
-                        let app_for_cb = app_for_cb.clone();
-                        let cutter_id_for_cb = cutter_id_for_cb.clone();
-                        move |p| {
-                            if p == last_progress {
-                                return;
+                let res = if cfg!(target_os = "windows") {
+                    if abort_for_cb.load(Ordering::Relaxed) {
+                        Err(anyhow::anyhow!("cancelled"))
+                    } else {
+                        // The in-process whisper path can fail on some Windows setups.
+                        // Use the same subprocess helper path as regular transcription.
+                        let running = Arc::new(AtomicBool::new(true));
+                        let running_for_thread = running.clone();
+                        let app_for_progress = app_for_cb.clone();
+                        let cutter_id_for_progress = cutter_id_for_cb.clone();
+                        let abort_for_progress = abort_for_cb.clone();
+
+                        let progress_thread = std::thread::spawn(move || {
+                            // Simple time-based progress: keep UI responsive while the helper runs.
+                            // Cap at 95 until completion.
+                            let mut p: i32 = 1;
+                            while running_for_thread.load(Ordering::Relaxed)
+                                && !abort_for_progress.load(Ordering::Relaxed)
+                            {
+                                let _ = app_for_progress.emit(
+                                    "cutter-detect-progress",
+                                    CutterDetectProgressPayload {
+                                        cutter_id: cutter_id_for_progress.clone(),
+                                        progress: p,
+                                    },
+                                );
+                                p = (p + 1).min(95);
+                                std::thread::sleep(std::time::Duration::from_millis(300));
                             }
-                            last_progress = p;
-                            let _ = app_for_cb.emit(
-                                "cutter-detect-progress",
-                                CutterDetectProgressPayload {
-                                    cutter_id: cutter_id_for_cb.clone(),
-                                    progress: p,
-                                },
-                            );
-                        }
-                    },
-                    {
-                        let abort_for_cb = abort_for_cb.clone();
-                        move || abort_for_cb.load(Ordering::Relaxed)
-                    },
-                );
+                        });
+
+                        let res = transcribe_in_subprocess_with_overrides(
+                            &app_for_cb,
+                            &wav_str,
+                            &model_path,
+                            whisper_lang,
+                            n_threads,
+                            use_gpu,
+                        );
+
+                        running.store(false, Ordering::Relaxed);
+                        let _ = progress_thread.join();
+                        res
+                    }
+                } else {
+                    transcribe_with_callbacks(
+                        &wav_str,
+                        &model_path,
+                        whisper_lang,
+                        n_threads,
+                        use_gpu,
+                        {
+                            let app_for_cb = app_for_cb.clone();
+                            let cutter_id_for_cb = cutter_id_for_cb.clone();
+                            move |p| {
+                                if p == last_progress {
+                                    return;
+                                }
+                                last_progress = p;
+                                let _ = app_for_cb.emit(
+                                    "cutter-detect-progress",
+                                    CutterDetectProgressPayload {
+                                        cutter_id: cutter_id_for_cb.clone(),
+                                        progress: p,
+                                    },
+                                );
+                            }
+                        },
+                        {
+                            let abort_for_cb = abort_for_cb.clone();
+                            move || abort_for_cb.load(Ordering::Relaxed)
+                        },
+                    )
+                };
 
                 match res {
                     Ok(t) => return Ok(t),
@@ -591,7 +638,7 @@ pub async fn cutter_suggest_segments_raw(
 
     let wav_path = base_dir.join("input_16k.wav");
     ffmpeg_convert_to_wav(&app, Path::new(&input_path), &wav_path).map_err(|e| e.to_string())?;
-    let whisper_lang = whisper_language(&lang).map(|s| s.to_string());
+    let whisper_lang = whisper_language(&lang);
 
     let wav_str = wav_path
         .to_str()
@@ -658,34 +705,76 @@ pub async fn cutter_suggest_segments_raw(
                 }
 
                 let mut last_progress: i32 = -1;
-                let res = transcribe_with_callbacks(
-                    &wav_str,
-                    &model_path,
-                    whisper_lang.as_deref(),
-                    n_threads,
-                    use_gpu,
-                    {
-                        let app_for_cb = app_for_cb.clone();
-                        let cutter_id_for_cb = cutter_id_for_cb.clone();
-                        move |p| {
-                            if p == last_progress {
-                                return;
+                let res = if cfg!(target_os = "windows") {
+                    if abort_for_cb.load(Ordering::Relaxed) {
+                        Err(anyhow::anyhow!("cancelled"))
+                    } else {
+                        let running = Arc::new(AtomicBool::new(true));
+                        let running_for_thread = running.clone();
+                        let app_for_progress = app_for_cb.clone();
+                        let cutter_id_for_progress = cutter_id_for_cb.clone();
+                        let abort_for_progress = abort_for_cb.clone();
+
+                        let progress_thread = std::thread::spawn(move || {
+                            let mut p: i32 = 1;
+                            while running_for_thread.load(Ordering::Relaxed)
+                                && !abort_for_progress.load(Ordering::Relaxed)
+                            {
+                                let _ = app_for_progress.emit(
+                                    "cutter-detect-progress",
+                                    CutterDetectProgressPayload {
+                                        cutter_id: cutter_id_for_progress.clone(),
+                                        progress: p,
+                                    },
+                                );
+                                p = (p + 1).min(95);
+                                std::thread::sleep(std::time::Duration::from_millis(300));
                             }
-                            last_progress = p;
-                            let _ = app_for_cb.emit(
-                                "cutter-detect-progress",
-                                CutterDetectProgressPayload {
-                                    cutter_id: cutter_id_for_cb.clone(),
-                                    progress: p,
-                                },
-                            );
-                        }
-                    },
-                    {
-                        let abort_for_cb = abort_for_cb.clone();
-                        move || abort_for_cb.load(Ordering::Relaxed)
-                    },
-                );
+                        });
+
+                        let res = transcribe_in_subprocess_with_overrides(
+                            &app_for_cb,
+                            &wav_str,
+                            &model_path,
+                            whisper_lang,
+                            n_threads,
+                            use_gpu,
+                        );
+
+                        running.store(false, Ordering::Relaxed);
+                        let _ = progress_thread.join();
+                        res
+                    }
+                } else {
+                    transcribe_with_callbacks(
+                        &wav_str,
+                        &model_path,
+                        whisper_lang,
+                        n_threads,
+                        use_gpu,
+                        {
+                            let app_for_cb = app_for_cb.clone();
+                            let cutter_id_for_cb = cutter_id_for_cb.clone();
+                            move |p| {
+                                if p == last_progress {
+                                    return;
+                                }
+                                last_progress = p;
+                                let _ = app_for_cb.emit(
+                                    "cutter-detect-progress",
+                                    CutterDetectProgressPayload {
+                                        cutter_id: cutter_id_for_cb.clone(),
+                                        progress: p,
+                                    },
+                                );
+                            }
+                        },
+                        {
+                            let abort_for_cb = abort_for_cb.clone();
+                            move || abort_for_cb.load(Ordering::Relaxed)
+                        },
+                    )
+                };
 
                 match res {
                     Ok(t) => return Ok(t),

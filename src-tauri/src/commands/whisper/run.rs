@@ -454,7 +454,7 @@ fn parse_transcribe_stdout_json(
     bail!("no JSON object found in stdout")
 }
 
-fn transcribe_in_subprocess(
+pub(crate) fn transcribe_in_subprocess(
     app: &AppHandle,
     wav_path: &str,
     model_path: &std::path::Path,
@@ -503,6 +503,114 @@ fn transcribe_in_subprocess(
                 cmd1.arg("--lang");
                 cmd1.arg(l);
             }
+            cmd1.env("RUST_BACKTRACE", "1");
+            cmd1.stdout(std::process::Stdio::piped());
+            cmd1.stderr(std::process::Stdio::piped());
+
+            #[cfg(target_os = "windows")]
+            let _err_mode2 = WindowsErrorModeGuard::new_suppress_loader_dialogs();
+            let out2 = cmd1.output()?;
+            let stderr2 = String::from_utf8_lossy(&out2.stderr).trim().to_string();
+            if !out2.status.success() {
+                crate::logging::log_line(
+                    app,
+                    format!(
+                        "[whisper] transcribe(subprocess): cpu retry failed status={:?} stderr={}",
+                        out2.status.code(),
+                        crate::logging::truncate_for_log(&stderr2, 2000)
+                    ),
+                );
+                bail!("transcribe subprocess failed");
+            }
+
+            if !stderr2.is_empty() {
+                crate::logging::log_line(
+                    app,
+                    format!(
+                        "[whisper] transcribe(subprocess): stderr={}",
+                        crate::logging::truncate_for_log(&stderr2, 2000)
+                    ),
+                );
+            }
+
+            return parse_transcribe_stdout_json(app, &out2.stdout)
+                .with_context(|| "failed to parse transcribe subprocess stdout as JSON");
+        }
+
+        bail!("transcribe subprocess failed");
+    }
+
+    if !stderr.is_empty() {
+        crate::logging::log_line(
+            app,
+            format!(
+                "[whisper] transcribe(subprocess): stderr={}",
+                crate::logging::truncate_for_log(&stderr, 2000)
+            ),
+        );
+    }
+
+    parse_transcribe_stdout_json(app, &out.stdout)
+        .with_context(|| "failed to parse transcribe subprocess stdout as JSON")
+}
+
+pub(crate) fn transcribe_in_subprocess_with_overrides(
+    app: &AppHandle,
+    wav_path: &str,
+    model_path: &std::path::Path,
+    whisper_lang: Option<&'static str>,
+    n_threads: i32,
+    use_gpu: bool,
+) -> Result<super::types::Transcript> {
+    let (mut cmd0, picked0) = make_transcribe_command(app, wav_path, model_path, whisper_lang)?;
+    if let Some(l) = whisper_lang {
+        cmd0.arg("--lang");
+        cmd0.arg(l);
+    }
+
+    // Per-invocation overrides.
+    cmd0.env("FALKOE_WHISPER_THREADS", n_threads.to_string());
+    cmd0.env("FALKOE_WHISPER_USE_GPU", if use_gpu { "1" } else { "0" });
+
+    cmd0.env("RUST_BACKTRACE", "1");
+    cmd0.stdout(std::process::Stdio::piped());
+    cmd0.stderr(std::process::Stdio::piped());
+
+    #[cfg(target_os = "windows")]
+    let _err_mode = WindowsErrorModeGuard::new_suppress_loader_dialogs();
+    let out = cmd0.output()?;
+    let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    if !out.status.success() {
+        crate::logging::log_line(
+            app,
+            format!(
+                "[whisper] transcribe(subprocess): failed picked={} status={:?} stderr={}",
+                picked0,
+                out.status.code(),
+                crate::logging::truncate_for_log(&stderr, 2000)
+            ),
+        );
+
+        let should_retry_cpu = picked0 == "vulkan" || is_vulkan_unsupported_error(&stderr);
+        if should_retry_cpu {
+            crate::logging::log_line(
+                app,
+                "[whisper] transcribe(subprocess): vulkan failed; retrying with CPU-only backend".to_string(),
+            );
+
+            let (mut cmd1, _picked1) = make_transcribe_command_with_pref(
+                app,
+                wav_path,
+                model_path,
+                whisper_lang,
+                TranscribeBackendPref::CpuOnly,
+            )?;
+            if let Some(l) = whisper_lang {
+                cmd1.arg("--lang");
+                cmd1.arg(l);
+            }
+            cmd1.env("FALKOE_WHISPER_THREADS", n_threads.to_string());
+            cmd1.env("FALKOE_WHISPER_USE_GPU", "0");
             cmd1.env("RUST_BACKTRACE", "1");
             cmd1.stdout(std::process::Stdio::piped());
             cmd1.stderr(std::process::Stdio::piped());
