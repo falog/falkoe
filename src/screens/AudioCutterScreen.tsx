@@ -66,7 +66,7 @@ export default function AudioCutterScreen({
   const { t } = useTranslation();
 
   // Rarely used; keep the implementation but hide the UI for now.
-  const SHOW_MANUAL_SPLIT = false;
+  const SHOW_MANUAL_SPLIT = true;
 
   const fileUrlRef = useRef<string | null>(null);
 
