@@ -1,6 +1,6 @@
 use crate::model::ensure_model;
 use crate::commands::whisper::{
-    ffmpeg_convert_to_wav, ffmpeg_trim_with_padding_wav, transcribe_with_callbacks,
+    ffmpeg_convert_to_wav, ffmpeg_trim_with_padding_wav, transcribe_segments_with_callbacks,
     transcribe_in_subprocess_with_overrides, whisper_gpu_backend_available, whisper_language,
     whisper_n_threads, Segment,
 };
@@ -448,22 +448,46 @@ pub async fn cutter_suggest_segments(
             thread_attempts.push(1);
         }
 
-        let force_use_gpu = env_bool("FALKOE_WHISPER_USE_GPU");
+        // NOTE: `FALKOE_WHISPER_USE_GPU` is used as a per-invocation override for the
+        // transcribe helper (we set it explicitly when spawning the subprocess).
+        // Do not treat a user/global environment value as a cutter preference, otherwise
+        // a stale `FALKOE_WHISPER_USE_GPU=0` can silently force CPU and cause huge slowdowns.
+        // Use `FALKOE_WHISPER_CUTTER_USE_GPU` to override cutter backend selection.
+        let force_use_gpu = env_bool("FALKOE_WHISPER_CUTTER_USE_GPU");
+        if force_use_gpu.is_none() {
+            if let Some(v) = env_bool("FALKOE_WHISPER_USE_GPU") {
+                crate::logging::log_line(
+                    &app_for_cb,
+                    format!(
+                        "[cutter] ignoring FALKOE_WHISPER_USE_GPU={} for cutter backend selection; set FALKOE_WHISPER_CUTTER_USE_GPU instead",
+                        if v { 1 } else { 0 }
+                    ),
+                );
+            }
+        }
+        let gpu_available = if cfg!(target_os = "windows") {
+            // On Windows we run transcription in a subprocess helper. The helper may have GPU
+            // support even if the main app binary does not, so check helper availability too.
+            whisper_gpu_backend_available() || crate::commands::whisper::whisper_gpu_helper_available(&app_for_cb)
+        } else {
+            whisper_gpu_backend_available()
+        };
+
         let backend_attempts: Vec<bool> = match force_use_gpu {
             Some(false) => vec![false],
             Some(true) => {
-                if whisper_gpu_backend_available() {
+                if gpu_available {
                     vec![true]
                 } else {
                     crate::logging::log_line(
                         &app_for_cb,
-                        "[cutter] FALKOE_WHISPER_USE_GPU=1 but this build has no GPU backend; using CPU",
+                        "[cutter] FALKOE_WHISPER_USE_GPU=1 but no GPU helper/backend is available; using CPU",
                     );
                     vec![false]
                 }
             }
             None => {
-                if whisper_gpu_backend_available() {
+                if gpu_available {
                     vec![true, false]
                 } else {
                     vec![false]
@@ -525,6 +549,7 @@ pub async fn cutter_suggest_segments(
                             whisper_lang,
                             n_threads,
                             use_gpu,
+                            true,
                         );
 
                         running.store(false, Ordering::Relaxed);
@@ -532,7 +557,7 @@ pub async fn cutter_suggest_segments(
                         res
                     }
                 } else {
-                    transcribe_with_callbacks(
+                    transcribe_segments_with_callbacks(
                         &wav_str,
                         &model_path,
                         whisper_lang,
@@ -666,22 +691,40 @@ pub async fn cutter_suggest_segments_raw(
             thread_attempts.push(1);
         }
 
-        let force_use_gpu = env_bool("FALKOE_WHISPER_USE_GPU");
+        // See note above: cutter backend selection uses `FALKOE_WHISPER_CUTTER_USE_GPU`.
+        let force_use_gpu = env_bool("FALKOE_WHISPER_CUTTER_USE_GPU");
+        if force_use_gpu.is_none() {
+            if let Some(v) = env_bool("FALKOE_WHISPER_USE_GPU") {
+                crate::logging::log_line(
+                    &app_for_cb,
+                    format!(
+                        "[cutter] ignoring FALKOE_WHISPER_USE_GPU={} for cutter backend selection; set FALKOE_WHISPER_CUTTER_USE_GPU instead",
+                        if v { 1 } else { 0 }
+                    ),
+                );
+            }
+        }
+        let gpu_available = if cfg!(target_os = "windows") {
+            whisper_gpu_backend_available() || crate::commands::whisper::whisper_gpu_helper_available(&app_for_cb)
+        } else {
+            whisper_gpu_backend_available()
+        };
+
         let backend_attempts: Vec<bool> = match force_use_gpu {
             Some(false) => vec![false],
             Some(true) => {
-                if whisper_gpu_backend_available() {
+                if gpu_available {
                     vec![true]
                 } else {
                     crate::logging::log_line(
                         &app_for_cb,
-                        "[cutter] FALKOE_WHISPER_USE_GPU=1 but this build has no GPU backend; using CPU",
+                        "[cutter] FALKOE_WHISPER_USE_GPU=1 but no GPU helper/backend is available; using CPU",
                     );
                     vec![false]
                 }
             }
             None => {
-                if whisper_gpu_backend_available() {
+                if gpu_available {
                     vec![true, false]
                 } else {
                     vec![false]
@@ -739,6 +782,7 @@ pub async fn cutter_suggest_segments_raw(
                             whisper_lang,
                             n_threads,
                             use_gpu,
+                            true,
                         );
 
                         running.store(false, Ordering::Relaxed);
@@ -746,7 +790,7 @@ pub async fn cutter_suggest_segments_raw(
                         res
                     }
                 } else {
-                    transcribe_with_callbacks(
+                    transcribe_segments_with_callbacks(
                         &wav_str,
                         &model_path,
                         whisper_lang,

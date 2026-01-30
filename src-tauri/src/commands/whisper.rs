@@ -14,7 +14,8 @@ mod types;
 pub use audio::load_wav_as_f32;
 pub use manifest::SentenceManifest;
 pub use run::{run_whisper, run_whisper_model, run_whisper_uploaded};
-pub use transcribe::{transcribe, transcribe_preview, transcribe_with_callbacks};
+pub(crate) use run::{transcribe_in_subprocess_with_overrides, whisper_gpu_helper_available};
+pub use transcribe::{transcribe, transcribe_preview, transcribe_segments_with_callbacks, transcribe_with_callbacks};
 pub(crate) use transcribe::whisper_gpu_backend_available;
 pub use types::{
     FinalResult, PartialSegment, PreviewResult, Segment, TokenTimestamp, Transcript, WordTimestamp,

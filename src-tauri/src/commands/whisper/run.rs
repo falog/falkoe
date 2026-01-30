@@ -561,8 +561,25 @@ pub(crate) fn transcribe_in_subprocess_with_overrides(
     whisper_lang: Option<&'static str>,
     n_threads: i32,
     use_gpu: bool,
+    segments_only: bool,
 ) -> Result<super::types::Transcript> {
-    let (mut cmd0, picked0) = make_transcribe_command(app, wav_path, model_path, whisper_lang)?;
+    // Ensure helper choice matches the requested backend for this invocation.
+    // Without this, we may accidentally pick the Vulkan helper even when use_gpu=0,
+    // which results in CPU-only execution and confusing logs like "picked=vulkan" + "use gpu = 0".
+    let pref_env = parse_backend_pref();
+    let pref0 = if use_gpu {
+        match pref_env {
+            // If caller explicitly requested GPU, don't let a CPU-only backend preference
+            // prevent us from trying GPU helpers.
+            TranscribeBackendPref::CpuOnly => TranscribeBackendPref::Auto,
+            other => other,
+        }
+    } else {
+        TranscribeBackendPref::CpuOnly
+    };
+
+    let (mut cmd0, picked0) =
+        make_transcribe_command_with_pref(app, wav_path, model_path, whisper_lang, pref0)?;
     if let Some(l) = whisper_lang {
         cmd0.arg("--lang");
         cmd0.arg(l);
@@ -571,6 +588,10 @@ pub(crate) fn transcribe_in_subprocess_with_overrides(
     // Per-invocation overrides.
     cmd0.env("FALKOE_WHISPER_THREADS", n_threads.to_string());
     cmd0.env("FALKOE_WHISPER_USE_GPU", if use_gpu { "1" } else { "0" });
+    cmd0.env(
+        "FALKOE_WHISPER_SEGMENTS_ONLY",
+        if segments_only { "1" } else { "0" },
+    );
 
     cmd0.env("RUST_BACKTRACE", "1");
     cmd0.stdout(std::process::Stdio::piped());
@@ -611,6 +632,10 @@ pub(crate) fn transcribe_in_subprocess_with_overrides(
             }
             cmd1.env("FALKOE_WHISPER_THREADS", n_threads.to_string());
             cmd1.env("FALKOE_WHISPER_USE_GPU", "0");
+            cmd1.env(
+                "FALKOE_WHISPER_SEGMENTS_ONLY",
+                if segments_only { "1" } else { "0" },
+            );
             cmd1.env("RUST_BACKTRACE", "1");
             cmd1.stdout(std::process::Stdio::piped());
             cmd1.stderr(std::process::Stdio::piped());
@@ -660,6 +685,18 @@ pub(crate) fn transcribe_in_subprocess_with_overrides(
 
     parse_transcribe_stdout_json(app, &out.stdout)
         .with_context(|| "failed to parse transcribe subprocess stdout as JSON")
+}
+
+pub(crate) fn whisper_gpu_helper_available(app: &AppHandle) -> bool {
+    let pref = parse_backend_pref();
+    if pref == TranscribeBackendPref::CpuOnly {
+        return false;
+    }
+
+    match resolve_transcribe_helper(app, pref) {
+        Ok((_p, picked)) => matches!(picked, "vulkan" | "metal"),
+        Err(_) => false,
+    }
 }
 
 fn run_whisper_for_wav(app: &AppHandle, wav_path: &str, sentence_hash: &str, lang: &str) -> Result<()> {

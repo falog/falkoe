@@ -41,12 +41,22 @@ fn env_usize(key: &str) -> Option<usize> {
 }
 
 pub(crate) fn whisper_gpu_backend_available() -> bool {
-    // whisper-rs sets this based on whether it was compiled with a GPU backend.
+    // whisper-rs exposes a single `use_gpu` flag. For Vulkan builds, this default can remain
+    // false even though a GPU backend is available (ggml_vulkan), which would incorrectly
+    // disable GPU usage and cause massive slowdowns.
+    if cfg!(any(feature = "whisper-vulkan", feature = "whisper-metal")) {
+        return true;
+    }
+
     WhisperContextParameters::default().use_gpu
 }
 
 fn env_use_gpu() -> Option<bool> {
     env_bool("FALKOE_WHISPER_USE_GPU")
+}
+
+fn env_segments_only() -> bool {
+    env_bool("FALKOE_WHISPER_SEGMENTS_ONLY").unwrap_or(false)
 }
 
 fn whisper_use_gpu() -> bool {
@@ -176,6 +186,7 @@ fn build_ctx_params(
     model_path: &Path,
     whisper_lang: Option<&str>,
     use_gpu: bool,
+    enable_dtw: bool,
 ) -> (WhisperContextParameters<'static>, Option<DtwModelPreset>) {
     let mut ctx_params = WhisperContextParameters::default();
     ctx_params.use_gpu = use_gpu;
@@ -184,7 +195,7 @@ fn build_ctx_params(
     }
 
     let mut dtw_preset: Option<DtwModelPreset> = None;
-    if should_enable_dtw(whisper_lang) {
+    if enable_dtw && should_enable_dtw(whisper_lang) {
         if let Some(preset) = dtw_preset_for_model_path(model_path) {
             dtw_preset = Some(preset.clone());
             ctx_params.dtw_parameters.mode = DtwMode::ModelPreset {
@@ -348,14 +359,19 @@ fn transcribe_streaming(app: &AppHandle, wav_path: &str) -> Result<Vec<Segment>>
 
 pub fn transcribe(wav_path: &str, model_path: &Path, whisper_lang: Option<&str>) -> Result<Transcript> {
     let audio = load_wav_as_f32(wav_path)?;
+    let segments_only = env_segments_only();
 
     fn run_once(
         audio: &[f32],
         model_path: &Path,
         whisper_lang: Option<&str>,
         use_gpu: bool,
+        segments_only: bool,
     ) -> Result<Transcript> {
-        let (ctx_params, dtw_preset) = build_ctx_params(model_path, whisper_lang, use_gpu);
+        // Cutter (segment suggestion) doesn't need DTW/token/word alignment; skipping it is
+        // dramatically faster (especially on CPU).
+        let enable_dtw = !segments_only;
+        let (ctx_params, dtw_preset) = build_ctx_params(model_path, whisper_lang, use_gpu, enable_dtw);
 
         // Loading the Whisper model can be very expensive; cache the context for the
         // currently selected model+backend to speed up repeated transcriptions.
@@ -384,14 +400,46 @@ pub fn transcribe(wav_path: &str, model_path: &Path, whisper_lang: Option<&str>)
         params.set_translate(false);
         params.set_temperature(0.0);
 
-        // Token-level timestamps.
-        params.set_token_timestamps(true);
-        // Prefer word-ish splitting only for whitespace-separated languages.
-        params.set_split_on_word(should_split_on_word(whisper_lang));
+        if segments_only {
+            params.set_token_timestamps(false);
+            params.set_split_on_word(false);
+        } else {
+            // Token-level timestamps.
+            params.set_token_timestamps(true);
+            // Prefer word-ish splitting only for whitespace-separated languages.
+            params.set_split_on_word(should_split_on_word(whisper_lang));
+        }
 
         state.full(params, audio)?;
 
         let mut segments: Vec<Segment> = Vec::new();
+
+        if segments_only {
+            for s in state.as_iter() {
+                let text = strip_whisper_special_tokens(&s.to_string()).trim().to_string();
+
+                if text.is_empty()
+                    || text == "[BLANK_AUDIO]"
+                    || (text.starts_with('(') && text.ends_with(')'))
+                    || (text.starts_with('[') && text.ends_with(']'))
+                {
+                    continue;
+                }
+
+                segments.push(Segment {
+                    start: s.start_timestamp() as f32 / 100.0,
+                    end: s.end_timestamp() as f32 / 100.0,
+                    text,
+                });
+            }
+
+            return Ok(Transcript {
+                segments,
+                tokens: None,
+                words: None,
+            });
+        }
+
         let mut tokens: Vec<TokenTimestamp> = Vec::new();
         let mut token_bytes: Vec<(f32, f32, Vec<u8>)> = Vec::new();
         let mut prev_end_for_dtw: Option<f32> = None;
@@ -500,7 +548,7 @@ pub fn transcribe(wav_path: &str, model_path: &Path, whisper_lang: Option<&str>)
     }
 
     let want_gpu = whisper_use_gpu();
-    match run_once(&audio, model_path, whisper_lang, want_gpu) {
+    match run_once(&audio, model_path, whisper_lang, want_gpu, segments_only) {
         Ok(t) => Ok(t),
         Err(e) => {
             let msg = e.to_string();
@@ -509,11 +557,88 @@ pub fn transcribe(wav_path: &str, model_path: &Path, whisper_lang: Option<&str>)
                 && (is_whisper_error_code(&msg, -6) || is_whisper_error_code(&msg, -9))
             {
                 // Some GPU backends can fail on certain drivers/inputs; retry on CPU.
-                return run_once(&audio, model_path, whisper_lang, false);
+                return run_once(&audio, model_path, whisper_lang, false, segments_only);
             }
             Err(e)
         }
     }
+}
+
+pub fn transcribe_segments_with_callbacks<P, A>(
+    wav_path: &str,
+    model_path: &Path,
+    whisper_lang: Option<&str>,
+    n_threads: i32,
+    use_gpu: bool,
+    progress_callback: P,
+    abort_callback: A,
+) -> Result<Transcript>
+where
+    P: FnMut(i32) + 'static,
+    A: FnMut() -> bool + 'static,
+{
+    let audio = load_wav_as_f32(wav_path)?;
+
+    // Cutter doesn't need token/word alignment. Disable DTW and token timestamps for speed.
+    let (ctx_params, dtw_preset) = build_ctx_params(model_path, whisper_lang, use_gpu, false);
+
+    let key = ctx_cache_key_with_backend(
+        model_path,
+        dtw_preset,
+        ctx_params.use_gpu,
+        ctx_params.gpu_device,
+    );
+    let ctx_mutex = MAIN_CTX.get_or_init(|| Mutex::new(None));
+    let mut cached = ctx_mutex.lock().unwrap();
+    let needs_reload = cached.as_ref().map(|c| c.key != key).unwrap_or(true);
+    if needs_reload {
+        let ctx = WhisperContext::new_with_params(model_path.to_str().unwrap(), ctx_params)?;
+        *cached = Some(CachedWhisperContext { key, ctx });
+    }
+
+    let ctx_ref = &cached.as_ref().unwrap().ctx;
+    let mut state = ctx_ref.create_state()?;
+
+    let mut params = FullParams::new(whisper_sampling_strategy());
+    params.set_n_threads(n_threads.clamp(1, 64));
+
+    params.set_language(whisper_lang);
+    params.set_translate(false);
+    params.set_temperature(0.0);
+
+    params.set_token_timestamps(false);
+    params.set_split_on_word(false);
+
+    params.set_print_progress(false);
+    params.set_progress_callback_safe::<Option<P>, P>(Some(progress_callback));
+    params.set_abort_callback_safe::<Option<A>, A>(Some(abort_callback));
+
+    state.full(params, &audio)?;
+
+    let mut segments: Vec<Segment> = Vec::new();
+    for s in state.as_iter() {
+        let text = strip_whisper_special_tokens(&s.to_string()).trim().to_string();
+
+        if text.is_empty()
+            || text == "[BLANK_AUDIO]"
+            || (text.starts_with('(') && text.ends_with(')'))
+            || (text.starts_with('[') && text.ends_with(']'))
+        {
+            continue;
+        }
+
+        segments.push(Segment {
+            start: s.start_timestamp() as f32 / 100.0,
+            end: s.end_timestamp() as f32 / 100.0,
+            text,
+        });
+    }
+
+    Ok(Transcript {
+        segments,
+        tokens: None,
+        words: None,
+    })
 }
 
 pub fn transcribe_with_callbacks<P, A>(
@@ -531,7 +656,7 @@ where
 {
     let audio = load_wav_as_f32(wav_path)?;
 
-    let (ctx_params, dtw_preset) = build_ctx_params(model_path, whisper_lang, use_gpu);
+    let (ctx_params, dtw_preset) = build_ctx_params(model_path, whisper_lang, use_gpu, true);
 
     // Loading the Whisper model can be very expensive; cache the context for the
     // currently selected model to speed up repeated transcriptions.
