@@ -177,6 +177,15 @@ fn build_ctx_params(
     whisper_lang: Option<&str>,
     use_gpu: bool,
 ) -> (WhisperContextParameters<'static>, Option<DtwModelPreset>) {
+    build_ctx_params_with_dtw_override(model_path, whisper_lang, use_gpu, None)
+}
+
+fn build_ctx_params_with_dtw_override(
+    model_path: &Path,
+    whisper_lang: Option<&str>,
+    use_gpu: bool,
+    dtw_override: Option<bool>,
+) -> (WhisperContextParameters<'static>, Option<DtwModelPreset>) {
     let mut ctx_params = WhisperContextParameters::default();
     ctx_params.use_gpu = use_gpu;
     if use_gpu {
@@ -184,7 +193,8 @@ fn build_ctx_params(
     }
 
     let mut dtw_preset: Option<DtwModelPreset> = None;
-    if should_enable_dtw(whisper_lang) {
+    let enable_dtw = dtw_override.unwrap_or_else(|| should_enable_dtw(whisper_lang));
+    if enable_dtw {
         if let Some(preset) = dtw_preset_for_model_path(model_path) {
             dtw_preset = Some(preset.clone());
             ctx_params.dtw_parameters.mode = DtwMode::ModelPreset {
@@ -529,9 +539,61 @@ where
     P: FnMut(i32) + 'static,
     A: FnMut() -> bool + 'static,
 {
+    transcribe_with_callbacks_impl(
+        wav_path,
+        model_path,
+        whisper_lang,
+        n_threads,
+        use_gpu,
+        None,
+        progress_callback,
+        abort_callback,
+    )
+}
+
+pub fn transcribe_with_callbacks_no_dtw<P, A>(
+    wav_path: &str,
+    model_path: &Path,
+    whisper_lang: Option<&str>,
+    n_threads: i32,
+    use_gpu: bool,
+    progress_callback: P,
+    abort_callback: A,
+) -> Result<Transcript>
+where
+    P: FnMut(i32) + 'static,
+    A: FnMut() -> bool + 'static,
+{
+    transcribe_with_callbacks_impl(
+        wav_path,
+        model_path,
+        whisper_lang,
+        n_threads,
+        use_gpu,
+        Some(false),
+        progress_callback,
+        abort_callback,
+    )
+}
+
+fn transcribe_with_callbacks_impl<P, A>(
+    wav_path: &str,
+    model_path: &Path,
+    whisper_lang: Option<&str>,
+    n_threads: i32,
+    use_gpu: bool,
+    dtw_override: Option<bool>,
+    progress_callback: P,
+    abort_callback: A,
+) -> Result<Transcript>
+where
+    P: FnMut(i32) + 'static,
+    A: FnMut() -> bool + 'static,
+{
     let audio = load_wav_as_f32(wav_path)?;
 
-    let (ctx_params, dtw_preset) = build_ctx_params(model_path, whisper_lang, use_gpu);
+    let (ctx_params, dtw_preset) =
+        build_ctx_params_with_dtw_override(model_path, whisper_lang, use_gpu, dtw_override);
 
     // Loading the Whisper model can be very expensive; cache the context for the
     // currently selected model to speed up repeated transcriptions.

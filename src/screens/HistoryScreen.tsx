@@ -1,4 +1,13 @@
-import { Button, Card, Empty, Input, Select, Space, Typography } from "antd";
+import {
+  Button,
+  Card,
+  Empty,
+  Input,
+  Select,
+  Space,
+  Tag,
+  Typography,
+} from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
@@ -11,6 +20,7 @@ type HistoryItem = {
   lang: string;
   text: string | null;
   attribution: SentenceAttribution | null;
+  isTask: boolean;
   recordingsCount: number;
   lastRecordingTimestamp: string | null;
   lastRecordingWavPath: string | null;
@@ -29,6 +39,8 @@ type HistorySortKey =
   | "filenameDesc"
   | "textAsc"
   | "textDesc";
+
+type HistoryFilterMode = "all" | "tasks" | "uploaded" | "examples";
 
 type Props = {
   onBack: () => void;
@@ -56,6 +68,7 @@ export default function HistoryScreen({
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState<HistorySortKey>("recent");
+  const [filterMode, setFilterMode] = useState<HistoryFilterMode>("all");
 
   const collator = useMemo(
     () => new Intl.Collator(undefined, { numeric: true, sensitivity: "base" }),
@@ -142,9 +155,23 @@ export default function HistoryScreen({
 
   const filteredAndSortedItems = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const base = items.filter((it) => {
+      switch (filterMode) {
+        case "all":
+          return true;
+        case "tasks":
+          return Boolean(it.isTask);
+        case "uploaded":
+          return Boolean(it.uploadedPath);
+        case "examples":
+          return Boolean(it.tatoebaMp3Path || it.attribution);
+        default:
+          return true;
+      }
+    });
     const filtered = !q
-      ? items
-      : items.filter((it) => {
+      ? base
+      : base.filter((it) => {
           const filename = displayFilename(it) ?? "";
           const text = it.text ?? "";
           const haystack = [
@@ -235,7 +262,7 @@ export default function HistoryScreen({
     });
 
     return withIndex.map((x) => x.it);
-  }, [items, query, sortKey, collator]);
+  }, [items, query, sortKey, collator, filterMode]);
 
   return (
     <Space orientation="vertical" style={{ width: "100%" }}>
@@ -253,6 +280,23 @@ export default function HistoryScreen({
       <Typography.Title level={4} style={{ margin: 0 }}>
         {t("screens.history.title")}
       </Typography.Title>
+
+      <Space wrap align="center">
+        <Typography.Text type="secondary">
+          {t("screens.history.filter.label")}
+        </Typography.Text>
+        <Select
+          value={filterMode}
+          onChange={(v) => setFilterMode(v)}
+          style={{ width: 220 }}
+          options={[
+            { value: "all", label: t("screens.history.filter.all") },
+            { value: "uploaded", label: t("screens.history.filter.uploaded") },
+            { value: "examples", label: t("screens.history.filter.examples") },
+            { value: "tasks", label: t("screens.history.filter.tasks") },
+          ]}
+        />
+      </Space>
 
       <Space wrap style={{ width: "100%" }}>
         <Input
@@ -326,11 +370,12 @@ export default function HistoryScreen({
             title={
               <Space wrap>
                 <Typography.Text strong>
-                  {it.text?.trim()
-                    ? it.text
-                    : `${t("screens.history.textNotSaved")} ${displayFilename(it) ?? it.audioId}`}
+                  {displayFilename(it) ?? it.text?.trim() ?? it.audioId}
                 </Typography.Text>
                 <Typography.Text type="secondary">[{it.lang}]</Typography.Text>
+                {it.isTask && (
+                  <Tag color="gold">{t("screens.history.taskTag")}</Tag>
+                )}
               </Space>
             }
             extra={
@@ -343,7 +388,19 @@ export default function HistoryScreen({
               </Button>
             }
           >
-            <Space wrap>
+            {it.text?.trim() ? (
+              <Typography.Paragraph
+                style={{ margin: 0, fontSize: 16, lineHeight: 1.35 }}
+              >
+                <Typography.Text strong>{it.text}</Typography.Text>
+              </Typography.Paragraph>
+            ) : (
+              <Typography.Paragraph style={{ margin: 0 }} type="secondary">
+                {t("screens.history.textNotSaved")}
+              </Typography.Paragraph>
+            )}
+
+            <Space wrap style={{ marginTop: 6 }}>
               <Typography.Text type="secondary">
                 {t("screens.history.takes")}
                 {it.recordingsCount ?? 0}

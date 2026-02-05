@@ -27,6 +27,7 @@ pub use manifest::SentenceAttribution;
 pub use manifest::SentenceManifest;
 pub use transcribe_impl::{transcribe, transcribe_preview};
 pub(crate) use transcribe_impl::transcribe_with_callbacks;
+pub(crate) use transcribe_impl::transcribe_with_callbacks_no_dtw;
 pub(crate) use transcribe_impl::whisper_gpu_backend_available;
 pub(crate) use transcribe_impl::whisper_n_threads;
 pub(crate) use run_impl::transcribe_in_subprocess_with_overrides;

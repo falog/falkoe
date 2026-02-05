@@ -96,14 +96,9 @@
       },
       "options": {
         "rawSegments": "再解析（結合なし）",
-        "rawSegmentsHelp": "Whisperの元セグメント（時間つき断片）を結合せず、そのまま一覧にします。自動結合で区間が大きくなりすぎる時や、手動で分割/時間調整したい時に便利です。"
-      },
-      "manualSplit": {
-        "label": "手動分割",
-        "at": "分割位置 (秒)",
-        "split": "分割",
-        "atHelp": "選んだ区間の start〜end の範囲内で指定してください。範囲外だと分割できません。",
-        "hint": "指定した秒数で区間を2つに分割します"
+        "rawSegmentsHelp": "Whisperの元セグメント（時間つき断片）を結合せず、そのまま一覧にします。自動結合で区間が大きくなりすぎる時や、手動で分割/時間調整したい時に便利です。",
+        "wordSegments": "単語ごとに検出（試験機能）",
+        "wordSegmentsHelp": "Whisperの単語タイムスタンプから、単語ごとに1クリップを作ります（英語など、スペース区切りの言語のみ）。クリップ数が大量になることがあります。"
       },
       "manualTime": {
         "start": "開始",
@@ -134,11 +129,14 @@
         "textEmpty": "テキストが空です",
         "textTooManyLines": "行数（{{lines}}）が区間数（{{segs}}）より多いので分割できません（Whisper区間より細かくは切れません）",
         "textApplied": "テキストを適用しました（{{count}}個）",
+        "resegmentFailed": "単語タイムスタンプからの再分割に失敗しました: ",
         "splitOutOfRange": "分割位置は区間内（{{start}}–{{end}}）にしてください",
         "splitOk": "分割しました",
         "nothingSelected": "選択された区間がありません",
         "exported": "{{count}}個を書き出しました。先頭: {{head}}",
         "exportFailed": "書き出しに失敗しました: ",
+        "imported": "{{count}}個を取り込みました（先頭: {{head}}）。練習画面を開きます…",
+        "importFailed": "取り込みに失敗しました: ",
         "previewFailed": "プレビューに失敗しました: "
       }
     },
@@ -328,6 +326,14 @@
       "title": "録音履歴",
       "loading": "読み込み中…",
       "empty": "データがありません",
+      "taskTag": "音声カット",
+      "filter": {
+        "label": "表示：",
+        "all": "全体",
+        "uploaded": "uploadedだけ",
+        "examples": "例文検索結果のみ",
+        "tasks": "音声カットのみ"
+      },
       "textNotSaved": "(テキスト未保存)",
       "searchPlaceholder": "履歴を検索（テキスト / ファイル名 / ID）",
       "open": "開く",

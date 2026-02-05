@@ -27,6 +27,7 @@ pub struct SentenceManifest {
     pub text: Option<String>,
     pub last_wav_path: Option<String>,
     pub attribution: Option<SentenceAttribution>,
+    pub tags: Option<Vec<String>>,
 }
 
 pub(crate) fn save_sentence_manifest_json(
@@ -56,6 +57,7 @@ pub(crate) fn save_sentence_manifest_json(
                 text: None,
                 last_wav_path: None,
                 attribution: None,
+                tags: None,
             },
         }
     } else {
@@ -66,6 +68,7 @@ pub(crate) fn save_sentence_manifest_json(
             text: None,
             last_wav_path: None,
             attribution: None,
+            tags: None,
         }
     };
 

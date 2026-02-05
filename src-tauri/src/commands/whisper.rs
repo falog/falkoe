@@ -14,7 +14,9 @@ mod types;
 pub use audio::load_wav_as_f32;
 pub use manifest::SentenceManifest;
 pub use run::{run_whisper, run_whisper_model, run_whisper_uploaded};
-pub use transcribe::{transcribe, transcribe_preview, transcribe_with_callbacks};
+pub use transcribe::{
+    transcribe, transcribe_preview, transcribe_with_callbacks, transcribe_with_callbacks_no_dtw,
+};
 pub(crate) use transcribe::whisper_gpu_backend_available;
 pub use types::{
     FinalResult, PartialSegment, PreviewResult, Segment, TokenTimestamp, Transcript, WordTimestamp,
@@ -116,6 +118,7 @@ pub struct SentenceManifest {
     pub lang: String,
     pub text: Option<String>,
     pub last_wav_path: Option<String>,
+    pub tags: Option<Vec<String>>,
 }
 
 #[derive(serde::Serialize, Clone)]
