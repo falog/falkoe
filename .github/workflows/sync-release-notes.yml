@@ -1,0 +1,110 @@
+name: Sync Release Notes from docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/releases/v*.md"
+      - "docs/releases/v*.en.md"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to sync (e.g. v0.3.6). If empty, derives from changed docs/releases files."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute tags to sync
+        id: tags
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          input_tag="${{ github.event.inputs.tag }}"
+          if [[ -n "$input_tag" ]]; then
+            echo "tags=$input_tag" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          before="${{ github.event.before }}"
+          after="${{ github.sha }}"
+
+          if [[ -z "$before" || "$before" == "0000000000000000000000000000000000000000" ]]; then
+            # Fallback: sync based on files present in repo (rare case: first push or unknown before).
+            mapfile -t files < <(ls -1 docs/releases/v*.md 2>/dev/null || true)
+          else
+            mapfile -t files < <(git diff --name-only "$before" "$after" -- 'docs/releases/v*.md' 'docs/releases/v*.en.md' || true)
+          fi
+
+          tags=()
+          for f in "${files[@]:-}"; do
+            # Match: docs/releases/vX.Y.Z.md or docs/releases/vX.Y.Z.en.md
+            if [[ "$f" =~ ^docs/releases/(v[^/]+)\.(en\.)?md$ ]]; then
+              tags+=("${BASH_REMATCH[1]}")
+            fi
+          done
+
+          if [[ ${#tags[@]} -eq 0 ]]; then
+            echo "tags=" >> "$GITHUB_OUTPUT"
+            echo "[info] No tags to sync"
+            exit 0
+          fi
+
+          # Unique + stable order
+          uniq_tags=$(printf "%s\n" "${tags[@]}" | sort -u | paste -sd' ' -)
+          echo "tags=$uniq_tags" >> "$GITHUB_OUTPUT"
+          echo "[info] Tags to sync: $uniq_tags"
+
+      - name: Sync release bodies
+        if: steps.tags.outputs.tags != ''
+        shell: bash
+        env:
+          TAGS: ${{ steps.tags.outputs.tags }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          for tag in $TAGS; do
+            jp="docs/releases/${tag}.md"
+            en="docs/releases/${tag}.en.md"
+            out="/tmp/${tag}_release_body.md"
+
+            rm -f "$out"
+            {
+              if [[ -f "$jp" ]]; then
+                cat "$jp"
+              else
+                echo "# ${tag}"
+                echo
+                echo "(Release notes file not found: ${jp})"
+              fi
+
+              echo
+              echo "---"
+              echo
+
+              if [[ -f "$en" ]]; then
+                cat "$en"
+              else
+                echo "(English release notes file not found: ${en})"
+              fi
+            } > "$out"
+
+            # Create the Release if missing, otherwise update the body.
+            # We intentionally don't upload artifacts here.
+            gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "$tag" --notes ""
+            gh release edit "$tag" --notes-file "$out"
+
+            echo "[info] Synced release notes for $tag"
+          done
