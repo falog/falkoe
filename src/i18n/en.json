@@ -104,14 +104,9 @@
       },
       "options": {
         "rawSegments": "Re-analyze (no merging)",
-        "rawSegmentsHelp": "Uses Whisper's raw timestamp segments without the post-merge heuristics. Useful when merging makes clips too large, or when you want to split/adjust times manually."
-      },
-      "manualSplit": {
-        "label": "Split",
-        "at": "at (s)",
-        "split": "Split",
-        "atHelp": "Choose a time within the selected segment's start–end range. You can't split outside the range.",
-        "hint": "Splits the selected segment at the given time"
+        "rawSegmentsHelp": "Uses Whisper's raw timestamp segments without the post-merge heuristics. Useful when merging makes clips too large, or when you want to split/adjust times manually.",
+        "wordSegments": "Detect per-word segments (experimental)",
+        "wordSegmentsHelp": "Uses Whisper's word timestamps to create one clip per word (only available for whitespace-separated languages like English). This can create a lot of clips."
       },
       "manualTime": {
         "start": "Start",
@@ -127,7 +122,7 @@
       "buttons": {
         "detect": "Detect segments (Whisper)",
         "preview": "Preview",
-        "export": "Export selected",
+        "export": "Import to practice",
         "selectAll": "Select all",
         "selectNone": "Select none"
       },
@@ -142,11 +137,14 @@
         "textEmpty": "Text is empty",
         "textTooManyLines": "Too many lines ({{lines}}) for segments ({{segs}}). You cannot split more than Whisper segments.",
         "textApplied": "Applied text. Clips: {{count}}",
+        "resegmentFailed": "Failed to re-segment from word timestamps: ",
         "splitOutOfRange": "Split time must be within the segment ({{start}}–{{end}})",
         "splitOk": "Split applied",
         "nothingSelected": "No segments selected",
         "exported": "Exported {{count}} clips. First: {{head}}",
         "exportFailed": "Export failed: ",
+        "imported": "Imported {{count}} clips (first: {{head}}). Opening practice…",
+        "importFailed": "Import failed: ",
         "previewFailed": "Preview failed: "
       }
     },
@@ -350,6 +348,14 @@
       "title": "History",
       "loading": "Loading…",
       "empty": "No Data",
+      "taskTag": "Audio cut",
+      "filter": {
+        "label": "Show:",
+        "all": "All",
+        "uploaded": "Uploaded only",
+        "examples": "Examples only",
+        "tasks": "Audio cut only"
+      },
       "textNotSaved": "(No saved text)",
       "searchPlaceholder": "Search history (text / filename / id)",
       "open": "Open",

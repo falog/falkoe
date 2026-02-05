@@ -1,8 +1,8 @@
 use crate::model::ensure_model;
 use crate::commands::whisper::{
-    ffmpeg_convert_to_wav, ffmpeg_trim_with_padding_wav, transcribe_with_callbacks,
+    ffmpeg_convert_to_wav, ffmpeg_trim_with_padding_wav, transcribe_with_callbacks_no_dtw,
     transcribe_in_subprocess_with_overrides, whisper_gpu_backend_available, whisper_language,
-    whisper_n_threads, Segment,
+    whisper_n_threads, Segment, Transcript,
 };
 use chrono::Local;
 use serde::Serialize;
@@ -12,6 +12,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Instant;
 use tauri::AppHandle;
 use tauri::Emitter;
 use tauri::Manager;
@@ -380,6 +381,161 @@ fn normalize_segments_for_cutter(segments: Vec<Segment>) -> Vec<Segment> {
     merged
 }
 
+fn is_word_split_lang(whisper_lang: Option<&str>) -> bool {
+    match whisper_lang {
+        Some(
+            "en" | "es" | "fr" | "de" | "it" | "pt" | "ru" | "uk" | "pl" | "nl" | "sv"
+                | "tr" | "vi" | "id" | "ar" | "hi" | "ko",
+        ) => true,
+        _ => false,
+    }
+}
+
+fn words_to_segments(words: Vec<crate::commands::whisper::WordTimestamp>) -> Vec<Segment> {
+    words
+        .into_iter()
+        .filter_map(|w| {
+            let text = w.text.trim();
+            if text.is_empty() || is_slash_only(text) {
+                return None;
+            }
+            let start = w.start.max(0.0);
+            let end = w.end;
+            let end = if end <= start { start + 0.04 } else { end };
+            Some(Segment {
+                start,
+                end,
+                text: text.to_string(),
+            })
+        })
+        .collect()
+}
+
+fn cutter_transcript_path(base_dir: &Path) -> PathBuf {
+    base_dir.join("whisper_transcript.json")
+}
+
+fn cutter_words_path(base_dir: &Path) -> PathBuf {
+    base_dir.join("whisper_words.json")
+}
+
+fn persist_cutter_transcript(base_dir: &Path, transcript: &Transcript) {
+    // Best-effort persistence; failing to save must not break the main UX.
+    if let Ok(json) = serde_json::to_string_pretty(transcript) {
+        let _ = fs::write(cutter_transcript_path(base_dir), json);
+    }
+
+    if let Some(words) = transcript.words.as_ref() {
+        if let Ok(json) = serde_json::to_string_pretty(words) {
+            let _ = fs::write(cutter_words_path(base_dir), json);
+        }
+    }
+}
+
+fn load_cutter_words(base_dir: &Path) -> Result<Vec<crate::commands::whisper::WordTimestamp>, String> {
+    let p = cutter_words_path(base_dir);
+    let bytes = fs::read(&p).map_err(|e| {
+        format!(
+            "failed to read stored word timestamps (run detection once first): {e}"
+        )
+    })?;
+    serde_json::from_slice::<Vec<crate::commands::whisper::WordTimestamp>>(&bytes)
+        .map_err(|e| format!("failed to parse stored word timestamps: {e}"))
+}
+
+fn word_count_for_line(line: &str) -> usize {
+    let n = line.split_whitespace().filter(|t| !t.is_empty()).count();
+    n.max(1)
+}
+
+#[tauri::command]
+pub fn cutter_resegment_from_words(
+    app: AppHandle,
+    cutter_id: String,
+    lang: String,
+    lines: Vec<String>,
+) -> Result<Vec<Segment>, String> {
+    let whisper_lang = whisper_language(&lang);
+    if !is_word_split_lang(whisper_lang) {
+        return Err(
+            "word-based resegmentation is supported only for whitespace-separated languages (e.g. en)"
+                .to_string(),
+        );
+    }
+
+    let base_dir = cutter_base_dir(&app, &cutter_id)?;
+    let mut words = load_cutter_words(&base_dir)?;
+    words.retain(|w| {
+        let t = w.text.trim();
+        !t.is_empty() && !is_slash_only(t)
+    });
+
+    let clean_lines: Vec<String> = lines
+        .into_iter()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
+
+    if clean_lines.is_empty() {
+        return Err("no lines provided".to_string());
+    }
+    if words.is_empty() {
+        return Err("no stored word timestamps".to_string());
+    }
+
+    // Allocate word timestamps in order based on each line's whitespace-token count.
+    let mut out: Vec<Segment> = Vec::with_capacity(clean_lines.len());
+    let mut wi: usize = 0;
+
+    // Precompute requested word counts.
+    let req: Vec<usize> = clean_lines.iter().map(|l| word_count_for_line(l)).collect();
+    // Ensure total request doesn't exceed available words; otherwise we'd have to invent timings.
+    let total_req: usize = req.iter().sum();
+    if total_req > words.len() {
+        return Err(format!(
+            "not enough word timestamps: requested {total_req} words but only have {}",
+            words.len()
+        ));
+    }
+
+    for li in 0..clean_lines.len() {
+        let remaining_lines = clean_lines.len().saturating_sub(li);
+        let remaining_words = words.len().saturating_sub(wi);
+        if remaining_words == 0 {
+            break;
+        }
+
+        let want = req[li].max(1);
+        let min_take = 1usize;
+        let max_take = if remaining_lines <= 1 {
+            remaining_words
+        } else {
+            // Leave at least 1 word for each remaining line.
+            remaining_words.saturating_sub(remaining_lines - 1).max(1)
+        };
+        let take = want.clamp(min_take, max_take);
+
+        let start = words[wi].start.max(0.0);
+        let end = words[wi + take - 1].end;
+        let end = if end <= start { start + 0.04 } else { end };
+        out.push(Segment {
+            start,
+            end,
+            text: clean_lines[li].clone(),
+        });
+        wi += take;
+    }
+
+    // If we have leftover words (can happen due to clamping), extend the last segment.
+    if wi < words.len() {
+        if let Some(last) = out.last_mut() {
+            last.end = last.end.max(words[words.len() - 1].end);
+        }
+    }
+
+    Ok(out)
+}
+
 #[tauri::command]
 pub fn save_cutter_audio(
     app: AppHandle,
@@ -419,7 +575,15 @@ pub async fn cutter_suggest_segments(
     fs::create_dir_all(&base_dir).map_err(|e| e.to_string())?;
 
     let wav_path = base_dir.join("input_16k.wav");
+    let t_ffmpeg = Instant::now();
     ffmpeg_convert_to_wav(&app, Path::new(&input_path), &wav_path).map_err(|e| e.to_string())?;
+    crate::logging::log_line(
+        &app,
+        format!(
+            "[cutter] ffmpeg_convert_to_wav done in {}ms",
+            t_ffmpeg.elapsed().as_millis()
+        ),
+    );
     let whisper_lang = whisper_language(&lang);
 
     let wav_str = wav_path
@@ -434,6 +598,7 @@ pub async fn cutter_suggest_segments(
     let cutter_id_for_cb = cutter_id.clone();
     let abort_for_cb = abort_flag.clone();
 
+    let t_transcribe_total = Instant::now();
     let join = tauri::async_runtime::spawn_blocking(move || {
         let model_path = ensure_model(&app_for_cb)?;
 
@@ -525,6 +690,7 @@ pub async fn cutter_suggest_segments(
                             whisper_lang,
                             n_threads,
                             use_gpu,
+                            Some(false),
                         );
 
                         running.store(false, Ordering::Relaxed);
@@ -532,7 +698,8 @@ pub async fn cutter_suggest_segments(
                         res
                     }
                 } else {
-                    transcribe_with_callbacks(
+                    // Cutter should be fast; DTW is expensive and not necessary for cutting.
+                    transcribe_with_callbacks_no_dtw(
                         &wav_str,
                         &model_path,
                         whisper_lang,
@@ -615,6 +782,14 @@ pub async fn cutter_suggest_segments(
         }
     };
 
+    crate::logging::log_line(
+        &app,
+        format!(
+            "[cutter] transcribe total done in {}ms",
+            t_transcribe_total.elapsed().as_millis()
+        ),
+    );
+
     let _ = app.emit(
         "cutter-detect-progress",
         CutterDetectProgressPayload {
@@ -623,7 +798,249 @@ pub async fn cutter_suggest_segments(
         },
     );
 
+    persist_cutter_transcript(&base_dir, &transcript);
+
     Ok(normalize_segments_for_cutter(transcript.segments))
+}
+
+#[tauri::command]
+pub async fn cutter_suggest_word_segments(
+    app: AppHandle,
+    cutter_id: String,
+    input_path: String,
+    lang: String,
+) -> Result<Vec<Segment>, String> {
+    let base_dir = cutter_base_dir(&app, &cutter_id)?;
+    fs::create_dir_all(&base_dir).map_err(|e| e.to_string())?;
+
+    let wav_path = base_dir.join("input_16k.wav");
+    let t_ffmpeg = Instant::now();
+    ffmpeg_convert_to_wav(&app, Path::new(&input_path), &wav_path).map_err(|e| e.to_string())?;
+    crate::logging::log_line(
+        &app,
+        format!(
+            "[cutter] ffmpeg_convert_to_wav done in {}ms",
+            t_ffmpeg.elapsed().as_millis()
+        ),
+    );
+    let whisper_lang = whisper_language(&lang);
+    if !is_word_split_lang(whisper_lang) {
+        return Err("word segments are supported only for whitespace-separated languages (e.g. en)".to_string());
+    }
+
+    let wav_str = wav_path
+        .to_str()
+        .ok_or_else(|| "invalid wav path".to_string())?;
+
+    let abort_flag = cutter_abort_flag(&cutter_id);
+    abort_flag.store(false, Ordering::Relaxed);
+
+    let wav_str = wav_str.to_string();
+    let app_for_cb = app.clone();
+    let cutter_id_for_cb = cutter_id.clone();
+    let abort_for_cb = abort_flag.clone();
+
+    let t_transcribe_total = Instant::now();
+    let join = tauri::async_runtime::spawn_blocking(move || -> Result<Transcript, anyhow::Error> {
+        let model_path = ensure_model(&app_for_cb)?;
+
+        let base_threads = whisper_n_threads().max(1);
+        let mut thread_attempts: Vec<i32> = Vec::new();
+        for n in [base_threads, (base_threads / 2).max(1), 2, 1] {
+            if n <= base_threads && !thread_attempts.contains(&n) {
+                thread_attempts.push(n);
+            }
+        }
+        if thread_attempts.is_empty() {
+            thread_attempts.push(1);
+        }
+
+        let force_use_gpu = env_bool("FALKOE_WHISPER_USE_GPU");
+        let backend_attempts: Vec<bool> = match force_use_gpu {
+            Some(false) => vec![false],
+            Some(true) => {
+                if whisper_gpu_backend_available() {
+                    vec![true]
+                } else {
+                    crate::logging::log_line(
+                        &app_for_cb,
+                        "[cutter] FALKOE_WHISPER_USE_GPU=1 but this build has no GPU backend; using CPU",
+                    );
+                    vec![false]
+                }
+            }
+            None => {
+                if whisper_gpu_backend_available() {
+                    vec![true, false]
+                } else {
+                    vec![false]
+                }
+            }
+        };
+
+        let mut last_err: Option<anyhow::Error> = None;
+
+        for use_gpu in backend_attempts {
+            if !use_gpu {
+                crate::logging::log_line(&app_for_cb, "[cutter] trying CPU backend (use_gpu=0)");
+            }
+
+            for (idx, n_threads) in thread_attempts.iter().copied().enumerate() {
+                if idx > 0 {
+                    crate::logging::log_line(
+                        &app_for_cb,
+                        format!(
+                            "[cutter] retry transcribe with n_threads={n_threads} use_gpu={}",
+                            if use_gpu { 1 } else { 0 }
+                        ),
+                    );
+                }
+
+                let mut last_progress: i32 = -1;
+                let res = if cfg!(target_os = "windows") {
+                    if abort_for_cb.load(Ordering::Relaxed) {
+                        Err(anyhow::anyhow!("cancelled"))
+                    } else {
+                        let running = Arc::new(AtomicBool::new(true));
+                        let running_for_thread = running.clone();
+                        let app_for_progress = app_for_cb.clone();
+                        let cutter_id_for_progress = cutter_id_for_cb.clone();
+                        let abort_for_progress = abort_for_cb.clone();
+
+                        let progress_thread = std::thread::spawn(move || {
+                            let mut p: i32 = 1;
+                            while running_for_thread.load(Ordering::Relaxed)
+                                && !abort_for_progress.load(Ordering::Relaxed)
+                            {
+                                let _ = app_for_progress.emit(
+                                    "cutter-detect-progress",
+                                    CutterDetectProgressPayload {
+                                        cutter_id: cutter_id_for_progress.clone(),
+                                        progress: p,
+                                    },
+                                );
+                                p = (p + 1).min(95);
+                                std::thread::sleep(std::time::Duration::from_millis(300));
+                            }
+                        });
+
+                        let res = transcribe_in_subprocess_with_overrides(
+                            &app_for_cb,
+                            &wav_str,
+                            &model_path,
+                            whisper_lang,
+                            n_threads,
+                            use_gpu,
+                            Some(false),
+                        );
+
+                        running.store(false, Ordering::Relaxed);
+                        let _ = progress_thread.join();
+                        res
+                    }
+                } else {
+                    transcribe_with_callbacks_no_dtw(
+                        &wav_str,
+                        &model_path,
+                        whisper_lang,
+                        n_threads,
+                        use_gpu,
+                        {
+                            let app_for_cb = app_for_cb.clone();
+                            let cutter_id_for_cb = cutter_id_for_cb.clone();
+                            move |p| {
+                                if p == last_progress {
+                                    return;
+                                }
+                                last_progress = p;
+                                let _ = app_for_cb.emit(
+                                    "cutter-detect-progress",
+                                    CutterDetectProgressPayload {
+                                        cutter_id: cutter_id_for_cb.clone(),
+                                        progress: p,
+                                    },
+                                );
+                            }
+                        },
+                        {
+                            let abort_for_cb = abort_for_cb.clone();
+                            move || abort_for_cb.load(Ordering::Relaxed)
+                        },
+                    )
+                };
+
+                match res {
+                    Ok(t) => return Ok(t),
+                    Err(e) => {
+                        let msg = e.to_string();
+                        crate::logging::log_line(
+                            &app_for_cb,
+                            format!(
+                                "[cutter] transcribe failed n_threads={n_threads} use_gpu={}: {msg}",
+                                if use_gpu { 1 } else { 0 }
+                            ),
+                        );
+                        let should_retry_threads =
+                            (is_whisper_encoder_failure_minus6(&msg) || is_whisper_error_minus9(&msg))
+                                && n_threads > 1;
+
+                        let should_try_cpu = use_gpu
+                            && (is_whisper_encoder_failure_minus6(&msg) || is_whisper_error_minus9(&msg));
+
+                        last_err = Some(e);
+
+                        if should_retry_threads {
+                            continue;
+                        }
+
+                        if should_try_cpu {
+                            break;
+                        }
+
+                        return Err(last_err.unwrap());
+                    }
+                }
+            }
+        }
+
+        Err(last_err.unwrap_or_else(|| anyhow::anyhow!("transcribe failed")))
+    })
+    .await;
+
+    clear_cutter_abort_flag(&cutter_id);
+
+    let res = join.map_err(|e| e.to_string())?;
+
+    let transcript = match res {
+        Ok(t) => t,
+        Err(e) => {
+            if abort_flag.load(Ordering::Relaxed) {
+                return Err("cancelled".to_string());
+            }
+            return Err(format_cutter_whisper_error(e.to_string()));
+        }
+    };
+
+    crate::logging::log_line(
+        &app,
+        format!(
+            "[cutter] transcribe total done in {}ms",
+            t_transcribe_total.elapsed().as_millis()
+        ),
+    );
+
+    let _ = app.emit(
+        "cutter-detect-progress",
+        CutterDetectProgressPayload {
+            cutter_id: cutter_id.clone(),
+            progress: 100,
+        },
+    );
+
+    persist_cutter_transcript(&base_dir, &transcript);
+
+    let words = transcript.words.unwrap_or_default();
+    Ok(words_to_segments(words))
 }
 
 #[tauri::command]
@@ -637,7 +1054,15 @@ pub async fn cutter_suggest_segments_raw(
     fs::create_dir_all(&base_dir).map_err(|e| e.to_string())?;
 
     let wav_path = base_dir.join("input_16k.wav");
+    let t_ffmpeg = Instant::now();
     ffmpeg_convert_to_wav(&app, Path::new(&input_path), &wav_path).map_err(|e| e.to_string())?;
+    crate::logging::log_line(
+        &app,
+        format!(
+            "[cutter] ffmpeg_convert_to_wav done in {}ms",
+            t_ffmpeg.elapsed().as_millis()
+        ),
+    );
     let whisper_lang = whisper_language(&lang);
 
     let wav_str = wav_path
@@ -652,6 +1077,7 @@ pub async fn cutter_suggest_segments_raw(
     let cutter_id_for_cb = cutter_id.clone();
     let abort_for_cb = abort_flag.clone();
 
+    let t_transcribe_total = Instant::now();
     let join = tauri::async_runtime::spawn_blocking(move || {
         let model_path = ensure_model(&app_for_cb)?;
 
@@ -739,6 +1165,7 @@ pub async fn cutter_suggest_segments_raw(
                             whisper_lang,
                             n_threads,
                             use_gpu,
+                            Some(false),
                         );
 
                         running.store(false, Ordering::Relaxed);
@@ -746,7 +1173,7 @@ pub async fn cutter_suggest_segments_raw(
                         res
                     }
                 } else {
-                    transcribe_with_callbacks(
+                    transcribe_with_callbacks_no_dtw(
                         &wav_str,
                         &model_path,
                         whisper_lang,
@@ -827,6 +1254,14 @@ pub async fn cutter_suggest_segments_raw(
         }
     };
 
+    crate::logging::log_line(
+        &app,
+        format!(
+            "[cutter] transcribe total done in {}ms",
+            t_transcribe_total.elapsed().as_millis()
+        ),
+    );
+
     let _ = app.emit(
         "cutter-detect-progress",
         CutterDetectProgressPayload {
@@ -834,6 +1269,8 @@ pub async fn cutter_suggest_segments_raw(
             progress: 100,
         },
     );
+
+    persist_cutter_transcript(&base_dir, &transcript);
 
     // Keep it "raw": no merging heuristics. Still drop empty/noise segments.
     Ok(transcript
@@ -844,6 +1281,18 @@ pub async fn cutter_suggest_segments_raw(
             !t.is_empty() && !is_slash_only(t)
         })
         .collect())
+}
+
+#[tauri::command]
+pub fn cutter_get_word_timestamps(
+    app: AppHandle,
+    cutter_id: String,
+) -> Result<Vec<crate::commands::whisper::WordTimestamp>, String> {
+    let base_dir = cutter_base_dir(&app, &cutter_id)?;
+    let p = cutter_words_path(&base_dir);
+    let bytes = fs::read(&p).map_err(|e| format!("failed to read words: {e}"))?;
+    serde_json::from_slice::<Vec<crate::commands::whisper::WordTimestamp>>(&bytes)
+        .map_err(|e| format!("failed to parse words: {e}"))
 }
 
 #[tauri::command]

@@ -1,15 +1,19 @@
 use crate::commands::audio::{ensure_sentence_audio_cached, fetch_audio_base64};
 use crate::commands::linking::render_linking;
 use crate::commands::recordings::{
-    get_uploaded_audio_info, list_recordings, move_recorded_audio, save_uploaded_audio,
+    get_uploaded_audio_info, import_uploaded_audio_from_path, list_recordings, move_recorded_audio,
+    save_uploaded_audio,
 };
 use crate::commands::cutter::{
-    cutter_cancel_detect, cutter_export_segments, cutter_preview_segment, cutter_suggest_segments,
-    cutter_suggest_segments_raw, save_cutter_audio,
+    cutter_cancel_detect, cutter_export_segments, cutter_get_word_timestamps, cutter_preview_segment,
+    cutter_resegment_from_words, cutter_suggest_segments, cutter_suggest_segments_raw,
+    cutter_suggest_word_segments,
+    save_cutter_audio,
 };
 use crate::commands::sentences::{
     find_audio_by_sentence,
     list_sentence_history,
+    set_sentence_task,
     upsert_sentence_manifest_attribution,
     upsert_sentence_manifest_text,
 };
@@ -81,6 +85,9 @@ pub fn run() {
             save_cutter_audio,
             cutter_suggest_segments,
             cutter_suggest_segments_raw,
+            cutter_suggest_word_segments,
+            cutter_get_word_timestamps,
+            cutter_resegment_from_words,
             cutter_cancel_detect,
             cutter_preview_segment,
             cutter_export_segments,
@@ -93,12 +100,14 @@ pub fn run() {
             move_recorded_audio,
             delete_temp_recording,
             save_uploaded_audio,
+            import_uploaded_audio_from_path,
             get_uploaded_audio_info,
             fetch_audio_base64,
             ensure_sentence_audio_cached,
             find_audio_by_sentence,
             upsert_sentence_manifest_attribution,
             upsert_sentence_manifest_text,
+            set_sentence_task,
             list_sentence_history,
             render_linking,
         ])

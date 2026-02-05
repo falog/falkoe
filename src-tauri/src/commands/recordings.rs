@@ -105,6 +105,67 @@ pub fn save_uploaded_audio(
     Ok(dest.to_string_lossy().to_string())
 }
 
+#[tauri::command]
+pub fn import_uploaded_audio_from_path(
+    app: AppHandle,
+    source_path: String,
+    sentence_hash: String,
+    original_filename: String,
+    overwrite: bool,
+) -> Result<String, String> {
+    let source = std::path::Path::new(&source_path);
+    if !source.exists() {
+        return Err(format!("source_path does not exist: {source_path}"));
+    }
+
+    let base_dir = app
+        .path()
+        .document_dir()
+        .map_err(|_| "no document dir")?
+        .join("falkoe")
+        .join("sentences")
+        .join(&sentence_hash)
+        .join("uploaded");
+
+    fs::create_dir_all(&base_dir).map_err(|e| e.to_string())?;
+
+    // 元のファイル名を保存（UIの履歴で判別できるようにする）
+    let original_filename_path = base_dir.join("original_filename.txt");
+    if let Err(e) = fs::write(&original_filename_path, &original_filename) {
+        crate::logging::log_line(
+            &app,
+            format!(
+                "[recordings] failed to write uploaded original filename: {:?}: {}",
+                original_filename_path, e
+            ),
+        );
+    }
+
+    // Prefer the original filename extension; fall back to the source path.
+    let ext = std::path::Path::new(&original_filename)
+        .extension()
+        .and_then(|e| e.to_str())
+        .or_else(|| source.extension().and_then(|e| e.to_str()))
+        .unwrap_or("wav");
+
+    let filename = format!("uploaded.{ext}");
+    let dest = base_dir.join(&filename);
+
+    if dest.exists() && !overwrite {
+        return Err("uploaded audio already exists".into());
+    }
+
+    // If already in place, do nothing.
+    if source == dest {
+        return Ok(dest.to_string_lossy().to_string());
+    }
+
+    // Copy (instead of rename) so cutter artifacts remain intact.
+    fs::copy(source, &dest).map_err(|e| e.to_string())?;
+
+    Ok(dest.to_string_lossy().to_string())
+}
+
 #[derive(Serialize)]
 pub struct UploadedAudioInfo {
     pub exists: bool,

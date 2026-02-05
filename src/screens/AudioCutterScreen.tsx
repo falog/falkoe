@@ -22,6 +22,28 @@ import TopNav from "../components/TopNav";
 import AudioUpload from "../components/AudioUpload";
 import { LANG_OPTIONS } from "../data/langOptions";
 import { useAudioUrlCache } from "./recorder/useAudioUrlCache";
+import type { SpeechSource } from "../types/speech";
+import { sha256 } from "../utils/hash";
+
+const WORD_SEGMENT_LANGS = new Set([
+  "eng",
+  "spa",
+  "fra",
+  "deu",
+  "ita",
+  "por",
+  "rus",
+  "ukr",
+  "pol",
+  "nld",
+  "swe",
+  "tur",
+  "vie",
+  "ind",
+  "ara",
+  "hin",
+  "kor",
+]);
 
 type Segment = {
   start: number;
@@ -47,6 +69,7 @@ type Props = {
   onOpenHistory: () => void;
   onOpenIpaList: () => void;
   onOpenAudioCutter: () => void;
+  onPracticeSentence: (source: SpeechSource) => void;
   onOpenSettings: () => void;
   onOpenDevelopersMistakes: () => void;
   onOpenCommonMistakes: () => void;
@@ -59,14 +82,12 @@ export default function AudioCutterScreen({
   onOpenHistory,
   onOpenIpaList,
   onOpenAudioCutter,
+  onPracticeSentence,
   onOpenSettings,
   onOpenDevelopersMistakes,
   onOpenCommonMistakes,
 }: Props) {
   const { t } = useTranslation();
-
-  // Rarely used; keep the implementation but hide the UI for now.
-  const SHOW_MANUAL_SPLIT = true;
 
   const fileUrlRef = useRef<string | null>(null);
 
@@ -95,10 +116,15 @@ export default function AudioCutterScreen({
 
   const [fullText, setFullText] = useState<string>("");
 
-  const [useRawSegments, setUseRawSegments] = useState<boolean>(false);
+  const canUseWordSegments = useMemo(
+    () => WORD_SEGMENT_LANGS.has(lang),
+    [lang],
+  );
 
-  const [splitIndex, setSplitIndex] = useState<number>(0);
-  const [splitAt, setSplitAt] = useState<number>(0);
+  const basename = (p: string): string => {
+    const parts = p.split(/[\\/]/).filter(Boolean);
+    return parts[parts.length - 1] ?? p;
+  };
 
   const [marginBefore, setMarginBefore] = useState<number>(0.1);
   const [marginAfter, setMarginAfter] = useState<number>(0.1);
@@ -190,8 +216,6 @@ export default function AudioCutterScreen({
     setSegments([]);
     setSelected([]);
     setFullText("");
-    setSplitIndex(0);
-    setSplitAt(0);
     setPreviewUrls({});
     setPreviewingIndex(null);
     resetAudioUrls();
@@ -237,11 +261,7 @@ export default function AudioCutterScreen({
     // Let the UI paint the modal/spinner before starting the heavy work.
     await new Promise<void>((r) => setTimeout(r, 0));
     try {
-      const cmd = useRawSegments
-        ? "cutter_suggest_segments_raw"
-        : "cutter_suggest_segments";
-
-      const segs = await invoke<Segment[]>(cmd, {
+      const segs = await invoke<Segment[]>("cutter_suggest_segments", {
         cutterId: saved.id,
         inputPath: saved.path,
         lang,
@@ -249,8 +269,6 @@ export default function AudioCutterScreen({
       setSegments(segs);
       setSelected(segs.map(() => true));
       setFullText(segs.map((s) => s.text).join("\n"));
-      setSplitIndex(0);
-      setSplitAt(segs[0]?.start ?? 0);
       setPreviewUrls({});
       setPreviewingIndex(null);
       resetAudioUrls();
@@ -319,43 +337,7 @@ export default function AudioCutterScreen({
     invalidatePreviews();
   };
 
-  const splitSegmentAtTime = () => {
-    const idx = Math.floor(splitIndex);
-    const at = Number(splitAt);
-    const seg = segments[idx];
-    if (!seg) return;
-    if (!(at > seg.start && at < seg.end)) {
-      message.warning(
-        t("screens.audioCutter.messages.splitOutOfRange", {
-          start: seg.start.toFixed(2),
-          end: seg.end.toFixed(2),
-        }),
-      );
-      return;
-    }
-
-    const a: Segment = {
-      start: seg.start,
-      end: at,
-      text: seg.text,
-    };
-    const b: Segment = {
-      start: at,
-      end: seg.end,
-      text: seg.text,
-    };
-
-    const nextSegs = segments
-      .slice(0, idx)
-      .concat([a, b], segments.slice(idx + 1));
-    setSegments(nextSegs);
-    setSelected(nextSegs.map(() => true));
-    setFullText(nextSegs.map((s) => s.text).join("\n"));
-    invalidatePreviews();
-    message.success(t("screens.audioCutter.messages.splitOk"));
-  };
-
-  const applyFullTextToCuts = () => {
+  const applyFullTextToCuts = async () => {
     const lines = fullText
       .split(/\r?\n/)
       .map((l) => l.trim())
@@ -368,12 +350,35 @@ export default function AudioCutterScreen({
     if (segments.length === 0) return;
 
     if (lines.length > segments.length) {
-      message.warning(
-        t("screens.audioCutter.messages.textTooManyLines", {
-          lines: lines.length,
-          segs: segments.length,
-        }),
-      );
+      if (!saved || !canUseWordSegments) {
+        message.warning(
+          t("screens.audioCutter.messages.textTooManyLines", {
+            lines: lines.length,
+            segs: segments.length,
+          }),
+        );
+        return;
+      }
+
+      try {
+        const segs = await invoke<Segment[]>("cutter_resegment_from_words", {
+          cutterId: saved.id,
+          lang,
+          lines,
+        });
+        setSegments(segs);
+        setSelected(segs.map(() => true));
+        invalidatePreviews();
+        setFullText(segs.map((s) => s.text).join("\n"));
+        message.success(
+          t("screens.audioCutter.messages.textApplied", { count: segs.length }),
+        );
+      } catch (e) {
+        console.error(e);
+        message.error(
+          `${t("screens.audioCutter.messages.resegmentFailed")}${String(e)}`,
+        );
+      }
       return;
     }
 
@@ -474,17 +479,86 @@ export default function AudioCutterScreen({
         silenceSec,
       });
 
-      const head = paths[0] ?? "";
+      if (paths.length === 0) {
+        message.info(t("screens.audioCutter.messages.nothingSelected"));
+        return;
+      }
+
+      // Import into $DOCUMENTS/falkoe/sentences/<hash>/uploaded/* and open practice for the first clip.
+      const firstPath = paths[0] ?? "";
+      const firstSeg = selectedSegments[0];
+      if (!firstPath || !firstSeg) throw new Error("missing exported clip");
+
+      let firstImported: {
+        savedUploadedPath: string;
+        sentenceHash: string;
+        originalFilename: string;
+        text: string;
+      } | null = null;
+
+      const pairCount = Math.min(paths.length, selectedSegments.length);
+      for (let i = 0; i < pairCount; i++) {
+        const p = paths[i];
+        const seg = selectedSegments[i];
+        if (!p || !seg) continue;
+
+        const sentenceHash = await sha256(`${seg.text}\n${p}`, lang);
+        const originalFilename = basename(p);
+
+        const savedUploadedPath = await invoke<string>(
+          "import_uploaded_audio_from_path",
+          {
+            sourcePath: p,
+            sentenceHash,
+            originalFilename,
+            overwrite: true,
+          },
+        );
+
+        await invoke("upsert_sentence_manifest_text", {
+          audioId: sentenceHash,
+          lang,
+          text: seg.text,
+          overwrite: true,
+        });
+
+        await invoke("set_sentence_task", {
+          audioId: sentenceHash,
+          lang,
+          task: true,
+        });
+
+        if (!firstImported) {
+          firstImported = {
+            savedUploadedPath,
+            sentenceHash,
+            originalFilename,
+            text: seg.text,
+          };
+        }
+      }
+
+      if (!firstImported) throw new Error("failed to import clips");
+
       message.success(
-        t("screens.audioCutter.messages.exported", {
-          count: paths.length,
-          head,
+        t("screens.audioCutter.messages.imported", {
+          count: pairCount,
+          head: firstImported.originalFilename,
         }),
       );
+
+      onPracticeSentence({
+        kind: "uploaded",
+        savedPath: firstImported.savedUploadedPath,
+        originalFilename: firstImported.originalFilename,
+        sentenceHash: firstImported.sentenceHash,
+        text: firstImported.text,
+        lang,
+      });
     } catch (e) {
       console.error(e);
       message.error(
-        `${t("screens.audioCutter.messages.exportFailed")}${String(e)}`,
+        `${t("screens.audioCutter.messages.importFailed")}${String(e)}`,
       );
     } finally {
       setExporting(false);
@@ -665,19 +739,6 @@ export default function AudioCutterScreen({
           {t("screens.audioCutter.buttons.detect")}
         </Button>
 
-        <Checkbox
-          checked={useRawSegments}
-          disabled={!saved || saving || detecting || exporting}
-          onChange={(e) => setUseRawSegments(e.target.checked)}
-        >
-          <Space size={6}>
-            <span>{t("screens.audioCutter.options.rawSegments")}</span>
-            <Tooltip title={t("screens.audioCutter.options.rawSegmentsHelp")}>
-              <InfoCircleOutlined />
-            </Tooltip>
-          </Space>
-        </Checkbox>
-
         <Typography.Text type="secondary">
           {t("screens.audioCutter.found", { count: segments.length })}
         </Typography.Text>
@@ -698,7 +759,7 @@ export default function AudioCutterScreen({
             <Button
               size="small"
               disabled={detecting || exporting || segments.length === 0}
-              onClick={() => applyFullTextToCuts()}
+              onClick={() => void applyFullTextToCuts()}
             >
               {t("screens.audioCutter.fullText.apply")}
             </Button>
@@ -721,52 +782,6 @@ export default function AudioCutterScreen({
               {t("screens.audioCutter.fullText.hint")}
             </Typography.Text>
           </Space>
-
-          {SHOW_MANUAL_SPLIT && (
-            <Space wrap align="center">
-              <Typography.Text>
-                {t("screens.audioCutter.manualSplit.label")}
-              </Typography.Text>
-              <Select
-                value={splitIndex}
-                onChange={(v) => {
-                  const idx = Number(v ?? 0);
-                  setSplitIndex(idx);
-                  const seg = segments[idx];
-                  if (seg) setSplitAt(Math.max(seg.start + 0.01, seg.start));
-                }}
-                style={{ width: 120 }}
-                options={segments.map((_, i) => ({
-                  value: i,
-                  label: `#${i + 1}`,
-                }))}
-              />
-              <Typography.Text>
-                <Space size={6}>
-                  <span>{t("screens.audioCutter.manualSplit.at")}</span>
-                  <Tooltip title={t("screens.audioCutter.manualSplit.atHelp")}>
-                    <InfoCircleOutlined />
-                  </Tooltip>
-                </Space>
-              </Typography.Text>
-              <InputNumber
-                min={0}
-                step={0.05}
-                value={splitAt}
-                onChange={(v) => setSplitAt(Number(v ?? 0))}
-              />
-              <Button
-                size="small"
-                disabled={segments.length === 0 || detecting || exporting}
-                onClick={() => splitSegmentAtTime()}
-              >
-                {t("screens.audioCutter.manualSplit.split")}
-              </Button>
-              <Typography.Text type="secondary">
-                {t("screens.audioCutter.manualSplit.hint")}
-              </Typography.Text>
-            </Space>
-          )}
         </Space>
       )}
 

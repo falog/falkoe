@@ -561,6 +561,7 @@ pub(crate) fn transcribe_in_subprocess_with_overrides(
     whisper_lang: Option<&'static str>,
     n_threads: i32,
     use_gpu: bool,
+    dtw_override: Option<bool>,
 ) -> Result<super::types::Transcript> {
     let (mut cmd0, picked0) = make_transcribe_command(app, wav_path, model_path, whisper_lang)?;
     if let Some(l) = whisper_lang {
@@ -571,6 +572,9 @@ pub(crate) fn transcribe_in_subprocess_with_overrides(
     // Per-invocation overrides.
     cmd0.env("FALKOE_WHISPER_THREADS", n_threads.to_string());
     cmd0.env("FALKOE_WHISPER_USE_GPU", if use_gpu { "1" } else { "0" });
+    if let Some(v) = dtw_override {
+        cmd0.env("FALKOE_WHISPER_DTW", if v { "1" } else { "0" });
+    }
 
     cmd0.env("RUST_BACKTRACE", "1");
     cmd0.stdout(std::process::Stdio::piped());
@@ -611,6 +615,9 @@ pub(crate) fn transcribe_in_subprocess_with_overrides(
             }
             cmd1.env("FALKOE_WHISPER_THREADS", n_threads.to_string());
             cmd1.env("FALKOE_WHISPER_USE_GPU", "0");
+            if let Some(v) = dtw_override {
+                cmd1.env("FALKOE_WHISPER_DTW", if v { "1" } else { "0" });
+            }
             cmd1.env("RUST_BACKTRACE", "1");
             cmd1.stdout(std::process::Stdio::piped());
             cmd1.stderr(std::process::Stdio::piped());

@@ -145,6 +145,10 @@ const App = () => {
           onOpenAudioCutter={() => {
             // already here
           }}
+          onPracticeSentence={(speechSource) => {
+            setSource(speechSource);
+            setScreen("record");
+          }}
           onOpenSettings={openSettings}
           onOpenDevelopersMistakes={() => {
             setMistakeFocus(null);

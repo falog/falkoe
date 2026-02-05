@@ -8,6 +8,8 @@ use std::{
 };
 use tauri::{AppHandle, Manager};
 
+const TAG_TASK: &str = "task";
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpsertManifestTextResult {
@@ -34,6 +36,7 @@ pub struct SentenceHistoryItem {
     pub lang: String,
     pub text: Option<String>,
     pub attribution: Option<SentenceAttribution>,
+    pub is_task: bool,
     pub recordings_count: u32,
     pub last_recording_timestamp: Option<String>,
     pub last_recording_wav_path: Option<String>,
@@ -41,6 +44,12 @@ pub struct SentenceHistoryItem {
     pub tatoeba_mp3_path: Option<String>,
     pub uploaded_path: Option<String>,
     pub uploaded_original_filename: Option<String>,
+}
+
+fn tags_has_task(tags: &Option<Vec<String>>) -> bool {
+    tags.as_ref()
+        .map(|v| v.iter().any(|t| t == TAG_TASK))
+        .unwrap_or(false)
 }
 
 fn sentences_root(app: &AppHandle) -> Result<PathBuf, String> {
@@ -137,12 +146,14 @@ pub fn list_sentence_history(app: AppHandle) -> Result<Vec<SentenceHistoryItem>,
         let mut lang: Option<String> = None;
         let mut text: Option<String> = None;
         let mut attribution: Option<SentenceAttribution> = None;
+        let mut is_task: bool = false;
         if manifest_path.exists() {
             if let Ok(manifest_text) = fs::read_to_string(&manifest_path) {
                 if let Ok(manifest) = serde_json::from_str::<SentenceManifest>(&manifest_text) {
                     lang = Some(manifest.lang);
                     text = manifest.text;
                     attribution = manifest.attribution;
+                    is_task = tags_has_task(&manifest.tags);
                 }
             }
         }
@@ -186,6 +197,7 @@ pub fn list_sentence_history(app: AppHandle) -> Result<Vec<SentenceHistoryItem>,
             lang,
             text,
             attribution,
+            is_task,
             recordings_count,
             last_recording_timestamp,
             last_recording_wav_path,
@@ -199,6 +211,60 @@ pub fn list_sentence_history(app: AppHandle) -> Result<Vec<SentenceHistoryItem>,
     // Sort by newest recording first.
     out.sort_by(|a, b| b.last_recording_timestamp.cmp(&a.last_recording_timestamp));
     Ok(out)
+}
+
+#[tauri::command]
+pub fn set_sentence_task(
+    app: AppHandle,
+    audio_id: String,
+    lang: String,
+    task: bool,
+) -> Result<String, String> {
+    let audio_id = audio_id.trim();
+    if audio_id.is_empty() {
+        return Err("audio_id is empty".into());
+    }
+    let lang = lang.trim();
+    if lang.is_empty() {
+        return Err("lang is empty".into());
+    }
+
+    let base_dir = sentences_root(&app)?.join(audio_id);
+    fs::create_dir_all(&base_dir).map_err(|e| e.to_string())?;
+
+    let manifest_path = base_dir.join("manifest.json");
+    let mut manifest: SentenceManifest = if manifest_path.exists() {
+        let manifest_text = fs::read_to_string(&manifest_path).map_err(|e| e.to_string())?;
+        serde_json::from_str::<SentenceManifest>(&manifest_text).map_err(|e| e.to_string())?
+    } else {
+        SentenceManifest {
+            audio_id: audio_id.to_string(),
+            sentence_id: None,
+            lang: lang.to_string(),
+            text: None,
+            last_wav_path: None,
+            attribution: None,
+            tags: None,
+        }
+    };
+
+    manifest.audio_id = audio_id.to_string();
+    manifest.lang = lang.to_string();
+
+    let mut tags = manifest.tags.unwrap_or_default();
+    if task {
+        if !tags.iter().any(|t| t == TAG_TASK) {
+            tags.push(TAG_TASK.to_string());
+        }
+    } else {
+        tags.retain(|t| t != TAG_TASK);
+    }
+    manifest.tags = if tags.is_empty() { None } else { Some(tags) };
+
+    let json = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
+    fs::write(&manifest_path, json).map_err(|e| e.to_string())?;
+
+    Ok("updated".into())
 }
 
 #[tauri::command]
@@ -259,6 +325,7 @@ pub fn upsert_sentence_manifest_text(
         text: Some(normalized_text.to_string()),
         last_wav_path: None,
         attribution: None,
+        tags: None,
     };
 
     let json = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
@@ -305,6 +372,7 @@ pub fn upsert_sentence_manifest_attribution(
                 text: None,
                 last_wav_path: None,
                 attribution: None,
+                tags: None,
             },
         }
     } else {
@@ -315,6 +383,7 @@ pub fn upsert_sentence_manifest_attribution(
             text: None,
             last_wav_path: None,
             attribution: None,
+            tags: None,
         }
     };
 
