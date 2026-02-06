@@ -563,7 +563,16 @@ pub(crate) fn transcribe_in_subprocess_with_overrides(
     use_gpu: bool,
     dtw_override: Option<bool>,
 ) -> Result<super::types::Transcript> {
-    let (mut cmd0, picked0) = make_transcribe_command(app, wav_path, model_path, whisper_lang)?;
+    // NOTE: `use_gpu` is a per-invocation override used by AudioCutter retries.
+    // It must influence helper selection; otherwise we may pick a Vulkan helper even when
+    // `FALKOE_WHISPER_USE_GPU=0`, causing confusing logs and slower/fragile behavior.
+    let pref = if use_gpu {
+        parse_backend_pref()
+    } else {
+        TranscribeBackendPref::CpuOnly
+    };
+    let (mut cmd0, picked0) =
+        make_transcribe_command_with_pref(app, wav_path, model_path, whisper_lang, pref)?;
     if let Some(l) = whisper_lang {
         cmd0.arg("--lang");
         cmd0.arg(l);
