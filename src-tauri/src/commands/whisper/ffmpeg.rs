@@ -47,6 +47,7 @@ pub(crate) fn ffmpeg_convert_to_wav(app: &AppHandle, input: &Path, output_wav: &
     }
 
     let args = build_convert_to_wav_args(input, output_wav)?;
+    crate::logging::log_line(app, format!("[ffmpeg] convert_to_wav: cmd={:?} args={:?}", cmd, args));
     let out = match {
         let mut c = Command::new(&cmd);
         c.args(&args);
@@ -79,6 +80,10 @@ pub(crate) fn ffmpeg_convert_to_wav(app: &AppHandle, input: &Path, output_wav: &
             return Err(e).with_context(|| format!("failed to spawn ffmpeg: {:?}", cmd));
         }
     };
+
+    // Always capture external tool output into backend.log.
+    crate::logging::log_bytes(app, "[ffmpeg][stdout] ", &out.stdout);
+    crate::logging::log_bytes(app, "[ffmpeg][stderr] ", &out.stderr);
 
     if !out.status.success() {
         let cmdline = {
@@ -182,6 +187,10 @@ pub(crate) fn ffmpeg_trim_with_padding_wav(
     let out = Command::new(&cmd).args(&args).output().with_context(|| {
         format!("failed to spawn ffmpeg for trim: {:?}", cmd)
     })?;
+
+    crate::logging::log_line(app, format!("[ffmpeg] trim_with_padding: cmd={:?} args={:?}", cmd, args));
+    crate::logging::log_bytes(app, "[ffmpeg][stdout] ", &out.stdout);
+    crate::logging::log_bytes(app, "[ffmpeg][stderr] ", &out.stderr);
 
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);

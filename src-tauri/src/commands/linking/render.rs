@@ -21,35 +21,441 @@ fn display_mode_from_str(s: Option<String>) -> Result<DisplayMode, String> {
     }
 }
 
-fn tokenize(text: &str) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    let mut buf = String::new();
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TokenKind {
+    Word,
+    Number,
+    Punct,
+}
 
-    for ch in text.chars() {
+#[derive(Clone, Debug)]
+struct Token {
+    // Raw token text as it appears in the input (preserve casing).
+    raw: String,
+    // Normalized key for dictionary lookup and rule matching.
+    // For words: ASCII-lowercased. For numbers/punct: identical to raw.
+    key: String,
+    kind: TokenKind,
+}
+
+fn tokenize(text: &str) -> Vec<Token> {
+    let mut out: Vec<Token> = Vec::new();
+    let mut raw_buf = String::new();
+    let mut key_buf = String::new();
+    let mut buf_kind: Option<TokenKind> = None;
+
+    let flush = |out: &mut Vec<Token>, raw_buf: &mut String, key_buf: &mut String, buf_kind: &mut Option<TokenKind>| {
+        if let Some(kind) = *buf_kind {
+            if !raw_buf.is_empty() {
+                out.push(Token {
+                    raw: std::mem::take(raw_buf),
+                    key: std::mem::take(key_buf),
+                    kind,
+                });
+            }
+        }
+        *buf_kind = None;
+    };
+
+    let mut it = text.chars().peekable();
+    while let Some(ch) = it.next() {
         if ch.is_ascii_alphabetic() || ch == '\'' {
-            buf.push(ch.to_ascii_lowercase());
-        } else {
-            if !buf.is_empty() {
-                out.push(std::mem::take(&mut buf));
+            if buf_kind != Some(TokenKind::Word) {
+                flush(&mut out, &mut raw_buf, &mut key_buf, &mut buf_kind);
+                buf_kind = Some(TokenKind::Word);
             }
+            raw_buf.push(ch);
+            key_buf.push(ch.to_ascii_lowercase());
+            continue;
+        }
 
-            // Preserve light punctuation as tokens so we can avoid linking across boundaries.
-            // (e.g., "French, I also" should not merge into one chunk.)
-            if matches!(ch, ',' | '.' | '?' | '!' | ';' | ':') {
-                out.push(ch.to_string());
+        if ch.is_ascii_digit() {
+            if buf_kind != Some(TokenKind::Number) {
+                flush(&mut out, &mut raw_buf, &mut key_buf, &mut buf_kind);
+                buf_kind = Some(TokenKind::Number);
             }
+            raw_buf.push(ch);
+            key_buf.push(ch);
+            continue;
+        }
+
+        // Number group separators (e.g., 999,999,999 or 1_000_000).
+        // Keep them in raw for display but drop from key so parsing works.
+        if (ch == ',' || ch == '_') && buf_kind == Some(TokenKind::Number) {
+            let next_is_digit = it.peek().is_some_and(|c| c.is_ascii_digit());
+            let prev_is_digit = raw_buf.chars().last().is_some_and(|c| c.is_ascii_digit());
+            if prev_is_digit && next_is_digit {
+                raw_buf.push(ch);
+                continue;
+            }
+        }
+
+        flush(&mut out, &mut raw_buf, &mut key_buf, &mut buf_kind);
+
+        // Preserve light punctuation as tokens so we can avoid linking across boundaries.
+        // (e.g., "French, I also" should not merge into one chunk.)
+        if matches!(ch, ',' | '.' | '?' | '!' | ';' | ':') {
+            out.push(Token {
+                raw: ch.to_string(),
+                key: ch.to_string(),
+                kind: TokenKind::Punct,
+            });
         }
     }
 
-    if !buf.is_empty() {
-        out.push(buf);
-    }
+    flush(&mut out, &mut raw_buf, &mut key_buf, &mut buf_kind);
 
     out
 }
 
 fn is_punct_token(s: &str) -> bool {
     matches!(s, "," | "." | "?" | "!" | ";" | ":")
+}
+
+fn is_number_token(s: &str) -> bool {
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_digit())
+}
+
+fn is_month_word(s: &str) -> bool {
+    matches!(
+        s,
+        "january"
+            | "jan"
+            | "february"
+            | "feb"
+            | "march"
+            | "mar"
+            | "april"
+            | "apr"
+            | "may"
+            | "june"
+            | "jun"
+            | "july"
+            | "jul"
+            | "august"
+            | "aug"
+            | "september"
+            | "sep"
+            | "sept"
+            | "october"
+            | "oct"
+            | "november"
+            | "nov"
+            | "december"
+            | "dec"
+            | "spring"
+            | "summer"
+            | "autumn"
+            | "fall"
+            | "winter"
+    )
+}
+
+fn is_year_context(prev_key: Option<&str>, next_key: Option<&str>) -> bool {
+    let prev = prev_key.unwrap_or("");
+    let next = next_key.unwrap_or("");
+
+    if is_month_word(prev) {
+        return true;
+    }
+
+    if matches!(
+        prev,
+        "in" | "since" | "from" | "during" | "by" | "around" | "about" | "circa" | "ca" | "c" | "year" | "yr" | "years"
+    ) {
+        return true;
+    }
+
+    if matches!(next, "ad" | "bc" | "ce" | "bce") {
+        return true;
+    }
+
+    false
+}
+
+fn builtin_word_phonemes(word: &str) -> Option<&'static [&'static str]> {
+    // Minimal built-ins for number reading when CMUdict isn't available.
+    Some(match word {
+        "oh" => &["OW1"],
+        "hundred" => &["HH", "AH1", "N", "D", "R", "AH0", "D"],
+        "thousand" => &["TH", "AW1", "Z", "AH0", "N", "D"],
+        "million" => &["M", "IH1", "L", "Y", "AH0", "N"],
+        "billion" => &["B", "IH1", "L", "Y", "AH0", "N"],
+        "trillion" => &["T", "R", "IH1", "L", "Y", "AH0", "N"],
+
+        "zero" => &["Z", "IY1", "R", "OW0"],
+        "one" => &["W", "AH1", "N"],
+        "two" => &["T", "UW1"],
+        "three" => &["TH", "R", "IY1"],
+        "four" => &["F", "AO1", "R"],
+        "five" => &["F", "AY1", "V"],
+        "six" => &["S", "IH1", "K", "S"],
+        "seven" => &["S", "EH1", "V", "AH0", "N"],
+        "eight" => &["EY1", "T"],
+        "nine" => &["N", "AY1", "N"],
+
+        "ten" => &["T", "EH1", "N"],
+        "eleven" => &["IH0", "L", "EH1", "V", "AH0", "N"],
+        "twelve" => &["T", "W", "EH1", "L", "V"],
+        "thirteen" => &["TH", "ER0", "T", "IY1", "N"],
+        "fourteen" => &["F", "AO0", "R", "T", "IY1", "N"],
+        "fifteen" => &["F", "IH0", "F", "T", "IY1", "N"],
+        "sixteen" => &["S", "IH0", "K", "S", "T", "IY1", "N"],
+        "seventeen" => &["S", "EH0", "V", "AH0", "N", "T", "IY1", "N"],
+        "eighteen" => &["EY0", "T", "IY1", "N"],
+        "nineteen" => &["N", "AY0", "N", "T", "IY1", "N"],
+
+        "twenty" => &["T", "W", "EH1", "N", "T", "IY0"],
+        "thirty" => &["TH", "ER1", "T", "IY0"],
+        "forty" => &["F", "AO1", "R", "T", "IY0"],
+        "fifty" => &["F", "IH1", "F", "T", "IY0"],
+        "sixty" => &["S", "IH1", "K", "S", "T", "IY0"],
+        "seventy" => &["S", "EH1", "V", "AH0", "N", "T", "IY0"],
+        "eighty" => &["EY1", "T", "IY0"],
+        "ninety" => &["N", "AY1", "N", "T", "IY0"],
+
+        _ => return None,
+    })
+}
+
+fn words_to_phonemes(words: &[&str], dict: Option<&CmuDict>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for w in words {
+        if w.is_empty() {
+            continue;
+        }
+
+        if let Some(dict) = dict {
+            if let Some(p) = dict.map.get(*w) {
+                out.extend(p.clone());
+                continue;
+            }
+        }
+
+        if let Some(list) = builtin_word_phonemes(w) {
+            out.extend(list.iter().map(|p| (*p).to_string()));
+            continue;
+        }
+
+        // Fallback: keep something visible.
+        out.push(w.to_ascii_uppercase());
+    }
+    out
+}
+
+fn digit_to_word(d: u32) -> Option<&'static str> {
+    Some(match d {
+        0 => "zero",
+        1 => "one",
+        2 => "two",
+        3 => "three",
+        4 => "four",
+        5 => "five",
+        6 => "six",
+        7 => "seven",
+        8 => "eight",
+        9 => "nine",
+        _ => return None,
+    })
+}
+
+fn two_digit_words(n: u32) -> Option<Vec<&'static str>> {
+    if n == 0 {
+        return Some(Vec::new());
+    }
+    if n < 10 {
+        return Some(vec![digit_to_word(n)?]);
+    }
+    if n < 20 {
+        return Some(vec![match n {
+            10 => "ten",
+            11 => "eleven",
+            12 => "twelve",
+            13 => "thirteen",
+            14 => "fourteen",
+            15 => "fifteen",
+            16 => "sixteen",
+            17 => "seventeen",
+            18 => "eighteen",
+            19 => "nineteen",
+            _ => return None,
+        }]);
+    }
+
+    let tens = n / 10;
+    let ones = n % 10;
+    let tens_word = match tens {
+        2 => "twenty",
+        3 => "thirty",
+        4 => "forty",
+        5 => "fifty",
+        6 => "sixty",
+        7 => "seventy",
+        8 => "eighty",
+        9 => "ninety",
+        _ => return None,
+    };
+
+    if ones == 0 {
+        return Some(vec![tens_word]);
+    }
+
+    Some(vec![tens_word, digit_to_word(ones)?])
+}
+
+fn year_style_words_20xx(n: u32) -> Option<Vec<&'static str>> {
+    // 2000-2099 only.
+    if n < 2000 || n > 2099 {
+        return None;
+    }
+
+    let last_two = n % 100;
+    let mut out: Vec<&'static str> = vec!["twenty"];
+
+    if last_two == 0 {
+        // 2000 -> "twenty" (not great), so let caller fall back to cardinal.
+        return None;
+    }
+
+    if last_two < 10 {
+        out.push("oh");
+        out.push(digit_to_word(last_two)?);
+        return Some(out);
+    }
+
+    out.extend(two_digit_words(last_two)?);
+    Some(out)
+}
+
+fn cardinal_3digit_words(n: u32) -> Option<Vec<&'static str>> {
+    if n < 100 || n > 999 {
+        return None;
+    }
+
+    let hundreds = n / 100;
+    let rem = n % 100;
+
+    let mut out: Vec<&'static str> = vec![digit_to_word(hundreds)?, "hundred"];
+    if rem == 0 {
+        return Some(out);
+    }
+    out.extend(two_digit_words(rem)?);
+    Some(out)
+}
+
+fn cardinal_4digit_words(n: u32) -> Option<Vec<&'static str>> {
+    if n < 1000 || n > 2099 {
+        return None;
+    }
+
+    let thousands = n / 1000;
+    let mut rem = n % 1000;
+    let mut out: Vec<&'static str> = Vec::new();
+
+    out.push(digit_to_word(thousands)?);
+    out.push("thousand");
+
+    if rem == 0 {
+        return Some(out);
+    }
+
+    if rem >= 100 {
+        let hundreds = rem / 100;
+        rem %= 100;
+        out.push(digit_to_word(hundreds)?);
+        out.push("hundred");
+        if rem == 0 {
+            return Some(out);
+        }
+    }
+
+    out.extend(two_digit_words(rem)?);
+    Some(out)
+}
+
+fn cardinal_large_words(n: u64) -> Option<Vec<&'static str>> {
+    // Up to 999,999,999,999,999 (quadrillion-1)
+    if n > 999_999_999_999_999 {
+        return None;
+    }
+
+    if n < 100 {
+        return two_digit_words(n as u32);
+    }
+    if n <= 999 {
+        return cardinal_3digit_words(n as u32);
+    }
+    if n <= 2099 {
+        return cardinal_4digit_words(n as u32);
+    }
+
+    let mut out: Vec<&'static str> = Vec::new();
+    let mut rem = n;
+
+    let scales: &[(u64, &str)] = &[
+        (1_000_000_000_000, "trillion"),
+        (1_000_000_000, "billion"),
+        (1_000_000, "million"),
+        (1_000, "thousand"),
+    ];
+
+    for (scale, name) in scales {
+        if rem >= *scale {
+            let group = (rem / *scale) as u32;
+            rem %= *scale;
+            let mut group_words = if group >= 100 {
+                cardinal_3digit_words(group)?
+            } else {
+                two_digit_words(group)?
+            };
+            out.append(&mut group_words);
+            out.push(*name);
+        }
+    }
+
+    if rem > 0 {
+        let tail = rem as u32;
+        let mut tail_words = if tail >= 100 {
+            cardinal_3digit_words(tail)?
+        } else {
+            two_digit_words(tail)?
+        };
+        out.append(&mut tail_words);
+    }
+
+    Some(out)
+}
+
+fn digit_phonemes(d: char) -> Option<&'static [&'static str]> {
+    // Basic CMUdict-style pronunciations.
+    // Note: We intentionally keep this simple (digit-by-digit) to avoid
+    // locale/format ambiguities (e.g., 1,234 / 3.14).
+    Some(match d {
+        '0' => &["Z", "IY1", "R", "OW0"],
+        '1' => &["W", "AH1", "N"],
+        '2' => &["T", "UW1"],
+        '3' => &["TH", "R", "IY1"],
+        '4' => &["F", "AO1", "R"],
+        '5' => &["F", "AY1", "V"],
+        '6' => &["S", "IH1", "K", "S"],
+        '7' => &["S", "EH1", "V", "AH0", "N"],
+        '8' => &["EY1", "T"],
+        '9' => &["N", "AY1", "N"],
+        _ => return None,
+    })
+}
+
+fn number_to_phonemes(s: &str) -> Option<Vec<String>> {
+    if !is_number_token(s) {
+        return None;
+    }
+
+    let mut out: Vec<String> = Vec::new();
+    for ch in s.chars() {
+        let list = digit_phonemes(ch)?;
+        out.extend(list.iter().map(|p| (*p).to_string()));
+    }
+    Some(out)
 }
 
 fn is_vowel_phoneme(p: &str) -> bool {
@@ -1114,9 +1520,87 @@ fn kana_override(word: &str) -> Option<&'static [&'static str]> {
     }
 }
 
-fn get_phonemes(word: &str, dict: Option<&CmuDict>) -> Vec<String> {
+fn prev_non_punct_key<'a>(tokens: &'a [Token], idx: usize) -> Option<&'a str> {
+    if idx == 0 {
+        return None;
+    }
+    for j in (0..idx).rev() {
+        if tokens[j].kind != TokenKind::Punct {
+            return Some(tokens[j].key.as_str());
+        }
+    }
+    None
+}
+
+fn next_non_punct_key<'a>(tokens: &'a [Token], idx: usize) -> Option<&'a str> {
+    for j in (idx + 1)..tokens.len() {
+        if tokens[j].kind != TokenKind::Punct {
+            return Some(tokens[j].key.as_str());
+        }
+    }
+    None
+}
+
+fn get_phonemes(word: &str, dict: Option<&CmuDict>, prev_key: Option<&str>, next_key: Option<&str>) -> Vec<String> {
     if is_punct_token(word) {
         return Vec::new();
+    }
+
+    if is_number_token(word) {
+        // If it has leading zeros (e.g. 02), keep digit-by-digit to avoid ambiguity.
+        if word.len() > 1 && word.starts_with('0') {
+            if let Some(p) = number_to_phonemes(word) {
+                return p;
+            }
+        }
+
+        // Prefer structured cardinal reading when possible.
+        // (We still handle 4-digit years with special context below.)
+        if let Ok(n64) = word.parse::<u64>() {
+            if word.len() != 4 {
+                if let Some(words) = cardinal_large_words(n64) {
+                    return words_to_phonemes(&words, dict);
+                }
+            }
+
+            // 0-99: cardinal (30 -> thirty)
+            if n64 < 100 {
+                if let Some(words) = two_digit_words(n64 as u32) {
+                    return words_to_phonemes(&words, dict);
+                }
+            }
+
+            // 100-999: cardinal (305 -> three hundred five)
+            if (100..=999).contains(&(n64 as u32)) {
+                if let Some(words) = cardinal_3digit_words(n64 as u32) {
+                    return words_to_phonemes(&words, dict);
+                }
+            }
+        }
+
+        // Special-case 4-digit years.
+        if word.len() == 4 {
+            if let Ok(n) = word.parse::<u32>() {
+                if n >= 1000 && n <= 2099 {
+                    let use_year_style = is_year_context(prev_key, next_key);
+                    if use_year_style {
+                        if let Some(words) = year_style_words_20xx(n) {
+                            return words_to_phonemes(&words, dict);
+                        }
+                        // Fall through to cardinal if year-style isn't supported.
+                    }
+
+                    if let Some(words) = cardinal_4digit_words(n) {
+                        return words_to_phonemes(&words, dict);
+                    }
+                }
+            }
+        }
+
+        // Fallback: digit-by-digit.
+        if let Some(p) = number_to_phonemes(word) {
+            return p;
+        }
     }
 
     if let Some(list) = weak_form(word) {
@@ -1155,19 +1639,22 @@ pub(crate) fn render_linking_impl(
     let mut i = 0usize;
     while i < words.len() {
         let w = &words[i];
+        let w_prev_key = prev_non_punct_key(&words, i);
+        let w_next_key = next_non_punct_key(&words, i);
 
         // Punctuation is its own chunk and always breaks linking.
-        if is_punct_token(w) {
+        if w.kind == TokenKind::Punct {
             chunks.push(RenderChunk {
-                words: vec![w.clone()],
+                words: vec![w.raw.clone()],
                 phonemes: Vec::new(),
-                rendered: w.clone(),
+                rendered: w.raw.clone(),
             });
             i += 1;
             continue;
         }
 
-        let mut group_words: Vec<String> = Vec::new();
+        let mut group_words_raw: Vec<String> = Vec::new();
+        let mut group_words_key: Vec<String> = Vec::new();
         let mut group_phonemes: Vec<String>;
         let mut word_phoneme_lens: Vec<usize> = Vec::new();
 
@@ -1177,9 +1664,11 @@ pub(crate) fn render_linking_impl(
             let next = &words[i + 1];
 
             // at all -> 「アロー」寄り（flapでRっぽく聞こえる）
-            if w == "at" && next == "all" {
-                group_words.push(w.clone());
-                group_words.push(next.clone());
+            if w.key == "at" && next.key == "all" {
+                group_words_raw.push(w.raw.clone());
+                group_words_raw.push(next.raw.clone());
+                group_words_key.push(w.key.clone());
+                group_words_key.push(next.key.clone());
                 group_phonemes = ["AH0", "R", "AO1"]
                     .iter()
                     .map(|s| (*s).to_string())
@@ -1188,46 +1677,53 @@ pub(crate) fn render_linking_impl(
                 word_phoneme_lens.push(1);
                 word_phoneme_lens.push(2);
                 i += 2;
-            } else if let Some(fixed) = fixed_linking(w, next) {
-                group_words.push(w.clone());
-                group_words.push(next.clone());
+            } else if let Some(fixed) = fixed_linking(&w.key, &next.key) {
+                group_words_raw.push(w.raw.clone());
+                group_words_raw.push(next.raw.clone());
+                group_words_key.push(w.key.clone());
+                group_words_key.push(next.key.clone());
                 group_phonemes = fixed.iter().map(|s| (*s).to_string()).collect();
                 word_phoneme_lens.push(group_phonemes.len());
                 i += 2;
             } else {
-                group_words.push(w.clone());
-                if let Some(list) = kana_override(w) {
+                group_words_raw.push(w.raw.clone());
+                group_words_key.push(w.key.clone());
+                if let Some(list) = kana_override(&w.key) {
                     group_phonemes = list.iter().map(|s| (*s).to_string()).collect();
                 } else {
-                    group_phonemes = get_phonemes(w, dict.as_deref());
+                    group_phonemes = get_phonemes(&w.key, dict.as_deref(), w_prev_key, w_next_key);
                 }
                 word_phoneme_lens.push(group_phonemes.len());
                 i += 1;
             }
         } else if linking_mode && i + 1 < words.len() {
             let next = &words[i + 1];
-            if let Some(fixed) = fixed_linking(w, next) {
-                group_words.push(w.clone());
-                group_words.push(next.clone());
+            if let Some(fixed) = fixed_linking(&w.key, &next.key) {
+                group_words_raw.push(w.raw.clone());
+                group_words_raw.push(next.raw.clone());
+                group_words_key.push(w.key.clone());
+                group_words_key.push(next.key.clone());
                 group_phonemes = fixed.iter().map(|s| (*s).to_string()).collect();
                 word_phoneme_lens.push(group_phonemes.len());
                 i += 2;
             } else {
-                group_words.push(w.clone());
-                group_phonemes = get_phonemes(w, dict.as_deref());
+                group_words_raw.push(w.raw.clone());
+                group_words_key.push(w.key.clone());
+                group_phonemes = get_phonemes(&w.key, dict.as_deref(), w_prev_key, w_next_key);
                 word_phoneme_lens.push(group_phonemes.len());
                 i += 1;
             }
         } else {
-            group_words.push(w.clone());
+            group_words_raw.push(w.raw.clone());
+            group_words_key.push(w.key.clone());
             if mode == DisplayMode::Kana {
-                if let Some(list) = kana_override(w) {
+                if let Some(list) = kana_override(&w.key) {
                     group_phonemes = list.iter().map(|s| (*s).to_string()).collect();
                 } else {
-                    group_phonemes = get_phonemes(w, dict.as_deref());
+                    group_phonemes = get_phonemes(&w.key, dict.as_deref(), w_prev_key, w_next_key);
                 }
             } else {
-                group_phonemes = get_phonemes(w, dict.as_deref());
+                group_phonemes = get_phonemes(&w.key, dict.as_deref(), w_prev_key, w_next_key);
             }
             word_phoneme_lens.push(group_phonemes.len());
             i += 1;
@@ -1235,22 +1731,25 @@ pub(crate) fn render_linking_impl(
 
         // 一般リンキング: ネイティブっぽく繋がりやすい境界は同一チャンクへ
         while linking_mode && i < words.len() {
-            let next_word = words[i].clone();
+            let next = &words[i];
+            let next_word_raw = next.raw.clone();
+            let next_word_key = next.key.clone();
+            let next_next_key = next_non_punct_key(&words, i);
 
             // Never link across punctuation.
-            if is_punct_token(&next_word) {
+            if next.kind == TokenKind::Punct {
                 break;
             }
-            let prev_word = group_words.last().map(|s| s.as_str()).unwrap_or("");
+            let prev_word_key = group_words_key.last().map(|s| s.as_str()).unwrap_or("");
 
-            if is_punct_token(prev_word) {
+            if is_punct_token(prev_word_key) {
                 break;
             }
 
             // Kana: handle phrase tail "at all" even when it's inside a larger chunk
             // by replacing the previous word's phonemes (at) and the next word (all)
             // with a compact /əɾɔ/ approximation.
-            if mode == DisplayMode::Kana && prev_word == "at" && next_word == "all" {
+            if mode == DisplayMode::Kana && prev_word_key == "at" && next_word_key == "all" {
                 let at_len = word_phoneme_lens.last().copied().unwrap_or(0);
                 if at_len > 0 && at_len <= group_phonemes.len() {
                     group_phonemes.truncate(group_phonemes.len() - at_len);
@@ -1261,19 +1760,21 @@ pub(crate) fn render_linking_impl(
                 if let Some(last) = word_phoneme_lens.last_mut() {
                     *last = 1;
                 }
-                group_words.push(next_word);
+                group_words_raw.push(next_word_raw);
+                group_words_key.push(next_word_key);
                 word_phoneme_lens.push(2);
                 i += 1;
                 continue;
             }
 
-            let mut next_phonemes = get_phonemes(&next_word, dict.as_deref());
+            let prev_for_next = group_words_key.last().map(|s| s.as_str());
+            let mut next_phonemes = get_phonemes(&next_word_key, dict.as_deref(), prev_for_next, next_next_key);
 
             let prev_len_before = group_phonemes.len();
             let join = apply_connected_speech_rules(
-                prev_word,
+                prev_word_key,
                 &mut group_phonemes,
-                &next_word,
+                &next_word_key,
                 &mut next_phonemes,
             );
 
@@ -1287,7 +1788,8 @@ pub(crate) fn render_linking_impl(
                 break;
             }
 
-            group_words.push(next_word);
+            group_words_raw.push(next_word_raw);
+            group_words_key.push(next_word_key);
             let next_len = next_phonemes.len();
             group_phonemes.extend(next_phonemes);
             word_phoneme_lens.push(next_len);
@@ -1315,9 +1817,9 @@ pub(crate) fn render_linking_impl(
             }
         }
 
-        let rendered = format!("{}({})", group_words.join(" "), parts.join(""));
+        let rendered = format!("{}({})", group_words_raw.join(" "), parts.join(""));
         chunks.push(RenderChunk {
-            words: group_words,
+            words: group_words_raw,
             phonemes: group_phonemes,
             rendered,
         });

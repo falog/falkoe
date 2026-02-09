@@ -66,6 +66,11 @@ pub(crate) fn run_ffmpeg(app: &AppHandle, args: &[String]) -> Result<()> {
             return Err(e).with_context(|| format!("failed to spawn ffmpeg: {:?}", cmd));
         }
     };
+
+    crate::logging::log_line(app, format!("[ffmpeg] run: cmd={:?} args={:?}", cmd, full_args));
+    crate::logging::log_bytes(app, "[ffmpeg][stdout] ", &out.stdout);
+    crate::logging::log_bytes(app, "[ffmpeg][stderr] ", &out.stderr);
+
     if !out.status.success() {
         let cmdline = {
             let mut s = cmd.to_string_lossy().to_string();
