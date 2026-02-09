@@ -364,6 +364,24 @@ Start with `FALKOE_DEBUG_MECAB=1` to see backend logs such as `[mecab] alignment
 
 ---
 
+## 📝 Logging / ログ
+
+バックエンドログはファイル（`backend.log`）に書き込まれます。保存先は起動時に次のようにログに出ます：
+
+- `[log] initialized backend.log path=...`
+
+ターミナルにも同じ内容を出したい場合は `FALKOE_LOG_STDERR=1` を付けて起動してください（ログファイルには常に出ます）。
+
+---
+
+The backend writes logs to a file (`backend.log`). The path is printed at startup like:
+
+- `[log] initialized backend.log path=...`
+
+To also mirror the same logs to the terminal, start with `FALKOE_LOG_STDERR=1` (logs are always written to the file).
+
+---
+
 ## 🧠 Whisper Model / 音声認識モデル(Whisper)
 
 Falkoe の音声認識は Whisper（`whisper.cpp` 互換の `ggml-*.bin`）を使います。
