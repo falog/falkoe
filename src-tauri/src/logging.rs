@@ -307,6 +307,29 @@ pub(crate) fn log_line(app: &AppHandle, line: impl AsRef<str>) {
     write_line_to_path(&path, line.as_ref());
 }
 
+pub(crate) fn log_multiline(app: &AppHandle, prefix: &str, text: &str) {
+    if text.is_empty() {
+        return;
+    }
+
+    for line in text.lines() {
+        // Preserve empty lines too (as a visible marker).
+        if line.is_empty() {
+            log_line(app, format!("{}", prefix));
+        } else {
+            log_line(app, format!("{}{}", prefix, line));
+        }
+    }
+}
+
+pub(crate) fn log_bytes(app: &AppHandle, prefix: &str, bytes: &[u8]) {
+    if bytes.is_empty() {
+        return;
+    }
+    let s = String::from_utf8_lossy(bytes);
+    log_multiline(app, prefix, &s);
+}
+
 pub(crate) fn panic_payload_to_string(payload: &(dyn Any + Send)) -> String {
     if let Some(s) = payload.downcast_ref::<&str>() {
         return (*s).to_string();

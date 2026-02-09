@@ -472,20 +472,24 @@ pub(crate) fn transcribe_in_subprocess(
     #[cfg(target_os = "windows")]
     let _err_mode = WindowsErrorModeGuard::new_suppress_loader_dialogs();
     let out = cmd0.output()?;
-    let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+
+    crate::logging::log_line(
+        app,
+        format!(
+            "[whisper] transcribe(subprocess): status={:?}",
+            out.status.code()
+        ),
+    );
+    crate::logging::log_bytes(app, "[whisper][stdout] ", &out.stdout);
+    crate::logging::log_bytes(app, "[whisper][stderr] ", &out.stderr);
+
+    let stderr_s = String::from_utf8_lossy(&out.stderr);
     if !out.status.success() {
-        crate::logging::log_line(
-            app,
-            format!(
-                "[whisper] transcribe(subprocess): failed status={:?} stderr={}",
-                out.status.code(),
-                crate::logging::truncate_for_log(&stderr, 2000)
-            ),
-        );
+        crate::logging::log_line(app, format!("[whisper] transcribe(subprocess): failed status={:?}", out.status.code()));
 
         // If Vulkan helper failed (common on some Linux GPUs lacking 16-bit storage),
         // retry once with CPU-only backend.
-        let should_retry_cpu = _picked0 == "vulkan" || is_vulkan_unsupported_error(&stderr);
+        let should_retry_cpu = _picked0 == "vulkan" || is_vulkan_unsupported_error(stderr_s.as_ref());
         if should_retry_cpu {
             crate::logging::log_line(
                 app,
@@ -510,27 +514,20 @@ pub(crate) fn transcribe_in_subprocess(
             #[cfg(target_os = "windows")]
             let _err_mode2 = WindowsErrorModeGuard::new_suppress_loader_dialogs();
             let out2 = cmd1.output()?;
-            let stderr2 = String::from_utf8_lossy(&out2.stderr).trim().to_string();
-            if !out2.status.success() {
-                crate::logging::log_line(
-                    app,
-                    format!(
-                        "[whisper] transcribe(subprocess): cpu retry failed status={:?} stderr={}",
-                        out2.status.code(),
-                        crate::logging::truncate_for_log(&stderr2, 2000)
-                    ),
-                );
-                bail!("transcribe subprocess failed");
-            }
 
-            if !stderr2.is_empty() {
-                crate::logging::log_line(
-                    app,
-                    format!(
-                        "[whisper] transcribe(subprocess): stderr={}",
-                        crate::logging::truncate_for_log(&stderr2, 2000)
-                    ),
-                );
+            crate::logging::log_line(
+                app,
+                format!(
+                    "[whisper] transcribe(subprocess,cpu-retry): status={:?}",
+                    out2.status.code()
+                ),
+            );
+            crate::logging::log_bytes(app, "[whisper][stdout] ", &out2.stdout);
+            crate::logging::log_bytes(app, "[whisper][stderr] ", &out2.stderr);
+
+            if !out2.status.success() {
+                crate::logging::log_line(app, format!("[whisper] transcribe(subprocess): cpu retry failed status={:?}", out2.status.code()));
+                bail!("transcribe subprocess failed");
             }
 
             return parse_transcribe_stdout_json(app, &out2.stdout)
@@ -540,15 +537,7 @@ pub(crate) fn transcribe_in_subprocess(
         bail!("transcribe subprocess failed");
     }
 
-    if !stderr.is_empty() {
-        crate::logging::log_line(
-            app,
-            format!(
-                "[whisper] transcribe(subprocess): stderr={}",
-                crate::logging::truncate_for_log(&stderr, 2000)
-            ),
-        );
-    }
+    // stderr/stdout are already logged above (full).
 
     parse_transcribe_stdout_json(app, &out.stdout)
         .with_context(|| "failed to parse transcribe subprocess stdout as JSON")

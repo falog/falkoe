@@ -333,6 +333,12 @@ fn run_mecab(text: &str, rt: &MecabRuntime, app: Option<&AppHandle>) -> Option<V
     }
 
     let output = child.wait_with_output().ok()?;
+
+    if let Some(app) = app {
+        crate::logging::log_line(app, format!("[mecab] status={:?} cmd={:?}", output.status.code(), rt.cmd));
+        crate::logging::log_bytes(app, "[mecab][stdout] ", &output.stdout);
+        crate::logging::log_bytes(app, "[mecab][stderr] ", &output.stderr);
+    }
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         if !stderr.trim().is_empty() {
@@ -424,6 +430,12 @@ fn run_mecab_with_pos(text: &str, rt: &MecabRuntime, app: Option<&AppHandle>) ->
     }
 
     let output = child.wait_with_output().ok()?;
+
+    if let Some(app) = app {
+        crate::logging::log_line(app, format!("[mecab] status={:?} cmd={:?}", output.status.code(), rt.cmd));
+        crate::logging::log_bytes(app, "[mecab][stdout] ", &output.stdout);
+        crate::logging::log_bytes(app, "[mecab][stderr] ", &output.stderr);
+    }
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         if !stderr.trim().is_empty() {

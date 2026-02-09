@@ -1,6 +1,7 @@
 use anyhow::{bail, Result};
 use std::{
     fs,
+    io::{BufRead, BufReader},
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
@@ -185,10 +186,8 @@ pub(crate) fn extract_f0_with_praat(
             &format!("{pitch_floor}"),
             &format!("{pitch_ceiling}"),
         ])
-        // Praat sometimes prints errors like "script command ... not completed".
-        // We handle errors ourselves (and fall back), so keep this quiet.
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
         // Avoid spawning a black console window on Windows.
         #[cfg(target_os = "windows")]
@@ -208,6 +207,36 @@ pub(crate) fn extract_f0_with_praat(
                 continue;
             }
         };
+
+        // Stream stdout/stderr into backend.log so we don't lose diagnostics.
+        crate::logging::log_line(app, format!("[praat] spawned cmd={:?}", praat));
+        let app_out = app.clone();
+        let cmd_label_out = praat.to_string_lossy().to_string();
+        let stdout_thread = child.stdout.take().map(|stdout| {
+            std::thread::spawn(move || {
+                let reader = BufReader::new(stdout);
+                for line in reader.lines().flatten() {
+                    crate::logging::log_line(
+                        &app_out,
+                        format!("[praat][stdout] cmd={} {}", cmd_label_out, line),
+                    );
+                }
+            })
+        });
+
+        let app_err = app.clone();
+        let cmd_label_err = praat.to_string_lossy().to_string();
+        let stderr_thread = child.stderr.take().map(|stderr| {
+            std::thread::spawn(move || {
+                let reader = BufReader::new(stderr);
+                for line in reader.lines().flatten() {
+                    crate::logging::log_line(
+                        &app_err,
+                        format!("[praat][stderr] cmd={} {}", cmd_label_err, line),
+                    );
+                }
+            })
+        });
 
         // Guard against GUI/hanging praat builds: timeout and fall back to YIN.
         let timeout = std::time::Duration::from_secs(10);
@@ -248,6 +277,9 @@ pub(crate) fn extract_f0_with_praat(
                     } else {
                         errors.push(format!("- error={}", e));
                     }
+                    // Ensure the child terminates so stdout/stderr reader threads can finish.
+                    let _ = child.kill();
+                    let _ = child.wait();
                     break;
                 }
             }
@@ -261,6 +293,13 @@ pub(crate) fn extract_f0_with_praat(
             } else {
                 errors.push("- error=timeout".to_string());
             }
+        }
+
+        if let Some(t) = stdout_thread {
+            let _ = t.join();
+        }
+        if let Some(t) = stderr_thread {
+            let _ = t.join();
         }
 
         if ok {

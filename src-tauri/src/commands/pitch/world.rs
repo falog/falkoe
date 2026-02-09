@@ -149,8 +149,8 @@ pub(crate) fn extract_f0_with_world(
 
         // Ensure the process doesn't inherit any stdio that might trigger console allocation.
         command.stdin(std::process::Stdio::null());
-        command.stdout(std::process::Stdio::null());
-        command.stderr(std::process::Stdio::null());
+        command.stdout(std::process::Stdio::piped());
+        command.stderr(std::process::Stdio::piped());
 
         let out = command
             .args([
@@ -168,6 +168,9 @@ pub(crate) fn extract_f0_with_world(
 
         match out {
             Ok(out) => {
+                crate::logging::log_line(app, format!("[world] status={:?} cmd={:?}", out.status.code(), cmd));
+                crate::logging::log_bytes(app, "[world][stdout] ", &out.stdout);
+                crate::logging::log_bytes(app, "[world][stderr] ", &out.stderr);
                 if out.status.success() {
                     return parse_tsv_two_cols(&out_path, expected_len);
                 }
