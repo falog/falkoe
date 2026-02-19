@@ -1,10 +1,150 @@
 import { resolveResource } from "@tauri-apps/api/path";
 import { readFile } from "@tauri-apps/plugin-fs";
+import { invoke } from "@tauri-apps/api/core";
 
 let audioEl: HTMLAudioElement | null = null;
 let objectUrl: string | null = null;
 let audioUnlocked = false;
 let playRequestId = 0;
+let audioCtx: AudioContext | null = null;
+let currentBufferSource: AudioBufferSourceNode | null = null;
+
+function isAndroidRuntime(): boolean {
+  const ua =
+    typeof navigator !== "undefined" ? (navigator.userAgent ?? "") : "";
+  return /Android/i.test(ua);
+}
+
+function getAudioContext(): AudioContext | null {
+  const Ctor =
+    (window as any).AudioContext || (window as any).webkitAudioContext;
+  if (!Ctor) return null;
+  if (!audioCtx) audioCtx = new Ctor();
+  return audioCtx;
+}
+
+function stopCurrentBufferSource(): void {
+  if (!currentBufferSource) return;
+  try {
+    currentBufferSource.stop();
+  } catch {
+    // ignore
+  }
+  try {
+    currentBufferSource.disconnect();
+  } catch {
+    // ignore
+  }
+  currentBufferSource = null;
+}
+
+function readAscii(view: DataView, offset: number, len: number): string {
+  let s = "";
+  for (let i = 0; i < len; i++) {
+    s += String.fromCharCode(view.getUint8(offset + i));
+  }
+  return s;
+}
+
+function tryParsePcm16Wav(bytes: Uint8Array): {
+  channels: number;
+  sampleRate: number;
+  samples: Float32Array[];
+} | null {
+  const buf = toArrayBuffer(bytes);
+  if (buf.byteLength < 44) return null;
+  const view = new DataView(buf);
+
+  if (readAscii(view, 0, 4) !== "RIFF") return null;
+  if (readAscii(view, 8, 4) !== "WAVE") return null;
+
+  let offset = 12;
+  let fmtFound = false;
+  let dataOffset = -1;
+  let dataSize = 0;
+  let audioFormat = 0;
+  let channels = 0;
+  let sampleRate = 0;
+  let bitsPerSample = 0;
+
+  while (offset + 8 <= view.byteLength) {
+    const chunkId = readAscii(view, offset, 4);
+    const chunkSize = view.getUint32(offset + 4, true);
+    const chunkDataStart = offset + 8;
+    const chunkNext = chunkDataStart + chunkSize + (chunkSize % 2);
+    if (chunkNext > view.byteLength) break;
+
+    if (chunkId === "fmt " && chunkSize >= 16) {
+      audioFormat = view.getUint16(chunkDataStart, true);
+      channels = view.getUint16(chunkDataStart + 2, true);
+      sampleRate = view.getUint32(chunkDataStart + 4, true);
+      bitsPerSample = view.getUint16(chunkDataStart + 14, true);
+      fmtFound = true;
+    } else if (chunkId === "data") {
+      dataOffset = chunkDataStart;
+      dataSize = chunkSize;
+    }
+
+    offset = chunkNext;
+  }
+
+  if (!fmtFound || dataOffset < 0 || dataSize <= 0) return null;
+  if (audioFormat !== 1) return null;
+  if (bitsPerSample !== 16) return null;
+  if (channels <= 0 || channels > 2) return null;
+  if (sampleRate <= 0) return null;
+
+  const bytesPerSample = bitsPerSample / 8;
+  const frameCount = Math.floor(dataSize / (channels * bytesPerSample));
+  if (frameCount <= 0) return null;
+
+  const samples = Array.from(
+    { length: channels },
+    () => new Float32Array(frameCount),
+  );
+  let p = dataOffset;
+
+  for (let i = 0; i < frameCount; i++) {
+    for (let ch = 0; ch < channels; ch++) {
+      const s = view.getInt16(p, true);
+      p += 2;
+      samples[ch][i] = Math.max(-1, Math.min(1, s / 32768));
+    }
+  }
+
+  return { channels, sampleRate, samples };
+}
+
+async function playWavWithWebAudio(bytes: Uint8Array): Promise<boolean> {
+  const parsed = tryParsePcm16Wav(bytes);
+  if (!parsed) return false;
+
+  const ctx = getAudioContext();
+  if (!ctx) return false;
+  if (ctx.state === "suspended") {
+    await ctx.resume();
+  }
+
+  stopCurrentBufferSource();
+
+  const { channels, sampleRate, samples } = parsed;
+  const buffer = ctx.createBuffer(channels, samples[0].length, sampleRate);
+  for (let ch = 0; ch < channels; ch++) {
+    buffer.getChannelData(ch).set(samples[ch]);
+  }
+
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(ctx.destination);
+  source.onended = () => {
+    if (currentBufferSource === source) {
+      currentBufferSource = null;
+    }
+  };
+  currentBufferSource = source;
+  source.start();
+  return true;
+}
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   // TS の型定義上、Uint8Array の buffer は ArrayBufferLike (SharedArrayBuffer を含む) になり得る。
@@ -24,7 +164,7 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
 
 function createSilentWavBytes(
   durationMs: number,
-  sampleRate: number = 8000
+  sampleRate: number = 8000,
 ): Uint8Array {
   const numChannels = 1;
   const bitsPerSample = 16;
@@ -86,9 +226,73 @@ function isPlayInterruptedError(e: unknown): boolean {
 function guessContentType(path: string): string {
   const p = (path ?? "").toLowerCase();
   if (p.endsWith(".wav")) return "audio/wav";
+  if (p.endsWith(".m4a")) return "audio/mp4";
   if (p.endsWith(".mp3")) return "audio/mpeg";
   if (p.endsWith(".ogg")) return "audio/ogg";
   return "application/octet-stream";
+}
+
+async function loadBundledAudioBytesViaInvoke(
+  resourcePath: string,
+): Promise<Uint8Array | null> {
+  const rel = resourcePath
+    .trim()
+    .replace(/^\/+/, "")
+    .replace(/^resources\//, "");
+  if (!rel) return null;
+
+  try {
+    const b64 = await invoke<string>("read_bundled_resource_base64", {
+      resourcePath: rel,
+    });
+    if (!b64) return null;
+
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) {
+      out[i] = bin.charCodeAt(i);
+    }
+    return out;
+  } catch (e) {
+    const msg = String((e as any)?.message ?? e);
+    console.warn("[ipaPlayer] invoke read_bundled_resource_base64 failed", {
+      resourcePath,
+      rel,
+      error: msg,
+    });
+    return null;
+  }
+}
+
+async function loadBundledAudioBytesViaHttp(
+  resourcePath: string,
+): Promise<Uint8Array | null> {
+  const rel = resourcePath
+    .trim()
+    .replace(/^\/+/, "")
+    .replace(/^resources\//, "");
+  if (!rel) return null;
+
+  const candidates = [
+    `http://tauri.localhost/resources/${rel}`,
+    `http://tauri.localhost/${rel}`,
+    `https://tauri.localhost/resources/${rel}`,
+    `https://tauri.localhost/${rel}`,
+  ];
+
+  for (const url of candidates) {
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) continue;
+      const ab = await res.arrayBuffer();
+      if (ab.byteLength <= 0) continue;
+      return new Uint8Array(ab);
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
 }
 
 export async function playBundledAudio(resourcePath: string): Promise<void> {
@@ -101,47 +305,79 @@ export async function playBundledAudio(resourcePath: string): Promise<void> {
         resourcePath.startsWith("resources/")
           ? resourcePath
           : `resources/${resourcePath}`,
-      ].filter(Boolean)
-    )
+      ].filter(Boolean),
+    ),
   );
 
   let bytes: Uint8Array | null = null;
-  let absPath: string | null = null;
   let lastError: unknown = null;
+  const debugTried: string[] = [];
 
   for (const p of candidates) {
-    try {
-      absPath = await resolveResource(p);
-    } catch (e) {
-      lastError = e;
-      absPath = null;
-      continue;
-    }
-
-    try {
-      bytes = await readFile(absPath);
+    const viaInvoke = await loadBundledAudioBytesViaInvoke(p);
+    if (viaInvoke) {
+      bytes = viaInvoke;
+      debugTried.push(`invoke:ok:${p}:${viaInvoke.byteLength}`);
       break;
-    } catch (e) {
-      // In dev, resolveResource can return a path that doesn't exist
-      // depending on how resources are synced. Try the next candidate.
-      lastError = e;
-      bytes = null;
-      absPath = null;
-      continue;
+    }
+    debugTried.push(`invoke:miss:${p}`);
+  }
+
+  if (!bytes && isAndroidRuntime()) {
+    for (const p of candidates) {
+      const viaHttp = await loadBundledAudioBytesViaHttp(p);
+      if (viaHttp) {
+        bytes = viaHttp;
+        debugTried.push(`http:ok:${p}:${viaHttp.byteLength}`);
+        break;
+      }
+      debugTried.push(`http:miss:${p}`);
+    }
+  }
+
+  if (!bytes && !isAndroidRuntime()) {
+    for (const p of candidates) {
+      try {
+        const absPath = await resolveResource(p);
+        bytes = await readFile(absPath);
+        debugTried.push(`fs:ok:${p}:${bytes.byteLength}`);
+        break;
+      } catch (e) {
+        lastError = e;
+        bytes = null;
+        const msg = String((e as any)?.message ?? e);
+        debugTried.push(`fs:err:${p}:${msg}`);
+      }
     }
   }
 
   if (!bytes) {
+    const detail = debugTried.join(" | ");
     throw new Error(
-      `Failed to load bundled resource: ${resourcePath} (${String(lastError)})`
+      `Failed to load bundled resource: ${resourcePath} (${String(lastError)}) [${detail}]`,
     );
+  }
+
+  if (bytes.byteLength <= 0) {
+    throw new Error(`Empty bundled audio file: ${resourcePath}`);
   }
 
   // If a newer play request came in while we were loading, drop this one.
   if (requestId !== playRequestId) return;
 
+  if (bytes && /\.wav$/i.test(resourcePath)) {
+    try {
+      const played = await playWavWithWebAudio(bytes);
+      if (played) return;
+    } catch {
+      // fallback to HTMLAudio path below
+    }
+  }
+
   const newUrl = URL.createObjectURL(
-    new Blob([toArrayBuffer(bytes)], { type: guessContentType(resourcePath) })
+    new Blob([toArrayBuffer(bytes)], {
+      type: guessContentType(resourcePath),
+    }),
   );
 
   // If we got superseded right after creating the URL, clean up.
@@ -152,7 +388,7 @@ export async function playBundledAudio(resourcePath: string): Promise<void> {
 
   const prevUrl = objectUrl;
   objectUrl = newUrl;
-  if (prevUrl) URL.revokeObjectURL(prevUrl);
+  if (prevUrl?.startsWith("blob:")) URL.revokeObjectURL(prevUrl);
 
   if (!audioEl) audioEl = new Audio();
 
@@ -168,7 +404,7 @@ export async function playBundledAudio(resourcePath: string): Promise<void> {
     if (isPlayInterruptedError(e)) return;
     if (isAutoplayBlockedError(e)) {
       throw new Error(
-        "Audio playback was blocked (user gesture required). Click once on the screen, then try hover again."
+        "Audio playback was blocked (user gesture required). Click once on the screen, then try hover again.",
       );
     }
     throw e;
@@ -176,7 +412,7 @@ export async function playBundledAudio(resourcePath: string): Promise<void> {
 }
 
 export async function bundledResourceExists(
-  resourcePath: string
+  resourcePath: string,
 ): Promise<boolean> {
   const candidates = Array.from(
     new Set(
@@ -186,8 +422,8 @@ export async function bundledResourceExists(
         resourcePath.startsWith("resources/")
           ? resourcePath
           : `resources/${resourcePath}`,
-      ].filter(Boolean)
-    )
+      ].filter(Boolean),
+    ),
   );
 
   for (const p of candidates) {
@@ -217,9 +453,18 @@ export async function unlockAudioFromUserGesture(): Promise<void> {
   if (audioUnlocked) return;
   if (!audioEl) audioEl = new Audio();
 
+  const ctx = getAudioContext();
+  if (ctx && ctx.state === "suspended") {
+    try {
+      await ctx.resume();
+    } catch {
+      // ignore and continue with HTMLAudio unlock path
+    }
+  }
+
   const bytes = createSilentWavBytes(30);
   const url = URL.createObjectURL(
-    new Blob([toArrayBuffer(bytes)], { type: "audio/wav" })
+    new Blob([toArrayBuffer(bytes)], { type: "audio/wav" }),
   );
 
   try {
@@ -240,6 +485,8 @@ export function isAudioUnlocked(): boolean {
 }
 
 export function disposeBundledAudioPlayer(): void {
+  stopCurrentBufferSource();
+
   if (audioEl) {
     audioEl.pause();
     audioEl.src = "";
@@ -249,5 +496,11 @@ export function disposeBundledAudioPlayer(): void {
     objectUrl = null;
   }
   audioEl = null;
+  if (audioCtx) {
+    void audioCtx.close().catch(() => {
+      // ignore
+    });
+    audioCtx = null;
+  }
   audioUnlocked = false;
 }

@@ -5,7 +5,6 @@ import { useTranslation } from "react-i18next";
 import { loadIpaIndex, type IpaIndex } from "../utils/ipaResources";
 import {
   playBundledAudio,
-  bundledResourceExists,
   unlockAudioFromUserGesture,
 } from "../utils/ipaPlayer";
 import {
@@ -40,66 +39,16 @@ export default function DevelopersMistakesScreen({
   const [ipaIndex, setIpaIndex] = useState<IpaIndex | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [sampleExplainAvailable, setSampleExplainAvailable] = useState<
-    Record<string, boolean>
-  >({});
   const unlockTriedRef = useRef(false);
 
   const commonMistakes = useMemo(() => {
     const v = t("data.commonMistakes", { returnObjects: true });
     return (Array.isArray(v) ? v : []) as unknown as CommonMistake[];
-  }, [t, i18n.language]);
+  }, [i18n.language]);
 
   const pageMistakes = useMemo(() => {
     return commonMistakes.filter((m) => m.key === "r" || m.key === "oo");
   }, [commonMistakes]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const simpleKeys = new Set(["r", "oo"]);
-    const explainToks = Array.from(
-      new Set(
-        pageMistakes
-          .filter((m) => simpleKeys.has(m.key))
-          .flatMap((m) =>
-            m.buttons.filter((b) => b.kind === "explain").map((b) => b.tok),
-          ),
-      ),
-    );
-
-    (async () => {
-      const updates: Record<string, boolean> = {};
-
-      for (const tok of explainToks) {
-        const speaker: SampleSpeaker = "falkoe";
-        const key = `${speaker}:${tok}:explain`;
-        if (key in updates) continue;
-
-        const candidates = sampleResourceCandidates(speaker, tok).map((p) =>
-          p.replace(/\.wav$/i, "_explain.wav"),
-        );
-
-        let ok = false;
-        for (const p of candidates) {
-          if (await bundledResourceExists(p)) {
-            ok = true;
-            break;
-          }
-        }
-        updates[key] = ok;
-      }
-
-      if (cancelled) return;
-      setSampleExplainAvailable((prev) => ({ ...prev, ...updates }));
-    })().catch(() => {
-      // not fatal
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [pageMistakes]);
 
   useEffect(() => {
     setLoading(true);
@@ -122,6 +71,14 @@ export default function DevelopersMistakesScreen({
     const el = document.getElementById(`mistake-${focus}`);
     el?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [initialFocus, loading, error]);
+
+  function androidDebugSuffix(err: unknown): string {
+    if (!/Android/i.test(navigator.userAgent ?? "")) return "";
+    const msg = String((err as any)?.message ?? err ?? "").trim();
+    if (!msg) return "";
+    const short = msg.length > 200 ? `${msg.slice(0, 200)}…` : msg;
+    return ` [debug: ${short}]`;
+  }
 
   function renderInline(inline: MistakeInline, idx: number) {
     if (inline.kind === "code") {
@@ -161,8 +118,9 @@ export default function DevelopersMistakesScreen({
       if (/user gesture|required/i.test(msg)) {
         message.info(t("screens.commonMistakes.audioUnlockHint"));
       } else {
-        //message.error(`再生に失敗: ${tok} (${msg})`);
-        message.info(`${t("screens.developersMistakes.noAudioAlt")}${tok}`);
+        message.info(
+          `${t("screens.developersMistakes.noAudioAlt")}${tok}${androidDebugSuffix(e)}`,
+        );
       }
     }
   }
@@ -183,7 +141,7 @@ export default function DevelopersMistakesScreen({
           return;
         }
         if (
-          /not found|no such file|failed to (resolve|load)|os error\s*2/i.test(
+          /not found|no such file|failed to (resolve|load)|os error\s*2|no supported source|empty bundled audio file/i.test(
             msg,
           )
         ) {
@@ -191,22 +149,34 @@ export default function DevelopersMistakesScreen({
           continue;
         }
         //message.error(`再生に失敗: ${tok} (${msg})`);
-        message.info(`${t("screens.developersMistakes.noAudioAlt")}${tok}`);
+        message.info(
+          `${t("screens.developersMistakes.noAudioAlt")}${tok}${androidDebugSuffix(e)}`,
+        );
         return;
       }
     }
 
+    // フォールバック: 話者別サンプルが見つからない環境では、標準IPA音声を再生する
+    const fallback = ipaIndex?.[tok]?.audio;
+    if (fallback) {
+      try {
+        await playBundledAudio(fallback);
+        message.info(t("screens.developersMistakes.noAudioAlt"));
+        return;
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+
     message.info(
-      `${t("screens.developersMistakes.noAudioWithCandidates")}${tok} (${candidates.join(
-        " / ",
-      )})`,
+      `${t("screens.developersMistakes.noAudioWithCandidates")}${tok} (${candidates.join(" / ")})${androidDebugSuffix(lastErr)}`,
     );
     void lastErr;
   }
 
   async function playSampleExplain(speaker: SampleSpeaker, tok: string) {
     const candidates = sampleResourceCandidates(speaker, tok).map((p) =>
-      p.replace(/\.wav$/i, "_explain.wav"),
+      p.replace(/\.(wav|m4a)$/i, "_explain.m4a"),
     );
     let lastErr: unknown = null;
 
@@ -222,7 +192,7 @@ export default function DevelopersMistakesScreen({
           return;
         }
         if (
-          /not found|no such file|failed to (resolve|load)|os error\s*2/i.test(
+          /not found|no such file|failed to (resolve|load)|os error\s*2|no supported source|empty bundled audio file/i.test(
             msg,
           )
         ) {
@@ -231,14 +201,28 @@ export default function DevelopersMistakesScreen({
         }
         //message.error(`再生に失敗: ${tok} (${msg})`);
         message.info(
-          `${t("screens.developersMistakes.noAudioForToken")}${tok}`,
+          `${t("screens.developersMistakes.noAudioForToken")}${tok}${androidDebugSuffix(e)}`,
         );
         return;
       }
     }
 
+    // フォールバック: explainサンプルが無い場合は、標準 explainAudio があれば再生
+    const fallback = ipaIndex?.[tok]?.explainAudio;
+    if (fallback) {
+      try {
+        await playBundledAudio(fallback);
+        message.info(t("screens.developersMistakes.noAudioAlt"));
+        return;
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+
     //message.info(`まだ音声がありません: ${tok} (${candidates.join(" / ")})`);
-    message.info(t("screens.developersMistakes.noAudio"));
+    message.info(
+      `${t("screens.developersMistakes.noAudio")}${androidDebugSuffix(lastErr)}`,
+    );
     void lastErr;
   }
 
@@ -427,10 +411,7 @@ export default function DevelopersMistakesScreen({
                                     "screens.developersMistakes.buttons.pronounceWithTok",
                                   )}
                                 </Button>,
-                                explainTokSet.has(tok) &&
-                                sampleExplainAvailable[
-                                  `falkoe:${tok}:explain`
-                                ] ? (
+                                explainTokSet.has(tok) ? (
                                   <Button
                                     key={`${item.key}-${tok}-explain-falkoe`}
                                     onClick={() =>

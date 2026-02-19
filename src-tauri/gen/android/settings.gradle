@@ -1,6 +1,3 @@
 include ':app'
 
-def tauriSettings = file('tauri.settings.gradle')
-if (tauriSettings.exists()) {
-	apply from: tauriSettings
-}
+apply from: 'tauri.settings.gradle'

@@ -56,6 +56,14 @@ export default function CommonMistakesScreen({
       .finally(() => setLoading(false));
   }, []);
 
+  function androidDebugSuffix(err: unknown): string {
+    if (!/Android/i.test(navigator.userAgent ?? "")) return "";
+    const msg = String((err as any)?.message ?? err ?? "").trim();
+    if (!msg) return "";
+    const short = msg.length > 200 ? `${msg.slice(0, 200)}…` : msg;
+    return ` [debug: ${short}]`;
+  }
+
   async function playSample(speaker: SampleSpeaker, tok: string) {
     const candidates = sampleResourceCandidates(speaker, tok);
     let lastErr: unknown = null;
@@ -72,7 +80,7 @@ export default function CommonMistakesScreen({
           return;
         }
         if (
-          /not found|no such file|failed to (resolve|load)|os error\s*2/i.test(
+          /not found|no such file|failed to (resolve|load)|os error\s*2|no supported source|empty bundled audio file/i.test(
             msg,
           )
         ) {
@@ -80,13 +88,17 @@ export default function CommonMistakesScreen({
         }
         //message.error(`再生に失敗: ${tok} (${msg})`);
         //message.info(`まだ音声がありません: ${tok} (${candidates.join(" / ")})`);
-        message.info(`${t("screens.commonMistakes.noAudioForToken")}${tok}`);
+        message.info(
+          `${t("screens.commonMistakes.noAudioForToken")}${tok}${androidDebugSuffix(e)}`,
+        );
         return;
       }
     }
 
     //message.info(`まだ音声がありません: ${tok} (${candidates.join(" / ")})`);
-    message.info(`${t("screens.commonMistakes.noAudioForToken")}${tok}`);
+    message.info(
+      `${t("screens.commonMistakes.noAudioForToken")}${tok}${androidDebugSuffix(lastErr)}`,
+    );
     void lastErr;
   }
 

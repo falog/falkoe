@@ -67,7 +67,7 @@ export function sampleFileStemForTok(tok: string): string {
 export function sampleResourcePath(
   speaker: SampleSpeaker,
   tok: string,
-  ext: "wav" = "wav"
+  ext: "m4a" = "m4a",
 ): string {
   const cat = sampleCategoryForTok(tok);
   const stem = sampleFileStemForTok(tok);
@@ -77,7 +77,7 @@ export function sampleResourcePath(
 export function sampleResourceCandidates(
   speaker: SampleSpeaker,
   tok: string,
-  ext: "wav" = "wav"
+  ext: "m4a" = "m4a",
 ): string[] {
   const cat = sampleCategoryForTok(tok);
   const stem = sampleFileStemForTok(tok);

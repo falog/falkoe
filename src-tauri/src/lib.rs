@@ -1,4 +1,8 @@
-use crate::commands::audio::{ensure_sentence_audio_cached, fetch_audio_base64};
+use crate::commands::audio::{
+    ensure_sentence_audio_cached,
+    fetch_audio_base64,
+    read_bundled_resource_base64,
+};
 use crate::commands::linking::render_linking;
 use crate::commands::recordings::{
     get_uploaded_audio_info, import_uploaded_audio_from_path, list_recordings, move_recorded_audio,
@@ -23,7 +27,7 @@ use crate::commands::temp_recordings::delete_temp_recording;
 use crate::commands::whisper::run_whisper;
 use crate::commands::whisper::{run_whisper_model, run_whisper_uploaded};
 
-#[cfg(feature = "mic-recorder")]
+#[cfg(all(feature = "mic-recorder", not(target_os = "android")))]
 use tauri_plugin_mic_recorder::init as mic_recorder;
 
 mod commands;
@@ -35,6 +39,7 @@ pub use commands::whisper::transcribe as transcribe;
 pub use commands::pitch::analyze_pitch_noapp as analyze_pitch_noapp;
 pub use model::find_existing_model_path_noapp;
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
         .setup(|app| {
@@ -82,7 +87,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init());
 
-    #[cfg(feature = "mic-recorder")]
+    #[cfg(all(feature = "mic-recorder", not(target_os = "android")))]
     let builder = builder.plugin(mic_recorder());
 
     builder.invoke_handler(tauri::generate_handler![
@@ -113,6 +118,7 @@ pub fn run() {
             get_uploaded_audio_info,
             fetch_audio_base64,
             ensure_sentence_audio_cached,
+            read_bundled_resource_base64,
             find_audio_by_sentence,
             upsert_sentence_manifest_attribution,
             upsert_sentence_manifest_text,

@@ -70,6 +70,7 @@ const RecorderScreen = ({
     savePendingRecording,
     discardPendingRecording,
     shadowingRecorder,
+    recordingControlsEnabled,
     navigateSafely,
     handleExportVideo,
     isExportingVideo,
@@ -141,25 +142,27 @@ const RecorderScreen = ({
             }
           />
         </Space>
-        <RecordingControls
-          isRecording={isRecording}
-          status={status}
-          onMimic={() => shadowingRecorder.start({ mode: "mimic" })}
-          mimicLoading={shadowingRecorder.isMimicLoading}
-          mimicDisabled={
-            mimicDisabledForSource || !headerAudioUrl || isHeaderAudioLoading
-          }
-          onStartRecording={() => shadowingRecorder.start()}
-          onStopRecording={shadowingRecorder.stop}
-          autoStopRemainingMs={shadowingRecorder.autoStopRemainingMs}
-          pendingSave={Boolean(pendingRecordedPath)}
-          onSavePending={() => {
-            void savePendingRecording();
-          }}
-          onDiscardPending={() => {
-            void discardPendingRecording();
-          }}
-        />
+        {recordingControlsEnabled && (
+          <RecordingControls
+            isRecording={isRecording}
+            status={status}
+            onMimic={() => shadowingRecorder.start({ mode: "mimic" })}
+            mimicLoading={shadowingRecorder.isMimicLoading}
+            mimicDisabled={
+              mimicDisabledForSource || !headerAudioUrl || isHeaderAudioLoading
+            }
+            onStartRecording={() => shadowingRecorder.start()}
+            onStopRecording={shadowingRecorder.stop}
+            autoStopRemainingMs={shadowingRecorder.autoStopRemainingMs}
+            pendingSave={Boolean(pendingRecordedPath)}
+            onSavePending={() => {
+              void savePendingRecording();
+            }}
+            onDiscardPending={() => {
+              void discardPendingRecording();
+            }}
+          />
+        )}
 
         <RecordingsSection
           recordings={recordings}

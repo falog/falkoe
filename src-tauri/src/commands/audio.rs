@@ -1,6 +1,7 @@
 use base64::Engine;
 use reqwest;
 use std::{fs, path::PathBuf};
+use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Manager};
 
 #[tauri::command]
@@ -64,4 +65,66 @@ pub async fn ensure_sentence_audio_cached(
     fs::rename(&part_path, &final_path).map_err(|e| e.to_string())?;
 
     Ok(final_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn read_bundled_resource_base64(
+    app: AppHandle,
+    resource_path: String,
+) -> Result<String, String> {
+    let mut rel = resource_path.trim().trim_start_matches('/').to_string();
+    if rel.is_empty() {
+        return Err("resource_path is empty".into());
+    }
+    if let Some(stripped) = rel.strip_prefix("resources/") {
+        rel = stripped.to_string();
+    }
+    if rel.contains("..") {
+        return Err("invalid resource_path".into());
+    }
+
+    let rel_candidates = [rel.clone(), format!("resources/{rel}")];
+    let mut read_errors: Vec<String> = Vec::new();
+
+    for candidate in rel_candidates {
+        if let Ok(resolved) = app.path().resolve(&candidate, BaseDirectory::Resource) {
+            match fs::read(&resolved) {
+                Ok(bytes) => {
+                    return Ok(base64::engine::general_purpose::STANDARD.encode(bytes));
+                }
+                Err(e) => {
+                    read_errors.push(format!(
+                        "resolve(Resource) {candidate} -> {} ({})",
+                        resolved.display(),
+                        e
+                    ));
+                }
+            }
+        }
+    }
+
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let candidates = [
+            resource_dir.join(&rel),
+            resource_dir.join("resources").join(&rel),
+        ];
+
+        for path in candidates {
+            match fs::read(&path) {
+                Ok(bytes) => {
+                    return Ok(base64::engine::general_purpose::STANDARD.encode(bytes));
+                }
+                Err(e) => {
+                    read_errors.push(format!("resource_dir {} ({})", path.display(), e));
+                }
+            }
+        }
+    }
+
+    let detail = if read_errors.is_empty() {
+        "no readable candidates".to_string()
+    } else {
+        read_errors.join(" | ")
+    };
+    Err(format!("resource not found: {rel} ({detail})"))
 }

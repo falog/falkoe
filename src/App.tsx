@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { listen } from "@tauri-apps/api/event";
 import WordInputScreen from "./screens/WordInputScreen";
 import RecorderScreen from "./screens/RecorderScreen";
@@ -76,8 +76,18 @@ const App = () => {
     };
   }, []);
 
+  const appShellStyle: CSSProperties = {
+    width: "100%",
+    minHeight: "100vh",
+    boxSizing: "border-box",
+    paddingTop: "max(env(safe-area-inset-top), 12px)",
+    paddingRight: "max(env(safe-area-inset-right), 12px)",
+    paddingBottom: "max(env(safe-area-inset-bottom), 12px)",
+    paddingLeft: "max(env(safe-area-inset-left), 12px)",
+  };
+
   return (
-    <>
+    <div style={appShellStyle}>
       {screen === "language" && (
         <LanguageSelectScreen
           onDone={() => {
@@ -247,7 +257,7 @@ const App = () => {
           }}
         />
       )}
-    </>
+    </div>
   );
 };
 

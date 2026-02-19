@@ -127,8 +127,7 @@ async function fetchExamples(
     const audioAttributionUrl = asStringOrNull(a0?.attribution_url);
     const downloadUrl = asStringOrNull(a0?.download_url);
 
-    // ライセンス情報が無いTatoeba項目は、アプリ内で使えないため除外する。
-    if (!sentenceLicense || !audioLicense) return null;
+    if (!sentenceLicense) return null;
 
     return {
       id,
@@ -143,7 +142,7 @@ async function fetchExamples(
         sentenceLicense,
         sentenceOwner,
         sentenceUrl: `https://tatoeba.org/en/sentences/show/${id}`,
-        audioLicense,
+        audioLicense: audioLicense ?? sentenceLicense,
         audioAuthor,
         audioAttributionUrl,
         audioId,

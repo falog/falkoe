@@ -1,6 +1,5 @@
-package falkoe
+package com.fal.falkoe
 
-import app.tauri.TauriActivity
 import android.os.Bundle
 import androidx.activity.enableEdgeToEdge
 

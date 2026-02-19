@@ -1,4 +1,4 @@
-import { Button, Space, Typography } from "antd";
+import { Button, Space, Typography, message } from "antd";
 import { PlayCircleOutlined } from "@ant-design/icons";
 import type { MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
@@ -42,7 +42,14 @@ const ExampleList = ({ sentences, onSelect, disabled }: ExampleListProps) => {
 
   const playAudio = (url: string) => {
     const audio = new Audio(url);
-    audio.play();
+    void audio.play().catch((e) => {
+      const msg = String((e as any)?.message ?? e);
+      if (/user gesture|not allowed|autoplay/i.test(msg)) {
+        message.info(t("screens.commonMistakes.audioUnlockHint"));
+        return;
+      }
+      message.info("音声の再生に失敗しました");
+    });
   };
 
   if (!sentences || sentences.length === 0) {

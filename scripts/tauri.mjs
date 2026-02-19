@@ -14,8 +14,55 @@ const rawArgs = process.argv.slice(2);
 // pnpm / shells can sometimes preserve quotes in argv on Windows.
 // Strip a single pair of wrapping quotes so downstream CLIs don't choke.
 const args = rawArgs.map((arg) =>
-  arg.replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1")
+  arg.replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1"),
 );
+
+function hasAnyFeaturesFlag(argv) {
+  return argv.includes("--features") || argv.includes("-f");
+}
+
+function indexOfDoubleDash(argv) {
+  const i = argv.indexOf("--");
+  return i === -1 ? argv.length : i;
+}
+
+function hasHostFlag(argv) {
+  return argv.includes("--host");
+}
+
+function injectAndroidDevHost(argv) {
+  const isAndroidDev = argv[0] === "android" && argv[1] === "dev";
+  if (!isAndroidDev) return argv;
+  if (hasHostFlag(argv)) return argv;
+
+  // Physical devices may not reach an auto-detected LAN IP on all networks.
+  // Prefer localhost + adb reverse for a stable USB-tunneled dev loop.
+  const insertAt = indexOfDoubleDash(argv);
+  const next = argv.slice();
+  next.splice(insertAt, 0, "--host", "127.0.0.1");
+  return next;
+}
+
+function injectDesktopFeatures(argv) {
+  // Mobile subcommands (android/ios) don't allow `--no-default-features`, so we keep
+  // Cargo defaults minimal and only opt-in to desktop features for desktop commands.
+  const isMobile = argv[0] === "android" || argv[0] === "ios";
+  if (isMobile) return argv;
+
+  const subcmd = argv[0];
+  const wantsCargoBuild =
+    subcmd === "dev" || subcmd === "build" || subcmd === "bundle";
+  if (!wantsCargoBuild) return argv;
+
+  if (hasAnyFeaturesFlag(argv)) return argv;
+
+  const insertAt = indexOfDoubleDash(argv);
+  const next = argv.slice();
+  next.splice(insertAt, 0, "--features", "desktop");
+  return next;
+}
+
+const tauriArgs = injectAndroidDevHost(injectDesktopFeatures(args));
 
 function checkWindowsBundledTools(args) {
   if (process.platform !== "win32") return;
@@ -32,11 +79,11 @@ function checkWindowsBundledTools(args) {
   const transcribeAvxExe = path.join(resourcesBin, "falkoe-transcribe-avx.exe");
   const transcribeAvx2Exe = path.join(
     resourcesBin,
-    "falkoe-transcribe-avx2.exe"
+    "falkoe-transcribe-avx2.exe",
   );
   const transcribeVulkanExe = path.join(
     resourcesBin,
-    "falkoe-transcribe-vulkan.exe"
+    "falkoe-transcribe-vulkan.exe",
   );
   const praatconExe = path.join(resourcesBin, "praatcon.exe");
   const praatExe = path.join(resourcesBin, "praat.exe");
@@ -103,7 +150,7 @@ function checkWindowsBundledTools(args) {
         `  - ${mecabExe}`,
         "  And a dictionary under src-tauri/resources/mecab (e.g. ipadic).",
         "  (See README: Optional Tool (MeCab))",
-      ].join("\n")
+      ].join("\n"),
     );
   } else if (!existsSync(dicHint)) {
     console.warn(
@@ -112,7 +159,7 @@ function checkWindowsBundledTools(args) {
         "  MeCab is bundled but dictionary (ipadic) not detected at:",
         `  - ${dicHint}`,
         "  MeCab may not work without a dictionary.",
-      ].join("\n")
+      ].join("\n"),
     );
   }
 
@@ -126,7 +173,7 @@ function checkWindowsBundledTools(args) {
           "  This will typically crash/failed-to-launch with Windows error 126 (e.g. libiconv-2.dll not found).",
           "  Missing:",
           ...missingMecabDlls.map((p) => `  - ${p}`),
-        ].join("\n")
+        ].join("\n"),
       );
     }
   }
@@ -144,7 +191,7 @@ function checkWindowsBundledTools(args) {
           "  Transcribe helper binaries are missing. Build will not be portable.",
           "  Missing:",
           ...missingTranscribe.map((p) => `  - ${p}`),
-        ].join("\n")
+        ].join("\n"),
       );
       process.exit(1);
     }
@@ -157,7 +204,7 @@ function checkWindowsBundledTools(args) {
           "  Optional Vulkan transcribe helper is not bundled:",
           `  - ${transcribeVulkanExe}`,
           "  Falkoe will use CPU helper binaries.",
-        ].join("\n")
+        ].join("\n"),
       );
     }
   }
@@ -206,7 +253,7 @@ function buildWindowsTranscribeHelpers(args) {
     const builtExe = path.resolve(
       targetDir,
       profileDir,
-      "transcribe_wav_json.exe"
+      "transcribe_wav_json.exe",
     );
     const destExe = path.resolve(resourcesBin, v.outName);
 
@@ -264,13 +311,13 @@ function buildWindowsTranscribeHelpers(args) {
             "  This usually means Vulkan SDK (including glslc) is not installed.",
             "  Continuing with CPU helpers only.",
             "  To require Vulkan helper, set FALKOE_REQUIRE_VULKAN_HELPER=1.",
-          ].join("\n")
+          ].join("\n"),
         );
         continue;
       }
 
       console.error(
-        `[tauri wrapper] Failed to build transcribe helper (${v.tag}).`
+        `[tauri wrapper] Failed to build transcribe helper (${v.tag}).`,
       );
       process.exit(res.status ?? 1);
     }
@@ -281,13 +328,13 @@ function buildWindowsTranscribeHelpers(args) {
           [
             `[tauri wrapper] Optional Vulkan helper exe not found: ${builtExe}`,
             "  Continuing with CPU helpers only.",
-          ].join("\n")
+          ].join("\n"),
         );
         continue;
       }
 
       console.error(
-        `[tauri wrapper] Expected helper exe not found: ${builtExe}`
+        `[tauri wrapper] Expected helper exe not found: ${builtExe}`,
       );
       process.exit(1);
     }
@@ -407,7 +454,7 @@ function buildUnixTranscribeHelpers(args) {
           [
             "[tauri wrapper] Optional Vulkan helper build failed.",
             "  Continuing without Vulkan helper.",
-          ].join("\n")
+          ].join("\n"),
         );
         continue;
       }
@@ -416,7 +463,7 @@ function buildUnixTranscribeHelpers(args) {
           [
             "[tauri wrapper] Optional Metal helper build failed.",
             "  Continuing without Metal helper.",
-          ].join("\n")
+          ].join("\n"),
         );
         continue;
       }
@@ -463,9 +510,62 @@ function buildUnixTranscribeHelpers(args) {
   }
 }
 
+function syncAndroidLauncherIcons(args) {
+  if (args[0] !== "android") return;
+
+  const cwd = process.cwd();
+  const srcRoot = path.resolve(cwd, "src-tauri", "icons", "android");
+  const dstRoot = path.resolve(
+    cwd,
+    "src-tauri",
+    "gen",
+    "android",
+    "app",
+    "src",
+    "main",
+    "res",
+  );
+
+  if (!existsSync(srcRoot)) {
+    console.warn(`[tauri wrapper] Android icon source not found: ${srcRoot}`);
+    return;
+  }
+
+  const resourceDirs = [
+    "mipmap-anydpi-v26",
+    "mipmap-mdpi",
+    "mipmap-hdpi",
+    "mipmap-xhdpi",
+    "mipmap-xxhdpi",
+    "mipmap-xxxhdpi",
+    "values",
+  ];
+
+  let copied = 0;
+  for (const dirName of resourceDirs) {
+    const srcDir = path.join(srcRoot, dirName);
+    if (!existsSync(srcDir)) continue;
+
+    const dstDir = path.join(dstRoot, dirName);
+    mkdirSync(dstDir, { recursive: true });
+    cpSync(srcDir, dstDir, { recursive: true, force: true });
+    copied += 1;
+  }
+
+  if (copied > 0) {
+    console.log(
+      `[tauri wrapper] Synced Android launcher icons (${copied} dirs) -> ${dstRoot}`,
+    );
+  } else {
+    console.warn(
+      `[tauri wrapper] No Android icon resource dirs found under: ${srcRoot}`,
+    );
+  }
+}
+
 // In dev, Tauri may resolve bundled resources from src-tauri/target/debug/resources.
 // Sync resources on each dev start so replaced audio/index.json are picked up.
-if (args[0] === "dev") {
+if (tauriArgs[0] === "dev") {
   const cwd = process.cwd();
   const srcResourcesDir = path.resolve(cwd, "src-tauri", "resources");
   const copiedResourcesDir = path.resolve(
@@ -473,7 +573,7 @@ if (args[0] === "dev") {
     "src-tauri",
     "target",
     "debug",
-    "resources"
+    "resources",
   );
 
   if (existsSync(srcResourcesDir)) {
@@ -488,21 +588,23 @@ if (args[0] === "dev") {
     console.log(`[tauri wrapper] Synced resources -> ${copiedResourcesDir}`);
   } else {
     console.warn(
-      `[tauri wrapper] Source resources not found: ${srcResourcesDir}`
+      `[tauri wrapper] Source resources not found: ${srcResourcesDir}`,
     );
   }
 }
 
-buildWindowsTranscribeHelpers(args);
+buildWindowsTranscribeHelpers(tauriArgs);
 
-buildUnixTranscribeHelpers(args);
+buildUnixTranscribeHelpers(tauriArgs);
 
-checkWindowsBundledTools(args);
+checkWindowsBundledTools(tauriArgs);
+
+syncAndroidLauncherIcons(tauriArgs);
 
 // On Windows, spawning *.cmd directly can fail with EINVAL depending on how the
 // environment is set up. Using `shell: true` routes through cmd.exe.
 const bin = process.platform === "win32" ? "tauri" : "tauri";
-const child = spawn(bin, args, {
+const child = spawn(bin, tauriArgs, {
   stdio: "inherit",
   env: process.env,
   shell: process.platform === "win32",
