@@ -22,6 +22,8 @@ use crate::commands::logs::{get_backend_log_dir, get_backend_log_path};
 use crate::commands::temp_recordings::delete_temp_recording;
 use crate::commands::whisper::run_whisper;
 use crate::commands::whisper::{run_whisper_model, run_whisper_uploaded};
+
+#[cfg(feature = "mic-recorder")]
 use tauri_plugin_mic_recorder::init as mic_recorder;
 
 mod commands;
@@ -34,7 +36,7 @@ pub use commands::pitch::analyze_pitch_noapp as analyze_pitch_noapp;
 pub use model::find_existing_model_path_noapp;
 
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .setup(|app| {
             model::init_model_state();
 
@@ -60,10 +62,13 @@ pub fn run() {
                 crate::logging::log_line(&panic_handle, format!("[panic] at {location}: {payload}"));
             }));
 
-            let handle = app.handle().clone();
-            std::thread::spawn(move || {
-                let _ = model::ensure_model(&handle);
-            });
+            #[cfg(feature = "whisper")]
+            {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    let _ = model::ensure_model(&handle);
+                });
+            }
 
             // CMUdictも初回だけ重いので、バックグラウンドでウォームアップ
             let handle = app.handle().clone();
@@ -75,8 +80,12 @@ pub fn run() {
         })
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(mic_recorder())
-        .invoke_handler(tauri::generate_handler![
+        .plugin(tauri_plugin_shell::init());
+
+    #[cfg(feature = "mic-recorder")]
+    let builder = builder.plugin(mic_recorder());
+
+    builder.invoke_handler(tauri::generate_handler![
             get_backend_log_path,
             get_backend_log_dir,
             run_whisper,
