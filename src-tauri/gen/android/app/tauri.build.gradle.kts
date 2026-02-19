@@ -1,3 +1,3 @@
 dependencies {
-    implementation("app.tauri:tauri-android:2.0.0")
+    add("implementation", "app.tauri:tauri-android:2.0.0")
 }
