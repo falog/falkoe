@@ -122,9 +122,20 @@ async function fetchExamples(
     const audios = Array.isArray(s?.audios) ? s.audios : [];
     const a0 = audios.length > 0 ? audios[0] : null;
     const audioId = asNumberOrNull(a0?.id);
-    const audioLicense = asStringOrNull(a0?.license);
-    const audioAuthor = asStringOrNull(a0?.author);
-    const audioAttributionUrl = asStringOrNull(a0?.attribution_url);
+    const audioLicense =
+      asStringOrNull(a0?.license) ??
+      asStringOrNull(a0?.license_name) ??
+      asStringOrNull(a0?.licenseName);
+    const audioAuthor =
+      asStringOrNull(a0?.author) ??
+      asStringOrNull(a0?.username) ??
+      asStringOrNull(a0?.user) ??
+      asStringOrNull(a0?.owner) ??
+      sentenceOwner;
+    const audioAttributionUrl =
+      asStringOrNull(a0?.attribution_url) ??
+      asStringOrNull(a0?.attributionUrl) ??
+      asStringOrNull(a0?.url);
     const downloadUrl = asStringOrNull(a0?.download_url);
 
     if (!sentenceLicense) return null;
