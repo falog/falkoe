@@ -145,7 +145,6 @@ const RecorderScreen = ({
         {recordingControlsEnabled && (
           <RecordingControls
             isRecording={isRecording}
-            status={status}
             onMimic={() => shadowingRecorder.start({ mode: "mimic" })}
             mimicLoading={shadowingRecorder.isMimicLoading}
             mimicDisabled={

@@ -86,6 +86,11 @@ function flattenIndexTree(
 }
 
 export async function loadIpaIndex(): Promise<IpaIndex> {
+  // NOTE: On Android, readTextFile(resolveResource(...)) triggers FsPlugin.kt's
+  // openFd() path.  JSON files are *compressed* inside the APK, so openFd()
+  // throws IOException and the plugin falls back to extracting into the cache
+  // directory — this is safe.  (Only *uncompressed* assets like WAV trigger the
+  // APK-fd-offset bug that causes OOM.  See ipaPlayer.ts for details.)
   const indexPath = await resolveResource(IPA_INDEX_RESOURCE_PATH);
   const text = await readTextFile(indexPath);
   const parsed = JSON.parse(text) as unknown;

@@ -6,7 +6,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 const TAG_TASK: &str = "task";
 
@@ -53,12 +53,7 @@ fn tags_has_task(tags: &Option<Vec<String>>) -> bool {
 }
 
 fn sentences_root(app: &AppHandle) -> Result<PathBuf, String> {
-    Ok(app
-        .path()
-        .document_dir()
-        .map_err(|e| e.to_string())?
-        .join("falkoe")
-        .join("sentences"))
+    crate::storage::sentences_root(app).map_err(|e| e.to_string())
 }
 
 fn pick_uploaded_path(uploaded_dir: &Path) -> Option<PathBuf> {

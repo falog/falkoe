@@ -161,6 +161,8 @@ pub async fn start_recording<R: Runtime>(app_handle: AppHandle<R>) -> Result<(),
 
     let save_path = get_save_path(&app_handle)?;
     // The WAV file we're recording to.
+    // IMPORTANT: Always write PCM 16-bit integer WAV for maximum compatibility.
+    // Some WebViews (notably Android) fail to decode 32-bit float WAV.
     let spec = wav_spec_from_config(&config);
     let writer = WavWriter::create(&save_path, spec).map_err(|err| err.to_string())?;
     let writer = Arc::new(Mutex::new(Some(writer)));
@@ -177,7 +179,7 @@ pub async fn start_recording<R: Runtime>(app_handle: AppHandle<R>) -> Result<(),
         cpal::SampleFormat::I8 => device
             .build_input_stream(
                 &config.into(),
-                move |data, _: &_| write_input_data::<i8, i8>(data, &writer_2, Some(&level_tx_2)),
+                move |data, _: &_| write_input_data::<i8, i16>(data, &writer_2, Some(&level_tx_2)),
                 err_fn,
                 None,
             )
@@ -193,7 +195,7 @@ pub async fn start_recording<R: Runtime>(app_handle: AppHandle<R>) -> Result<(),
         cpal::SampleFormat::I32 => device
             .build_input_stream(
                 &config.into(),
-                move |data, _: &_| write_input_data::<i32, i32>(data, &writer_2, Some(&level_tx_2)),
+                move |data, _: &_| write_input_data::<i32, i16>(data, &writer_2, Some(&level_tx_2)),
                 err_fn,
                 None,
             )
@@ -201,7 +203,7 @@ pub async fn start_recording<R: Runtime>(app_handle: AppHandle<R>) -> Result<(),
         cpal::SampleFormat::F32 => device
             .build_input_stream(
                 &config.into(),
-                move |data, _: &_| write_input_data::<f32, f32>(data, &writer_2, Some(&level_tx_2)),
+                move |data, _: &_| write_input_data::<f32, i16>(data, &writer_2, Some(&level_tx_2)),
                 err_fn,
                 None,
             )
@@ -284,12 +286,9 @@ fn get_save_path<R: Runtime>(app_handle: &AppHandle<R>) -> Result<PathBuf, Strin
 }
 
 /// Converts a cpal::SampleFormat to a hound::SampleFormat.
-fn sample_format(format: cpal::SampleFormat) -> SampleFormat {
-    if format.is_float() {
-        SampleFormat::Float
-    } else {
-        SampleFormat::Int
-    }
+fn sample_format(_format: cpal::SampleFormat) -> SampleFormat {
+    // We always write PCM16 integer WAV (see wav_spec_from_config + write_input_data output type).
+    SampleFormat::Int
 }
 
 /// Creates a WavSpec from a cpal::SupportedStreamConfig.
@@ -297,7 +296,7 @@ fn wav_spec_from_config(config: &cpal::SupportedStreamConfig) -> WavSpec {
     WavSpec {
         channels: config.channels() as _,
         sample_rate: config.sample_rate().0 as _,
-        bits_per_sample: (config.sample_format().sample_size() * 8) as _,
+        bits_per_sample: 16,
         sample_format: sample_format(config.sample_format()),
     }
 }

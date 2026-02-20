@@ -2,8 +2,87 @@ import { Button, Space, Typography, message } from "antd";
 import { PlayCircleOutlined } from "@ant-design/icons";
 import type { MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
+import { invoke } from "@tauri-apps/api/core";
+import { readFile } from "@tauri-apps/plugin-fs";
 import { openExternalUrl } from "../utils/openExternalUrl";
 import { formatTatoebaCreditText } from "../utils/formatTatoebaCreditText";
+import { isAndroidRuntime } from "../utils/runtimePlatform";
+
+let exampleAudioContext: AudioContext | null = null;
+let currentBufferSource: AudioBufferSourceNode | null = null;
+
+function getAudioContext(): AudioContext | null {
+  if (typeof window === "undefined") return null;
+  const AnyAudioContext =
+    (window as any).AudioContext ?? (window as any).webkitAudioContext;
+  if (!AnyAudioContext) return null;
+  if (!exampleAudioContext) {
+    exampleAudioContext = new AnyAudioContext();
+  }
+  return exampleAudioContext;
+}
+
+function stopCurrentBufferSource(): void {
+  if (!currentBufferSource) return;
+  try {
+    currentBufferSource.stop();
+  } catch {
+    // ignore
+  }
+  currentBufferSource = null;
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+}
+
+function isAutoplayBlockedError(e: unknown): boolean {
+  if (!e || typeof e !== "object") return false;
+  const anyErr = e as any;
+  const name = String(anyErr?.name ?? "");
+  const msg = String(anyErr?.message ?? "");
+  return (
+    name === "NotAllowedError" || /user gesture|not allowed|autoplay/i.test(msg)
+  );
+}
+
+async function playDecodedAudioWithWebAudio(bytes: Uint8Array): Promise<boolean> {
+  const ctx = getAudioContext();
+  if (!ctx) return false;
+
+  if (ctx.state === "suspended") {
+    await ctx.resume();
+  }
+
+  stopCurrentBufferSource();
+
+  try {
+    const ab = toArrayBuffer(bytes);
+    const decoded = await new Promise<AudioBuffer>((resolve, reject) => {
+      const anyCtx = ctx as any;
+      const p = anyCtx.decodeAudioData(
+        ab.slice(0),
+        (buf: AudioBuffer) => resolve(buf),
+        (err: unknown) => reject(err),
+      );
+      if (p && typeof p.then === "function") {
+        p.then(resolve, reject);
+      }
+    });
+
+    const source = ctx.createBufferSource();
+    source.buffer = decoded;
+    source.connect(ctx.destination);
+    source.onended = () => {
+      if (currentBufferSource === source) currentBufferSource = null;
+    };
+    currentBufferSource = source;
+    source.start();
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export type SentenceAttribution = {
   provider: "tatoeba";
@@ -40,16 +119,60 @@ const ExampleList = ({ sentences, onSelect, disabled }: ExampleListProps) => {
     void openExternalUrl(url);
   };
 
-  const playAudio = (url: string) => {
-    const audio = new Audio(url);
-    void audio.play().catch((e) => {
-      const msg = String((e as any)?.message ?? e);
-      if (/user gesture|not allowed|autoplay/i.test(msg)) {
-        message.info(t("screens.commonMistakes.audioUnlockHint"));
-        return;
-      }
-      message.info("音声の再生に失敗しました");
+  const playRemoteAudioAndroid = async (audioId: string, url: string) => {
+    // Avoid WebView URL-loading paths on Android (can crash in shouldInterceptRequest).
+    const cachedPath = await invoke<string>("ensure_sentence_audio_cached", {
+      audioId,
+      url,
     });
+    const bytes = await readFile(cachedPath);
+
+    // Prefer WebAudio decode; avoid HTMLAudio fallback on Android because it can crash
+    // some WebViews (AUDIO_RENDERER_ERROR / process death).
+    const played = await playDecodedAudioWithWebAudio(bytes);
+    if (!played) {
+      throw new Error("WebAudio decode failed");
+    }
+  };
+
+  const playAudio = async (item: Sentence) => {
+    const candidates = Array.from(
+      new Set(
+        [
+          item.audioUrl,
+          item.attribution?.audioId
+            ? `https://tatoeba.org/en/audio/download/${item.attribution.audioId}`
+            : null,
+          `https://audio.tatoeba.org/sentences/${item.lang}/${item.id}.mp3`,
+        ].filter(
+          (x): x is string => typeof x === "string" && x.trim().length > 0,
+        ),
+      ),
+    );
+
+    let lastErr: unknown = null;
+    const audioId = String(item.attribution?.audioId ?? `${item.lang}-${item.id}`);
+
+    for (const url of candidates) {
+      try {
+        if (isAndroidRuntime()) {
+          await playRemoteAudioAndroid(audioId, url);
+        } else {
+          const audio = new Audio(url);
+          await audio.play();
+        }
+        return;
+      } catch (e) {
+        lastErr = e;
+        if (isAutoplayBlockedError(e)) {
+          message.info(t("screens.commonMistakes.audioUnlockHint"));
+          return;
+        }
+      }
+    }
+
+    console.warn("[ExampleList] playAudio failed", { item, candidates, lastErr });
+    message.info("音声の再生に失敗しました");
   };
 
   if (!sentences || sentences.length === 0) {
@@ -136,7 +259,7 @@ const ExampleList = ({ sentences, onSelect, disabled }: ExampleListProps) => {
                 key="play"
                 icon={<PlayCircleOutlined />}
                 disabled={disabled}
-                onClick={() => playAudio(item.audioUrl)}
+                onClick={() => void playAudio(item)}
               />
               <Button
                 key="select"

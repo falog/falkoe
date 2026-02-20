@@ -11,7 +11,10 @@ type Props = {
   audioUrls: Record<string, string>;
   preferAssetProtocol: boolean;
   toAssetUrl: (p: string) => string;
-  ensureBlobAudioUrl: (p: string) => Promise<string | null>;
+  ensureBlobAudioUrl: (
+    p: string,
+    opts?: { forceReload?: boolean }
+  ) => Promise<string | null>;
   addToAnki: (rec: Recording) => void;
   lang: string;
 };
@@ -51,12 +54,15 @@ export default function RecordingsList({
           recognize={recognizeRecording}
           audioUrl={
             audioUrls[rec.path] ??
-            (preferAssetProtocol ? toAssetUrl(rec.path) : undefined)
+            (preferAssetProtocol ? toAssetUrl(rec.path) || undefined : undefined)
           }
           ensureAudioUrl={(r, opts) => {
             if (!preferAssetProtocol || opts?.forceBlob) {
-              void ensureBlobAudioUrl(r.path);
+              return ensureBlobAudioUrl(r.path, {
+                forceReload: opts?.forceReload,
+              });
             }
+            return Promise.resolve(null);
           }}
           addToAnki={addToAnki}
         />

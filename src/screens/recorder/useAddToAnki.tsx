@@ -11,6 +11,7 @@ import {
   isHttpUrl,
 } from "./audioUtils";
 import { useTranslation } from "react-i18next";
+import { guardAndroidIpcFileSize } from "../../utils/androidFileSizeGuard";
 
 type SentenceLike = {
   text: string;
@@ -70,6 +71,7 @@ export function useAddToAnki({
           if (!uploadedAudioPath) {
             throw new Error("uploaded audio path is not ready");
           }
+          await guardAndroidIpcFileSize(uploadedAudioPath, { label: "uploaded audio" });
           const bytes = await readFile(uploadedAudioPath);
           const blob = new Blob([bytes], {
             type: guessAudioMimeFromPath(uploadedAudioPath),
@@ -83,6 +85,7 @@ export function useAddToAnki({
           });
           modelAudioFilename = `model_${sentenceHash}.mp3`;
         } else {
+          await guardAndroidIpcFileSize(sentence.audioUrl, { label: "model audio" });
           const bytes = await readFile(sentence.audioUrl);
           const blob = new Blob([bytes], {
             type: guessAudioMimeFromPath(sentence.audioUrl),
@@ -101,6 +104,7 @@ export function useAddToAnki({
           },
         });
 
+        await guardAndroidIpcFileSize(rec.path, { label: "recording audio" });
         const bytes = await readFile(rec.path);
         const blob = new Blob([bytes], {
           type: guessAudioMimeFromPath(rec.path),

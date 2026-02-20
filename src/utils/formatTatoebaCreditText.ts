@@ -17,8 +17,7 @@ export function formatTatoebaCreditText(
   const audioLabel = t("tatoeba.creditAudioLabel");
 
   const owner = (attribution.sentenceOwner ?? "?").trim() || "?";
-  const author =
-    (attribution.audioAuthor ?? attribution.sentenceOwner ?? "?").trim() || "?";
+  const author = (attribution.audioAuthor ?? "?").trim() || "?";
 
   return (
     `${prefix} ${sentenceLabel}: ${owner} (${attribution.sentenceLicense})` +

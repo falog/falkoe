@@ -28,7 +28,6 @@ import { useSafeNavigation } from "./useSafeNavigation";
 import { useExportVideo } from "./useExportVideo";
 import { useRecognizeRecording } from "./useRecognizeRecording";
 import { useUpsertSentenceManifest } from "./useUpsertSentenceManifest";
-import { isAndroidRuntime } from "../../utils/runtimePlatform";
 import {
   extractSentenceHashFromSentenceWavPath,
   useBackgroundTranscription,
@@ -36,7 +35,7 @@ import {
 
 export function useRecorderScreenState(source: SpeechSource) {
   const { token } = theme.useToken();
-  const recordingControlsEnabled = !isAndroidRuntime();
+  const recordingControlsEnabled = true;
   const preferAssetProtocol = usePreferAssetProtocol();
 
   const {
@@ -172,7 +171,6 @@ export function useRecorderScreenState(source: SpeechSource) {
     isRecording,
     startRecording,
     stopRecording,
-    status,
     headerAudioUrl,
     isHeaderAudioLoading,
   });

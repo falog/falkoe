@@ -1,8 +1,116 @@
 import { message } from "antd";
 import i18next from "i18next";
+import { invoke } from "@tauri-apps/api/core";
+import { readFile } from "@tauri-apps/plugin-fs";
+import { isAndroidRuntime } from "../../utils/runtimePlatform";
+import { guardAndroidIpcFileSize } from "../../utils/androidFileSizeGuard";
 
 let sharedAudioEl: HTMLAudioElement | null = null;
 let sharedPlayId = 0;
+
+let sharedAudioCtx: AudioContext | null = null;
+let currentBufferSource: AudioBufferSourceNode | null = null;
+
+function getAudioContext(): AudioContext | null {
+  if (typeof window === "undefined") return null;
+  const AnyAudioContext =
+    (window as any).AudioContext ?? (window as any).webkitAudioContext;
+  if (!AnyAudioContext) return null;
+  if (!sharedAudioCtx) sharedAudioCtx = new AnyAudioContext();
+  return sharedAudioCtx;
+}
+
+function stopCurrentBufferSource(): void {
+  if (!currentBufferSource) return;
+  try {
+    currentBufferSource.stop();
+  } catch {
+    // ignore
+  }
+  currentBufferSource = null;
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+}
+
+function isHttpUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url);
+}
+
+async function loadBytesFromUrlLike(url: string): Promise<Uint8Array> {
+  if (url.startsWith("blob:")) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`fetch blob failed: ${res.status}`);
+    const ab = await res.arrayBuffer();
+    return new Uint8Array(ab);
+  }
+
+  if (isHttpUrl(url)) {
+    // Cache to local file first to reduce network/URL-handling inside WebView.
+    const audioId = `tatoeba-${await (async () => {
+      try {
+        const u = new URL(url);
+        return u.pathname.replace(/[^a-zA-Z0-9]+/g, "-").slice(0, 60) || "audio";
+      } catch {
+        return "audio";
+      }
+    })()}`;
+
+    const cachedPath = await invoke<string>("ensure_sentence_audio_cached", {
+      audioId,
+      url,
+    });
+    await guardAndroidIpcFileSize(cachedPath, { label: "audio" });
+    return await readFile(cachedPath);
+  }
+
+  // Treat as local path
+  await guardAndroidIpcFileSize(url, { label: "audio" });
+  return await readFile(url);
+}
+
+async function playBytesWithWebAudio(bytes: Uint8Array): Promise<boolean> {
+  const ctx = getAudioContext();
+  if (!ctx) return false;
+
+  if (ctx.state === "suspended") {
+    await ctx.resume();
+  }
+
+  stopCurrentBufferSource();
+
+  try {
+    const ab = toArrayBuffer(bytes);
+    const decoded = await new Promise<AudioBuffer>((resolve, reject) => {
+      const anyCtx = ctx as any;
+      const p = anyCtx.decodeAudioData(
+        ab.slice(0),
+        (buf: AudioBuffer) => resolve(buf),
+        (err: unknown) => reject(err),
+      );
+      if (p && typeof p.then === "function") p.then(resolve, reject);
+    });
+
+    const source = ctx.createBufferSource();
+    source.buffer = decoded;
+    source.connect(ctx.destination);
+    source.onended = () => {
+      if (currentBufferSource === source) currentBufferSource = null;
+    };
+    currentBufferSource = source;
+    source.start();
+    return true;
+  } catch (e) {
+    console.warn("[uiUtils] WebAudio decode failed", e);
+    return false;
+  }
+}
+
+async function playUrlAndroidWebAudio(url: string): Promise<boolean> {
+  const bytes = await loadBytesFromUrlLike(url);
+  return await playBytesWithWebAudio(bytes);
+}
 
 function getSharedAudioEl(): HTMLAudioElement {
   if (!sharedAudioEl) {
@@ -34,6 +142,14 @@ export async function playAudioUrl(url: string | null) {
   }
 
   try {
+    if (isAndroidRuntime()) {
+      const ok = await playUrlAndroidWebAudio(url);
+      if (!ok) {
+        message.error(i18next.t("screens.recorder.messages.audioPlaybackFailed"));
+      }
+      return;
+    }
+
     const playId = ++sharedPlayId;
     const audio = getSharedAudioEl();
 
@@ -71,6 +187,16 @@ export async function playAudioUrlUntilEnded(
   }
 
   try {
+    if (isAndroidRuntime()) {
+      // WebAudio path: we can't reliably await "ended" without extra wiring.
+      // For current UX this function is used as a best-effort gate; return true if playback starts.
+      const ok = await playUrlAndroidWebAudio(url);
+      if (!ok) {
+        message.error(i18next.t("screens.recorder.messages.audioPlaybackFailed"));
+      }
+      return ok;
+    }
+
     const playId = ++sharedPlayId;
     const audio = getSharedAudioEl();
 

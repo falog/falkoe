@@ -1155,6 +1155,7 @@ dependencies = [
  "chrono",
  "dirs 5.0.1",
  "hound",
+ "jni",
  "log",
  "once_cell",
  "reqwest",

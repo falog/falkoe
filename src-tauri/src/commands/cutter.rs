@@ -50,13 +50,7 @@ pub struct SavedCutterAudio {
 }
 
 fn cutter_base_dir(app: &AppHandle, cutter_id: &str) -> Result<PathBuf, String> {
-    Ok(app
-        .path()
-        .document_dir()
-        .map_err(|_| "no document dir".to_string())?
-        .join("falkoe")
-        .join("cutter")
-        .join(cutter_id))
+    crate::storage::cutter_base_dir(app, cutter_id).map_err(|e| e.to_string())
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {

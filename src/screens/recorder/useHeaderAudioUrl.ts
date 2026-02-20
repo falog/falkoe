@@ -4,6 +4,7 @@ import { message } from "antd";
 import { guessAudioMimeFromPath, isHttpUrl } from "./audioUtils";
 import type { SourceKind } from "../../types/speech";
 import { useTranslation } from "react-i18next";
+import { isAndroidRuntime } from "../../utils/runtimePlatform";
 
 type HeaderAudioArgs = {
   sourceKind: SourceKind;
@@ -143,7 +144,7 @@ export function useHeaderAudioUrl(args: HeaderAudioArgs) {
               if (!cancelled) {
                 setState({
                   key: headerAudioKey,
-                  url: blobUrl ?? sentenceAudioUrl,
+                  url: blobUrl ?? (isAndroidRuntime() ? null : sentenceAudioUrl),
                   loading: false,
                   owner: blobUrl ? "cache" : "none",
                 });
@@ -182,7 +183,7 @@ export function useHeaderAudioUrl(args: HeaderAudioArgs) {
             if (!cancelled) {
               setState({
                 key: headerAudioKey,
-                url: sentenceAudioUrl,
+                url: isAndroidRuntime() ? null : sentenceAudioUrl,
                 loading: false,
                 owner: "none",
               });

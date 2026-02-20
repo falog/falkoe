@@ -106,11 +106,11 @@ async function fetchExamples(
   const asNumberOrNull = (x: any): number | null =>
     typeof x === "number" && Number.isFinite(x) ? x : null;
 
-  const toTatoebaSentence = (
+  const toTatoebaSentence = async (
     s: any,
     translation: string | null,
     langFallback: string,
-  ): Sentence | null => {
+  ): Promise<Sentence | null> => {
     const id = asNumberOrNull(s?.id);
     const text = asStringOrNull(s?.text);
     const langCode = asStringOrNull(s?.lang) ?? langFallback;
@@ -121,18 +121,17 @@ async function fetchExamples(
 
     const audios = Array.isArray(s?.audios) ? s.audios : [];
     const a0 = audios.length > 0 ? audios[0] : null;
-    const audioId = asNumberOrNull(a0?.id);
+    let audioId = asNumberOrNull(a0?.id);
     const audioLicense =
       asStringOrNull(a0?.license) ??
       asStringOrNull(a0?.license_name) ??
       asStringOrNull(a0?.licenseName);
-    const audioAuthor =
+    let audioAuthor =
       asStringOrNull(a0?.author) ??
       asStringOrNull(a0?.username) ??
       asStringOrNull(a0?.user) ??
-      asStringOrNull(a0?.owner) ??
-      sentenceOwner;
-    const audioAttributionUrl =
+      asStringOrNull(a0?.owner);
+    let audioAttributionUrl =
       asStringOrNull(a0?.attribution_url) ??
       asStringOrNull(a0?.attributionUrl) ??
       asStringOrNull(a0?.url);
@@ -161,7 +160,7 @@ async function fetchExamples(
     };
   };
 
-  const toSentencesFromSameLang = (data: any): Sentence[] => {
+  const toSentencesFromSameLang = async (data: any): Promise<Sentence[]> => {
     if (!data || !Array.isArray(data.data)) return [];
     const out: Sentence[] = [];
     for (const s of data.data) {
@@ -176,7 +175,7 @@ async function fetchExamples(
         }
       }
 
-      const sent = toTatoebaSentence(s, translation, lang);
+      const sent = await toTatoebaSentence(s, translation, lang);
       if (sent) out.push(sent);
     }
     return out;
@@ -184,7 +183,7 @@ async function fetchExamples(
 
   // 1) 通常: `lang` の文を検索し、必要なら `translateTo` の翻訳を表示
   const primaryUrl =
-    `https://api.tatoeba.org/unstable/sentences` +
+    `https://api.tatoeba.org/v1/sentences` +
     `?lang=${encodeURIComponent(lang)}` +
     `&q=${encodeURIComponent(word)}` +
     `&word_count=${encodeURIComponent(wordcount)}` +
@@ -196,7 +195,7 @@ async function fetchExamples(
       : "");
 
   const primaryData = await fetchJson(primaryUrl);
-  const primary = toSentencesFromSameLang(primaryData);
+  const primary = await toSentencesFromSameLang(primaryData);
   if (primary.length > 0 || !showTransLang) {
     return primary;
   }
@@ -205,7 +204,7 @@ async function fetchExamples(
   //    `showTransLang` 側で検索し、`lang` の翻訳（=表示・練習する言語）を結果として返す。
   //    例: showTransLang=jpn で q=「こんにちは」 -> lang=eng の例文を返す
   const fallbackUrl =
-    `https://api.tatoeba.org/unstable/sentences` +
+    `https://api.tatoeba.org/v1/sentences` +
     `?lang=${encodeURIComponent(showTransLang)}` +
     `&q=${encodeURIComponent(word)}` +
     `&word_count=${encodeURIComponent(wordcount)}` +
@@ -239,7 +238,7 @@ async function fetchExamples(
       if (seen.has(t.id)) continue;
 
       // showtrans側で検索した元文（=入力語が含まれる可能性が高い）を subtext に出す
-      const sent = toTatoebaSentence(t, sourceText || null, lang);
+      const sent = await toTatoebaSentence(t, sourceText || null, lang);
       if (!sent) continue;
       out.push(sent);
       seen.add(sent.id);

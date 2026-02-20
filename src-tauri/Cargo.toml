@@ -42,6 +42,9 @@ whisper-rs = { version = "0.15.1", default-features = false, features = ["log_ba
 base64 = "0.21"
 sha2 = "0.10"
 
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+
 [features]
 # Keep defaults mobile-friendly. `tauri android dev` doesn't support
 # `--no-default-features`, so defaults must not pull heavy/native deps like Whisper.
@@ -72,6 +75,20 @@ no-openmp = []
 # variant for maximum compatibility.
 whisper-vulkan = ["whisper", "whisper-rs/vulkan"]
 whisper-metal = ["whisper", "whisper-rs/metal"]
+
+# ---------------------------------------------------------------------------
+# Profile tweaks
+# ---------------------------------------------------------------------------
+
+# The ARM64 debug .so is ~185 MB with full debuginfo, which inflates the
+# debug APK to ~368 MB.  On Android the WebView process has a 268 MB
+# heap ceiling, so _any_ native handler that tries to buffer the APK
+# (e.g. the Tauri dev-proxy protocol) triggers an immediate OOM.
+#
+# Stripping debuginfo from the dev profile shrinks the .so by roughly 5–8×
+# and keeps the debug APK safely below the heap limit.
+[profile.dev]
+strip = "debuginfo"
 
 [patch.crates-io]
 whisper-rs-sys = { path = "vendor/whisper-rs-sys" }

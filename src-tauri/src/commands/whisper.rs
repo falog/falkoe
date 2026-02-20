@@ -1445,12 +1445,7 @@ fn save_transcript_json(wav_path: &str, transcript: &Transcript) -> Result<()> {
 }
 
 fn sentence_base_dir(app: &AppHandle, sentence_hash: &str) -> Result<PathBuf> {
-    Ok(app
-        .path()
-        .document_dir()?
-        .join("falkoe")
-        .join("sentences")
-        .join(sentence_hash))
+    Ok(crate::storage::sentence_base_dir(app, sentence_hash)?)
 }
 
 fn save_sentence_manifest_json(
