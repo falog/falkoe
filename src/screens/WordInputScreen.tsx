@@ -135,17 +135,13 @@ async function fetchExamples(
       asStringOrNull(a0?.attribution_url) ??
       asStringOrNull(a0?.attributionUrl) ??
       asStringOrNull(a0?.url);
-    const downloadUrl = asStringOrNull(a0?.download_url);
-
     if (!sentenceLicense) return null;
 
     return {
       id,
       text,
       translation,
-      audioUrl:
-        downloadUrl ??
-        `https://audio.tatoeba.org/sentences/${langCode}/${id}.mp3`,
+      audioUrl: `https://audio.tatoeba.org/sentences/${langCode}/${id}.mp3`,
       lang: langCode,
       attribution: {
         provider: "tatoeba",
