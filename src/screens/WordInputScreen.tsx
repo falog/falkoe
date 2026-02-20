@@ -189,6 +189,7 @@ async function fetchExamples(
     `&word_count=${encodeURIComponent(wordcount)}` +
     `&has_audio=yes` +
     `&sort=relevance` +
+    `&include=audios` +
     (showTransLang
       ? `&showtrans:lang=${encodeURIComponent(showTransLang)}` +
         `&showtrans:is_direct=yes`
@@ -211,7 +212,8 @@ async function fetchExamples(
     `&trans:lang=${encodeURIComponent(lang)}` +
     `&trans:is_direct=yes` +
     `&trans:has_audio=yes` +
-    `&sort=words` +
+    `&sort=relevance` +
+    `&include=audios` +
     `&showtrans:lang=${encodeURIComponent(lang)}` +
     `&showtrans:is_direct=yes`;
 

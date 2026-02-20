@@ -12,6 +12,12 @@ import {
 } from "./audioUtils";
 import { useTranslation } from "react-i18next";
 import { guardAndroidIpcFileSize } from "../../utils/androidFileSizeGuard";
+import { isAndroidRuntime } from "../../utils/runtimePlatform";
+import {
+  ankidroidAddNote,
+  ankidroidRequestPermission,
+  ankidroidStatus,
+} from "../../utils/ankiDroidInvoke";
 
 type SentenceLike = {
   text: string;
@@ -55,15 +61,9 @@ export function useAddToAnki({
         };
 
         const deckName = getDeckName(sentence.lang);
-
-        await ankiRequest({
-          action: "createDeck",
-          version: 6,
-          params: { deck: deckName },
-        });
-
         const cardText = (displayText || sentence.text || "").trim();
 
+        // -- Prepare model audio ---------------------------------------------
         let modelAudioBase64: string;
         let modelAudioFilename: string;
 
@@ -71,7 +71,9 @@ export function useAddToAnki({
           if (!uploadedAudioPath) {
             throw new Error("uploaded audio path is not ready");
           }
-          await guardAndroidIpcFileSize(uploadedAudioPath, { label: "uploaded audio" });
+          await guardAndroidIpcFileSize(uploadedAudioPath, {
+            label: "uploaded audio",
+          });
           const bytes = await readFile(uploadedAudioPath);
           const blob = new Blob([bytes], {
             type: guessAudioMimeFromPath(uploadedAudioPath),
@@ -85,7 +87,9 @@ export function useAddToAnki({
           });
           modelAudioFilename = `model_${sentenceHash}.mp3`;
         } else {
-          await guardAndroidIpcFileSize(sentence.audioUrl, { label: "model audio" });
+          await guardAndroidIpcFileSize(sentence.audioUrl, {
+            label: "model audio",
+          });
           const bytes = await readFile(sentence.audioUrl);
           const blob = new Blob([bytes], {
             type: guessAudioMimeFromPath(sentence.audioUrl),
@@ -95,46 +99,86 @@ export function useAddToAnki({
           modelAudioFilename = `model_${sentenceHash}.${ext}`;
         }
 
-        await ankiRequest({
-          action: "storeMediaFile",
-          version: 6,
-          params: {
-            filename: modelAudioFilename,
-            data: modelAudioBase64,
-          },
-        });
-
+        // -- Prepare recording audio -----------------------------------------
         await guardAndroidIpcFileSize(rec.path, { label: "recording audio" });
-        const bytes = await readFile(rec.path);
-        const blob = new Blob([bytes], {
+        const recBytes = await readFile(rec.path);
+        const recBlob = new Blob([recBytes], {
           type: guessAudioMimeFromPath(rec.path),
         });
-        const audioBase64 = await blobToBase64(blob);
-        const filename = `sentence_${sentenceHash}_${rec.timestamp}.wav`;
+        const recAudioBase64 = await blobToBase64(recBlob);
+        const recFilename = `sentence_${sentenceHash}_${rec.timestamp}.wav`;
 
-        await ankiRequest({
-          action: "storeMediaFile",
-          version: 6,
-          params: { filename, data: audioBase64 },
-        });
+        const frontHtml = `Model pronunciation<br>[sound:${modelAudioFilename}]<br><br>${cardText}`;
+        const backHtml = `Your pronunciation<br>[sound:${recFilename}]`;
+        const tags = ["falkoe", "pronunciation", sentence.lang];
 
-        const res = await ankiRequest({
-          action: "addNote",
-          version: 6,
-          params: {
-            note: {
-              deckName,
-              modelName: "Basic",
-              fields: {
-                Front: `Model pronunciation<br>[sound:${modelAudioFilename}]<br><br>${cardText}`,
-                Back: `Your pronunciation<br>[sound:${filename}]`,
-              },
-              tags: ["falkoe", "pronunciation", sentence.lang],
+        // -- Send to AnkiDroid (Android) or AnkiConnect (desktop) ------------
+        if (isAndroidRuntime()) {
+          // Check AnkiDroid availability and permissions
+          const status = await ankidroidStatus();
+          if (!status.installed) {
+            throw new Error(
+              "AnkiDroidがインストールされていません。Google PlayストアからAnkiDroidをインストールしてください。",
+            );
+          }
+          if (!status.permissionGranted) {
+            const alreadyGranted = await ankidroidRequestPermission();
+            if (!alreadyGranted) {
+              throw new Error(
+                "AnkiDroidのデータベース権限が必要です。表示されたダイアログで許可してから、もう一度お試しください。",
+              );
+            }
+          }
+
+          const res = await ankidroidAddNote({
+            deckName,
+            modelName: "Basic",
+            fields: [frontHtml, backHtml],
+            tags: tags.join(" "),
+            mediaNames: [modelAudioFilename, recFilename],
+            mediaDatasBase64: [modelAudioBase64, recAudioBase64],
+          });
+          console.log("AnkiDroid note id:", res.noteId);
+        } else {
+          await ankiRequest({
+            action: "createDeck",
+            version: 6,
+            params: { deck: deckName },
+          });
+
+          await ankiRequest({
+            action: "storeMediaFile",
+            version: 6,
+            params: {
+              filename: modelAudioFilename,
+              data: modelAudioBase64,
             },
-          },
-        });
+          });
 
-        console.log("added note id:", res);
+          await ankiRequest({
+            action: "storeMediaFile",
+            version: 6,
+            params: { filename: recFilename, data: recAudioBase64 },
+          });
+
+          const res = await ankiRequest({
+            action: "addNote",
+            version: 6,
+            params: {
+              note: {
+                deckName,
+                modelName: "Basic",
+                fields: {
+                  Front: frontHtml,
+                  Back: backHtml,
+                },
+                tags,
+              },
+            },
+          });
+          console.log("AnkiConnect note id:", res);
+        }
+
         message.success(t("screens.recorder.messages.ankiAdded"));
       } catch (e) {
         console.error("[RecorderScreen] addToAnki failed" + e, e);
@@ -149,7 +193,7 @@ export function useAddToAnki({
         });
       }
     },
-    [displayText, sentence, sentenceHash, sourceKind, uploadedAudioPath, t]
+    [displayText, sentence, sentenceHash, sourceKind, uploadedAudioPath, t],
   );
 
   return { addToAnki };
