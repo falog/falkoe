@@ -1,3 +1,4 @@
+pub mod ankidroid;
 pub mod audio;
 pub mod linking;
 pub mod logs;

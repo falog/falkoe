@@ -1,3 +1,4 @@
+use crate::commands::ankidroid::{ankidroid_add_note, ankidroid_request_permission, ankidroid_status};
 use crate::commands::audio::{
     ensure_sentence_audio_cached,
     fetch_audio_base64,
@@ -153,6 +154,9 @@ pub fn run() {
             set_sentence_task,
             list_sentence_history,
             render_linking,
+            ankidroid_status,
+            ankidroid_request_permission,
+            ankidroid_add_note,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
