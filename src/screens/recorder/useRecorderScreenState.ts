@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { theme } from "antd";
 
 import { useAudioUrlCache } from "./useAudioUrlCache";
@@ -113,9 +113,27 @@ export function useRecorderScreenState(source: SpeechSource) {
   const { audioUrls, ensureBlobAudioUrl, toAssetUrl, resetAudioUrls } =
     useAudioUrlCache();
 
+  // Build fallback audio URLs for Tatoeba so the header audio loader can retry
+  // with alternative endpoints when the primary URL 404s (common for non-English).
+  const sentenceAudioUrlFallbacks = useMemo(() => {
+    if (sourceKind !== "tatoeba") return undefined;
+    const att = sentence.attribution;
+    const candidates = [
+      att?.audioId
+        ? `https://tatoeba.org/en/audio/download/${att.audioId}`
+        : null,
+      `https://audio.tatoeba.org/sentences/${sentence.lang}/${sentence.id}.mp3`,
+    ].filter(
+      (x): x is string =>
+        typeof x === "string" && x.trim().length > 0 && x !== sentence.audioUrl,
+    );
+    return candidates.length > 0 ? candidates : undefined;
+  }, [sourceKind, sentence]);
+
   const { headerAudioUrl, isHeaderAudioLoading } = useHeaderAudioUrl({
     sourceKind,
     sentenceAudioUrl: sentence.audioUrl,
+    sentenceAudioUrlFallbacks,
     sentenceHash,
     uploadedAudioPath,
     preferAssetProtocol,

@@ -14,6 +14,7 @@ use tauri::AppHandle;
 use tauri::Manager;
 
 use ffmpeg::{create_gap_clip_with_text, run_ffmpeg};
+pub(crate) use ffmpeg::run_ffmpeg as run_ffmpeg_raw;
 use paths::{pick_unique_mp4_path, sanitize_base_name};
 use std::io::Write;
 

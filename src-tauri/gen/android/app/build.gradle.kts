@@ -51,6 +51,11 @@ android {
     buildFeatures {
         buildConfig = true
     }
+    // Ensure native libraries (including bundled ffmpeg) are extracted to the
+    // filesystem at install time so they can be executed as standalone binaries.
+    packaging {
+        jniLibs.useLegacyPackaging = true
+    }
 }
 
 rust {

@@ -8,6 +8,14 @@ use tauri::{AppHandle, Manager};
 use std::os::windows::process::CommandExt;
 
 fn resolve_bundled_tool(app: &AppHandle, base_name: &str) -> Option<PathBuf> {
+    // On Android, binaries are bundled as lib<name>.so in the native library directory.
+    #[cfg(target_os = "android")]
+    {
+        if let Some(p) = resolve_android_native_lib(base_name) {
+            return Some(p);
+        }
+    }
+
     let resource_dir = app.path().resource_dir().ok()?;
     let exe_name = if cfg!(target_os = "windows") {
         format!("{base_name}.exe")
@@ -25,6 +33,42 @@ fn resolve_bundled_tool(app: &AppHandle, base_name: &str) -> Option<PathBuf> {
     ];
 
     candidates.into_iter().find(|p| p.is_file())
+}
+
+/// On Android, native libraries from jniLibs are extracted to a directory
+/// like `/data/app/.../lib/arm64/`.  We find that directory by parsing
+/// /proc/self/maps for our own library (`libfalkoe_lib.so`), then look for
+/// `lib<base_name>.so` next to it.
+#[cfg(target_os = "android")]
+fn resolve_android_native_lib(base_name: &str) -> Option<PathBuf> {
+    let so_name = format!("lib{base_name}.so");
+
+    // Fast path: derive from the directory of our own shared library.
+    if let Ok(maps) = std::fs::read_to_string("/proc/self/maps") {
+        for line in maps.lines() {
+            if line.contains("libfalkoe_lib.so") {
+                // line format: "addr-addr perms offset dev inode  /path/to/lib.so"
+                if let Some(path_start) = line.rfind('/') {
+                    let dir = &line[line.find('/').unwrap_or(0)..path_start];
+                    let candidate = PathBuf::from(dir).join(&so_name);
+                    if candidate.is_file() {
+                        return Some(candidate);
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback: check well-known locations.
+    let pkg = "com.fal.falkoe";
+    for abi_dir in ["arm64", "arm", "x86_64", "x86"] {
+        let candidate = PathBuf::from(format!("/data/data/{pkg}/lib/{abi_dir}/{so_name}"));
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+
+    None
 }
 
 pub(crate) fn run_ffmpeg(app: &AppHandle, args: &[String]) -> Result<()> {

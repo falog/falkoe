@@ -1,5 +1,6 @@
 import { Button, Space } from "antd";
 import { useTranslation } from "react-i18next";
+import { isMobileRuntime } from "../utils/runtimePlatform";
 
 export type TopNavCurrent =
   | "word"
@@ -44,7 +45,7 @@ export default function TopNav({
         </Button>
       )}
 
-      {onOpenAudioCutter && (
+      {onOpenAudioCutter && !isMobileRuntime() && (
         <Button disabled={current === "cutter"} onClick={onOpenAudioCutter}>
           {t("nav.audioCutter")}
         </Button>

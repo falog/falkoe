@@ -137,11 +137,18 @@ async function fetchExamples(
       asStringOrNull(a0?.url);
     if (!sentenceLicense) return null;
 
+    // Prefer the per-recording download endpoint — it works reliably for
+    // all languages.  The legacy audio.tatoeba.org path often 404s for
+    // non-English sentences whose audio was contributed more recently.
+    const audioUrl = audioId
+      ? `https://tatoeba.org/en/audio/download/${audioId}`
+      : `https://audio.tatoeba.org/sentences/${langCode}/${id}.mp3`;
+
     return {
       id,
       text,
       translation,
-      audioUrl: `https://audio.tatoeba.org/sentences/${langCode}/${id}.mp3`,
+      audioUrl,
       lang: langCode,
       attribution: {
         provider: "tatoeba",

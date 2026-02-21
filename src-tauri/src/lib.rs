@@ -102,6 +102,14 @@ pub fn run() {
                 });
             }
 
+            // When running without local whisper (e.g. Android), mark model as
+            // "ready" immediately so the UI does not gate transcription on a
+            // local model download. The remote API is always available.
+            #[cfg(not(feature = "whisper"))]
+            {
+                model::set_status(&app.handle(), "ready");
+            }
+
             // CMUdictも初回だけ重いので、バックグラウンドでウォームアップ
             let handle = app.handle().clone();
             std::thread::spawn(move || {

@@ -60,13 +60,38 @@ const App = () => {
     selectingRef.current = true;
     try {
       // Pre-download Tatoeba audio so the recorder screen has it ready.
+      // Try multiple candidate URLs — the legacy audio.tatoeba.org path
+      // often 404s for non-English sentences.
       const hash = await sha256(s.text, s.lang);
-      await invoke<string>("ensure_sentence_audio_cached", {
-        audioId: hash,
-        url: s.audioUrl,
-      }).catch(() => {
+      const candidates = Array.from(
+        new Set(
+          [
+            s.audioUrl,
+            s.attribution?.audioId
+              ? `https://tatoeba.org/en/audio/download/${s.attribution.audioId}`
+              : null,
+            `https://audio.tatoeba.org/sentences/${s.lang}/${s.id}.mp3`,
+          ].filter(
+            (x): x is string => typeof x === "string" && x.trim().length > 0,
+          ),
+        ),
+      );
+      let cached = false;
+      for (const url of candidates) {
+        try {
+          await invoke<string>("ensure_sentence_audio_cached", {
+            audioId: hash,
+            url,
+          });
+          cached = true;
+          break;
+        } catch {
+          // try next candidate
+        }
+      }
+      if (!cached) {
         // Non-fatal: recorder screen will retry if prefetch fails.
-      });
+      }
       setSource({ kind: "tatoeba", sentence: s });
       setScreen("record");
     } finally {
