@@ -11,6 +11,8 @@ mod lang;
 mod manifest;
 #[path = "whisper/mecab.rs"]
 mod mecab;
+#[path = "whisper/mecab_native.rs"]
+mod mecab_native;
 #[path = "whisper/paths.rs"]
 mod paths;
 #[path = "whisper/run.rs"]

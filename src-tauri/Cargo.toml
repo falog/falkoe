@@ -41,6 +41,7 @@ chrono = "0.4"
 whisper-rs = { version = "0.15.1", default-features = false, features = ["log_backend"], optional = true }
 base64 = "0.21"
 sha2 = "0.10"
+lindera = { version = "2.2.0", default-features = false, features = ["compress", "embed-ipadic"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.21"

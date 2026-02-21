@@ -51,6 +51,27 @@ if [[ ! -d "$FFMPEG_SRC" ]]; then
     tar -xf "$TARBALL" -C "$BUILD_BASE"
 fi
 
+# --- x264 source (GPL, needed for H.264 encoding) ---
+X264_SRC="$BUILD_BASE/x264"
+if [[ ! -d "$X264_SRC" ]]; then
+    echo "Cloning x264 ..."
+    git clone --depth 1 https://code.videolan.org/videolan/x264.git "$X264_SRC"
+fi
+
+# --- freetype source (needed for drawtext filter) ---
+FREETYPE_VERSION="${FREETYPE_VERSION:-2.13.3}"
+FREETYPE_SRC="$BUILD_BASE/freetype-$FREETYPE_VERSION"
+if [[ ! -d "$FREETYPE_SRC" ]]; then
+    FREETYPE_TARBALL="$BUILD_BASE/freetype-${FREETYPE_VERSION}.tar.xz"
+    if [[ ! -f "$FREETYPE_TARBALL" ]]; then
+        echo "Downloading freetype $FREETYPE_VERSION ..."
+        curl -L "https://download.savannah.gnu.org/releases/freetype/freetype-${FREETYPE_VERSION}.tar.xz" \
+            -o "$FREETYPE_TARBALL"
+    fi
+    echo "Extracting freetype ..."
+    tar -xf "$FREETYPE_TARBALL" -C "$BUILD_BASE"
+fi
+
 # --- API level (must match Tauri minSdkVersion) ---
 API=26
 
@@ -80,6 +101,20 @@ declare -A ABI_EXTRA_FLAGS=(
     [armeabi-v7a]="--enable-thumb"
     [x86]="--disable-asm"
     [x86_64]="--disable-x86asm"
+)
+# x264 uses a simplified host triple.
+declare -A ABI_X264_HOST=(
+    [arm64-v8a]=aarch64-linux
+    [armeabi-v7a]=arm-linux
+    [x86]=i686-linux
+    [x86_64]=x86_64-linux
+)
+# Standard autotools host triple for freetype etc.
+declare -A ABI_AUTOTOOLS_HOST=(
+    [arm64-v8a]=aarch64-linux-android
+    [armeabi-v7a]=arm-linux-androideabi
+    [x86]=i686-linux-android
+    [x86_64]=x86_64-linux-android
 )
 
 # Optionally limit ABIs via env: BUILD_ABIS="arm64-v8a x86_64"
@@ -135,6 +170,75 @@ with open(path, 'r+b') as f:
 " "$binary"
 }
 
+build_x264_for_abi() {
+    local abi="$1"
+    local triple="${ABI_TRIPLE[$abi]}"
+    local CC="$TOOLCHAIN/bin/${triple}${API}-clang"
+    local x264_host="${ABI_X264_HOST[$abi]}"
+    local PREFIX="$BUILD_BASE/x264-install-$abi"
+    local BUILD_DIR="$BUILD_BASE/x264-build-$abi"
+
+    if [[ -f "$PREFIX/lib/libx264.a" ]]; then
+        echo "x264 already built for $abi, skipping."
+        return
+    fi
+
+    echo "Building x264 for $abi ..."
+    rm -rf "$BUILD_DIR"
+    mkdir -p "$BUILD_DIR"
+    cd "$BUILD_DIR"
+
+    CC="$CC" AS="$CC" "$X264_SRC/configure" \
+        --prefix="$PREFIX" \
+        --host="$x264_host" \
+        --cross-prefix="$TOOLCHAIN/bin/llvm-" \
+        --enable-static \
+        --disable-shared \
+        --disable-cli \
+        --enable-pic \
+        --disable-asm \
+        --extra-cflags="-fPIC -Os"
+
+    make -j"$(nproc)"
+    make install
+    echo "=> x264 installed to $PREFIX"
+}
+
+build_freetype_for_abi() {
+    local abi="$1"
+    local triple="${ABI_TRIPLE[$abi]}"
+    local CC="$TOOLCHAIN/bin/${triple}${API}-clang"
+    local at_host="${ABI_AUTOTOOLS_HOST[$abi]}"
+    local PREFIX="$BUILD_BASE/freetype-install-$abi"
+    local BUILD_DIR="$BUILD_BASE/freetype-build-$abi"
+
+    if [[ -f "$PREFIX/lib/libfreetype.a" ]]; then
+        echo "freetype already built for $abi, skipping."
+        return
+    fi
+
+    echo "Building freetype for $abi ..."
+    rm -rf "$BUILD_DIR"
+    mkdir -p "$BUILD_DIR"
+    cd "$BUILD_DIR"
+
+    CC="$CC" CFLAGS="-fPIC -Os" \
+    "$FREETYPE_SRC/configure" \
+        --prefix="$PREFIX" \
+        --host="$at_host" \
+        --enable-static \
+        --disable-shared \
+        --without-harfbuzz \
+        --without-bzip2 \
+        --without-png \
+        --without-brotli \
+        --with-zlib=no
+
+    make -j"$(nproc)"
+    make install
+    echo "=> freetype installed to $PREFIX"
+}
+
 build_for_abi() {
     local abi="$1"
     local arch="${ABI_ARCH[$abi]}"
@@ -174,6 +278,14 @@ TLSEOF
     "$CC" -c -fno-emulated-tls -fPIC "$BUILD_DIR/_force_tls_align.c" -o "$TLS_ALIGN_OBJ"
     echo "Built TLS alignment helper: $TLS_ALIGN_OBJ"
 
+    # --- Build x264 and freetype for this ABI ---
+    build_x264_for_abi "$abi"
+    build_freetype_for_abi "$abi"
+
+    local X264_PREFIX="$BUILD_BASE/x264-install-$abi"
+    local FT_PREFIX="$BUILD_BASE/freetype-install-$abi"
+    export PKG_CONFIG_PATH="$X264_PREFIX/lib/pkgconfig:$FT_PREFIX/lib/pkgconfig"
+
     "$FFMPEG_SRC/configure" \
         --prefix="$PREFIX" \
         --target-os=android \
@@ -187,6 +299,9 @@ TLSEOF
         --enable-static \
         --disable-shared \
         --enable-small \
+        --enable-gpl \
+        --enable-libx264 \
+        --enable-libfreetype \
         --disable-doc \
         --disable-htmlpages \
         --disable-manpages \
@@ -209,8 +324,9 @@ TLSEOF
         --enable-pic \
         --enable-jni \
         --enable-mediacodec \
-        --extra-cflags="-Os -fPIC" \
-        --extra-ldflags="-static -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384" \
+        --extra-cflags="-Os -fPIC -I$X264_PREFIX/include -I$FT_PREFIX/include/freetype2" \
+        --extra-ldflags="-static -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384 -L$X264_PREFIX/lib -L$FT_PREFIX/lib" \
+        --pkg-config-flags="--static" \
         --extra-ldexeflags="$TLS_ALIGN_OBJ" \
         $extra
 

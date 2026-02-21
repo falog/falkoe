@@ -1,27 +1,6 @@
 use std::path::Path;
 
-use super::ffmpeg::escape_filter_path;
-
-fn windows_drawtext_fontfile_opt() -> String {
-    if !cfg!(target_os = "windows") {
-        return String::new();
-    }
-
-    let candidates = [
-        r"C:\\Windows\\Fonts\\meiryo.ttc",
-        r"C:\\Windows\\Fonts\\YuGothR.ttc",
-        r"C:\\Windows\\Fonts\\msgothic.ttc",
-    ];
-
-    for c in candidates {
-        let p = Path::new(c);
-        if p.is_file() {
-            return format!(":fontfile='{}'", escape_filter_path(p));
-        }
-    }
-
-    String::new()
-}
+use super::ffmpeg::{drawtext_fontfile_opt, escape_filter_path};
 
 pub(crate) fn build_playhead_x_expr(
     sx: f32,
@@ -158,7 +137,7 @@ pub(crate) fn build_segment_filter_complex_ex(
 ) -> (String, String) {
     // Animate playhead using overlay with a thin orange bar.
     // This avoids drawbox-eval issues on some ffmpeg builds.
-    let font_opt = windows_drawtext_fontfile_opt();
+    let font_opt = drawtext_fontfile_opt();
     let base_chain = vec![
         format!(
             "drawtext=textfile='{}'{}:x=(w-text_w)/2:y=8:fontcolor=white:fontsize=24:line_spacing=4:box=1:boxcolor=black@0.35:boxborderw=8",

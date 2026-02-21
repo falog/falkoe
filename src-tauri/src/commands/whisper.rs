@@ -5,6 +5,7 @@ mod ffmpeg;
 mod lang;
 mod manifest;
 mod mecab;
+mod mecab_native;
 mod paths;
 mod run;
 mod transcribe;

@@ -286,7 +286,6 @@ export function useRecorderScreenState(source: SpeechSource) {
     recordings,
     transcripts,
     token,
-    recognizeModel,
   });
 
   return {
