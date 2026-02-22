@@ -266,7 +266,7 @@ function buildWindowsTranscribeHelpers(args) {
     // Optional GPU backend (Vulkan) build.
     // If this fails on your environment, you can set FALKOE_ALLOW_MISSING_BUNDLED_TOOLS=1
     // to package CPU-only builds.
-    const cargoFeatures = [];
+    const cargoFeatures = ["whisper"];
     if (v.tag === "vulkan") {
       cargoFeatures.push("whisper-vulkan");
     }
@@ -396,7 +396,8 @@ function buildUnixTranscribeHelpers(args) {
   variants.push({
     tag: "cpu",
     outName: "falkoe-transcribe-cpu",
-    features: process.platform === "darwin" ? ["no-openmp"] : [],
+    features:
+      process.platform === "darwin" ? ["whisper", "no-openmp"] : ["whisper"],
   });
 
   // Optional GPU helpers.

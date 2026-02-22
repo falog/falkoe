@@ -640,6 +640,32 @@ jobs:
           echo "[info] Extracted jniLibs:"
           find "$jni_dir" -name '*.so' -exec ls -lh {} +
 
+      # ── Signing ──
+      - name: Setup Android signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${ANDROID_KEYSTORE_BASE64:-}" ]]; then
+            echo "[warn] ANDROID_KEYSTORE_BASE64 not set — APK will be unsigned"
+            exit 0
+          fi
+
+          ks_path="$PWD/src-tauri/gen/android/falkoe-release.jks"
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$ks_path"
+          echo "[info] Keystore written to $ks_path ($(wc -c < "$ks_path") bytes)"
+
+          cat > src-tauri/gen/android/key.properties <<EOF
+          storeFile=$ks_path
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          keyPassword=$ANDROID_KEY_PASSWORD
+          EOF
+          echo "[info] key.properties created"
+
       # ── Build ──
       - name: Build Tauri Android APK
         run: pnpm tauri android build

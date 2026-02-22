@@ -13,6 +13,13 @@ val tauriProperties = Properties().apply {
     }
 }
 
+val keyProperties = Properties().apply {
+    val propFile = rootProject.file("key.properties")
+    if (propFile.exists()) {
+        propFile.inputStream().use { load(it) }
+    }
+}
+
 android {
     compileSdk = 36
     namespace = "com.fal.falkoe"
@@ -23,6 +30,17 @@ android {
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
+    }
+    signingConfigs {
+        create("release") {
+            val ksFile = keyProperties.getProperty("storeFile")
+            if (ksFile != null) {
+                storeFile = rootProject.file(ksFile)
+                storePassword = keyProperties.getProperty("storePassword")
+                keyAlias = keyProperties.getProperty("keyAlias")
+                keyPassword = keyProperties.getProperty("keyPassword")
+            }
+        }
     }
     buildTypes {
         getByName("debug") {
@@ -43,6 +61,10 @@ android {
                     .plus(getDefaultProguardFile("proguard-android-optimize.txt"))
                     .toList().toTypedArray()
             )
+            val ks = signingConfigs.findByName("release")
+            if (ks != null && ks.storeFile != null) {
+                signingConfig = ks
+            }
         }
     }
     kotlinOptions {
