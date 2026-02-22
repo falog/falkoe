@@ -4,8 +4,8 @@ import {
   startMicRecorderSilenceWatcher,
   type MicRecorderSilenceWatcher,
 } from "./micRecorderSilenceWatcher";
-import type { ModelStatus } from "../../types/model";
 import { useTranslation } from "react-i18next";
+import { playAudioUrl } from "./uiUtils";
 
 type ShadowingStartOptions = {
   mode?: "manual" | "mimic";
@@ -15,7 +15,6 @@ type UseShadowingRecorderArgs = {
   isRecording: boolean;
   startRecording: () => Promise<void>;
   stopRecording: () => Promise<void>;
-  status: ModelStatus;
   headerAudioUrl: string | null;
   isHeaderAudioLoading: boolean;
 };
@@ -32,7 +31,6 @@ export function useShadowingRecorder({
   isRecording,
   startRecording,
   stopRecording,
-  status,
   headerAudioUrl,
   isHeaderAudioLoading,
 }: UseShadowingRecorderArgs): UseShadowingRecorderResult {
@@ -45,7 +43,7 @@ export function useShadowingRecorder({
   const autoPracticeInFlightRef = useRef(false);
   const [isMimicLoading, setIsMimicLoading] = useState(false);
   const [autoStopRemainingMs, setAutoStopRemainingMs] = useState<number | null>(
-    null
+    null,
   );
   const lastSilenceEndTimeRef = useRef<number>(0);
   const autoStopArmedRef = useRef(false);
@@ -92,7 +90,7 @@ export function useShadowingRecorder({
           silenceUnavailableNotifiedRef.current = true;
           const msg = String((e as any)?.message ?? e);
           message.info(
-            `${t("screens.recorder.messages.silenceWatcherUnavailable")}${msg}`
+            `${t("screens.recorder.messages.silenceWatcherUnavailable")}${msg}`,
           );
         }
         return null;
@@ -132,12 +130,6 @@ export function useShadowingRecorder({
 
       if (mode === "manual") {
         if (isRecording) return;
-        if (status !== "ready") {
-          message.info(
-            t("screens.recorder.messages.modelNotReadyCannotRecord")
-          );
-          return;
-        }
 
         // Start the silence watcher BEFORE awaiting anything.
         // This helps keep initialization inside the user gesture.
@@ -166,43 +158,17 @@ export function useShadowingRecorder({
           message.info(t("screens.recorder.messages.audioLoading"));
           return;
         }
-        if (status !== "ready") {
-          message.info(
-            t("screens.recorder.messages.modelNotReadyCannotRecord")
-          );
-          return;
-        }
         if (isRecording) return;
 
         // Important: start sample playback BEFORE awaiting anything.
         // Awaiting here can break the user-gesture chain and cause audio.play() to be blocked.
-        const audio = new Audio(headerAudioUrl);
-
         // Shadowing UX: while the sample is playing, the user might be silent (listening).
         // If we start silence detection immediately, it can auto-stop during playback.
         // So we start the auto-stop watcher only AFTER the sample finishes (or fails).
-        const startWatcherAfterPlayback = () => {
-          if (!isRecordingRef.current) return;
-          if (!autoStopArmedRef.current) return;
-          void startAutoStopWatcher();
-        };
-
-        audio.addEventListener("ended", startWatcherAfterPlayback, {
-          once: true,
+        // Use shared playback helper (Android: WebAudio bytes path).
+        void playAudioUrl(headerAudioUrl).catch((e) => {
+          console.warn("Mimic sample playback blocked/failed", e);
         });
-        audio.addEventListener("error", startWatcherAfterPlayback, {
-          once: true,
-        });
-
-        try {
-          void audio.play().catch((e) => {
-            console.warn("Mimic sample playback blocked/failed", e);
-            startWatcherAfterPlayback();
-          });
-        } catch (e) {
-          console.warn("Mimic sample playback failed", e);
-          startWatcherAfterPlayback();
-        }
 
         try {
           await startRecording();
@@ -228,9 +194,8 @@ export function useShadowingRecorder({
       isRecording,
       startAutoStopWatcher,
       startRecording,
-      status,
       t,
-    ]
+    ],
   );
 
   return {

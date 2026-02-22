@@ -1,0 +1,9 @@
+# Falkoe bundled MeCab config
+# Keep this minimal; the app passes -d <dicdir> explicitly when available.
+# Having a bundled mecabrc prevents MeCab from looking for a system-wide mecabrc.
+
+# Ensure MeCab interprets stdin as UTF-8 (Rust writes UTF-8 bytes).
+charset = utf8
+
+# A safe default if -d is not provided (relative to this file):
+dicdir = ipadic

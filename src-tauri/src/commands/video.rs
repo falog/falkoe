@@ -13,7 +13,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 use tauri::Manager;
 
-use ffmpeg::{create_gap_clip_with_text, run_ffmpeg};
+use ffmpeg::{create_gap_clip_with_text, h264_encoding_args, run_ffmpeg};
+pub(crate) use ffmpeg::run_ffmpeg as run_ffmpeg_raw;
 use paths::{pick_unique_mp4_path, sanitize_base_name};
 use std::io::Write;
 
@@ -343,7 +344,13 @@ pub fn export_practice_video(
                 if tp.exists() {
                     let srt_path = tmp_dir.join(format!("sub_{i}.srt"));
                     generate_srt(&tp, &srt_path)?;
-                    subtitle_srt_path = Some(srt_path);
+                    // An empty SRT file (e.g. when whisper produced no usable segments)
+                    // causes ffmpeg's subtitles filter to fail with "Unable to open".
+                    // Treat it as "no subtitles" instead.
+                    let srt_len = fs::metadata(&srt_path).map(|m| m.len()).unwrap_or(0);
+                    if srt_len > 0 {
+                        subtitle_srt_path = Some(srt_path);
+                    }
                 }
             }
 
@@ -377,7 +384,7 @@ pub fn export_practice_video(
                 "color=c=orange:s={}x{}:r=30:d={:.3}",
                 playhead_w, h_i, wd
             );
-            let args: Vec<String> = vec![
+            let mut args: Vec<String> = vec![
                 "-y".into(),
                 "-loop".into(),
                 "1".into(),
@@ -398,18 +405,9 @@ pub fn export_practice_video(
                 "-map".into(),
                 "1:a".into(),
                 "-shortest".into(),
-                "-c:v".into(),
-                "libx264".into(),
-                "-preset".into(),
-                "veryfast".into(),
-                "-crf".into(),
-                "28".into(),
-                "-profile:v".into(),
-                "baseline".into(),
-                "-movflags".into(),
-                "+faststart".into(),
-                "-pix_fmt".into(),
-                "yuv420p".into(),
+            ];
+            args.extend(h264_encoding_args());
+            args.extend([
                 "-c:a".into(),
                 "aac".into(),
                 "-b:a".into(),
@@ -419,7 +417,7 @@ pub fn export_practice_video(
                 "-ac".into(),
                 "2".into(),
                 seg_out.to_string_lossy().to_string(),
-            ];
+            ]);
 
             run_ffmpeg(&app, &args).with_context(|| {
                 if let Some(ref srt) = subtitle_srt_path {
@@ -465,7 +463,7 @@ pub fn export_practice_video(
         ];
 
         if run_ffmpeg(&app, &args_copy).is_err() {
-            let args_reenc: Vec<String> = vec![
+            let mut args_reenc: Vec<String> = vec![
                 "-y".into(),
                 "-f".into(),
                 "concat".into(),
@@ -473,18 +471,9 @@ pub fn export_practice_video(
                 "0".into(),
                 "-i".into(),
                 concat_path.to_string_lossy().to_string(),
-                "-c:v".into(),
-                "libx264".into(),
-                "-preset".into(),
-                "veryfast".into(),
-                "-crf".into(),
-                "28".into(),
-                "-profile:v".into(),
-                "baseline".into(),
-                "-movflags".into(),
-                "+faststart".into(),
-                "-pix_fmt".into(),
-                "yuv420p".into(),
+            ];
+            args_reenc.extend(h264_encoding_args());
+            args_reenc.extend([
                 "-c:a".into(),
                 "aac".into(),
                 "-b:a".into(),
@@ -494,7 +483,7 @@ pub fn export_practice_video(
                 "-ac".into(),
                 "2".into(),
                 out_path.to_string_lossy().to_string(),
-            ];
+            ]);
             run_ffmpeg(&app, &args_reenc)?;
         }
 

@@ -1,8 +1,13 @@
-use crate::commands::audio::{ensure_sentence_audio_cached, fetch_audio_base64};
+use crate::commands::ankidroid::{ankidroid_add_note, ankidroid_request_permission, ankidroid_status};
+use crate::commands::audio::{
+    ensure_sentence_audio_cached,
+    fetch_audio_base64,
+    read_bundled_resource_base64,
+};
 use crate::commands::linking::render_linking;
 use crate::commands::recordings::{
-    get_uploaded_audio_info, import_uploaded_audio_from_path, list_recordings, move_recorded_audio,
-    save_uploaded_audio,
+    ensure_wav_pcm16, get_uploaded_audio_info, import_uploaded_audio_from_path, list_recordings,
+    move_recorded_audio, save_uploaded_audio,
 };
 use crate::commands::cutter::{
     cutter_cancel_detect, cutter_export_segments, cutter_get_word_timestamps, cutter_preview_segment,
@@ -19,22 +24,51 @@ use crate::commands::sentences::{
 };
 use crate::commands::status::{get_model_status, get_model_variant, set_model_variant};
 use crate::commands::logs::{get_backend_log_dir, get_backend_log_path};
-use crate::commands::temp_recordings::delete_temp_recording;
+use crate::commands::temp_recordings::{delete_temp_recording, list_temp_recordings};
 use crate::commands::whisper::run_whisper;
 use crate::commands::whisper::{run_whisper_model, run_whisper_uploaded};
+
+#[cfg(feature = "mic-recorder")]
 use tauri_plugin_mic_recorder::init as mic_recorder;
 
 mod commands;
 mod model;
 mod logging;
+mod storage;
+
+#[cfg(target_os = "android")]
+mod android_jni {
+    use std::ffi::c_void;
+    use std::sync::atomic::{AtomicPtr, Ordering};
+
+    use jni::sys::{jint, JavaVM, JNI_VERSION_1_6};
+
+    static JAVA_VM: AtomicPtr<JavaVM> = AtomicPtr::new(std::ptr::null_mut());
+
+    #[no_mangle]
+    pub unsafe extern "system" fn JNI_OnLoad(vm: *mut JavaVM, _reserved: *mut c_void) -> jint {
+        JAVA_VM.store(vm, Ordering::SeqCst);
+        JNI_VERSION_1_6
+    }
+
+    pub fn java_vm() -> Result<jni::JavaVM, String> {
+        let ptr = JAVA_VM.load(Ordering::SeqCst);
+        if ptr.is_null() {
+            return Err("JNI: JavaVM is not initialized (JNI_OnLoad not called yet)".into());
+        }
+
+        unsafe { jni::JavaVM::from_raw(ptr).map_err(|e| format!("JavaVM::from_raw: {e}")) }
+    }
+}
 
 // Minimal public surface for internal tooling (e.g. src/bin/*).
 pub use commands::whisper::transcribe as transcribe;
 pub use commands::pitch::analyze_pitch_noapp as analyze_pitch_noapp;
 pub use model::find_existing_model_path_noapp;
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .setup(|app| {
             model::init_model_state();
 
@@ -60,10 +94,21 @@ pub fn run() {
                 crate::logging::log_line(&panic_handle, format!("[panic] at {location}: {payload}"));
             }));
 
-            let handle = app.handle().clone();
-            std::thread::spawn(move || {
-                let _ = model::ensure_model(&handle);
-            });
+            #[cfg(feature = "whisper")]
+            {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    let _ = model::ensure_model(&handle);
+                });
+            }
+
+            // When running without local whisper (e.g. Android), mark model as
+            // "ready" immediately so the UI does not gate transcription on a
+            // local model download. The remote API is always available.
+            #[cfg(not(feature = "whisper"))]
+            {
+                model::set_status(&app.handle(), "ready");
+            }
 
             // CMUdictも初回だけ重いので、バックグラウンドでウォームアップ
             let handle = app.handle().clone();
@@ -75,8 +120,12 @@ pub fn run() {
         })
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(mic_recorder())
-        .invoke_handler(tauri::generate_handler![
+        .plugin(tauri_plugin_shell::init());
+
+    #[cfg(feature = "mic-recorder")]
+    let builder = builder.plugin(mic_recorder());
+
+    builder.invoke_handler(tauri::generate_handler![
             get_backend_log_path,
             get_backend_log_dir,
             run_whisper,
@@ -98,18 +147,24 @@ pub fn run() {
             get_model_variant,
             set_model_variant,
             move_recorded_audio,
+            ensure_wav_pcm16,
+            list_temp_recordings,
             delete_temp_recording,
             save_uploaded_audio,
             import_uploaded_audio_from_path,
             get_uploaded_audio_info,
             fetch_audio_base64,
             ensure_sentence_audio_cached,
+            read_bundled_resource_base64,
             find_audio_by_sentence,
             upsert_sentence_manifest_attribution,
             upsert_sentence_manifest_text,
             set_sentence_task,
             list_sentence_history,
             render_linking,
+            ankidroid_status,
+            ankidroid_request_permission,
+            ankidroid_add_note,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

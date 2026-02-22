@@ -1,4 +1,31 @@
 use std::path::Path;
+use tauri::{AppHandle, Manager};
+
+#[tauri::command]
+pub fn list_temp_recordings(app: AppHandle) -> Result<Vec<String>, String> {
+  let dir = app
+    .path()
+    .app_data_dir()
+    .map_err(|e| e.to_string())?
+    .join("tauri-plugin-mic-recorder");
+
+  if !dir.exists() {
+    return Ok(vec![]);
+  }
+
+  let mut out: Vec<String> = Vec::new();
+  for entry in std::fs::read_dir(&dir).map_err(|e| e.to_string())? {
+    let path = entry.map_err(|e| e.to_string())?.path();
+    if path.extension().and_then(|e| e.to_str()) != Some("wav") {
+      continue;
+    }
+    out.push(path.to_string_lossy().to_string());
+  }
+
+  // Sort by filename (plugin uses timestamp-based names), so latest is last.
+  out.sort();
+  Ok(out)
+}
 
 #[tauri::command]
 pub fn delete_temp_recording(src_path: String) -> Result<(), String> {

@@ -1,6 +1,6 @@
 import { Button, Input, Space, Spin, Typography, message } from "antd";
 import { invoke } from "@tauri-apps/api/core";
-import { documentDir, join } from "@tauri-apps/api/path";
+import { join } from "@tauri-apps/api/path";
 import { readTextFile } from "@tauri-apps/plugin-fs";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -11,6 +11,7 @@ import type { ModelStatus } from "../../../types/model";
 import type { PitchAnalysis, WordPitch } from "../../../types/pitch";
 import { PitchAlignmentChart } from "../../../components/PitchAlignmentChart";
 import type { SourceKind } from "../../../types/speech";
+import { getFalkoeStorageRootDir } from "../../../utils/storageRoot";
 
 type UpsertManifestTextResult = {
   status: "created" | "updated" | "conflict";
@@ -185,7 +186,7 @@ export function ModelTranscriptSection({
       setPitchLoading(true);
       setPitchError(null);
       try {
-        const dir = await documentDir();
+        const dir = await getFalkoeStorageRootDir();
 
         // Uploaded sources store wav/pitch next to uploaded/uploaded.*.
         // Other sources (tatoeba/recorded) use model/model.* as the reference audio cache.

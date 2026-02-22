@@ -9,6 +9,7 @@ import {
   setStoredUiLanguage,
   type UiLanguage,
 } from "../i18n";
+import { isMobileRuntime } from "../utils/runtimePlatform";
 
 type ModelVariant =
   | "tiny"
@@ -198,32 +199,36 @@ export default function SettingsScreen({
           {t("settings.uiLanguage.note")}
         </Typography.Text>
 
-        <Typography.Text>{t("settings.model.label")}</Typography.Text>
-        <Select
-          style={{ width: 360, maxWidth: "100%" }}
-          value={variant}
-          options={options}
-          onChange={(v) => setVariant(v as ModelVariant)}
-          disabled={loading}
-        />
+        {!isMobileRuntime() && (
+          <>
+            <Typography.Text>{t("settings.model.label")}</Typography.Text>
+            <Select
+              style={{ width: 360, maxWidth: "100%" }}
+              value={variant}
+              options={options}
+              onChange={(v) => setVariant(v as ModelVariant)}
+              disabled={loading}
+            />
 
-        <Button type="primary" onClick={apply} loading={loading}>
-          {t("settings.apply")}
-        </Button>
+            <Button type="primary" onClick={apply} loading={loading}>
+              {t("settings.apply")}
+            </Button>
 
-        <Typography.Text type="secondary">
-          {t("settings.model.note")}
-        </Typography.Text>
+            <Typography.Text type="secondary">
+              {t("settings.model.note")}
+            </Typography.Text>
 
-        <Space orientation="vertical" style={{ width: "100%" }}>
-          <Typography.Text type="secondary">
-            {t("settings.model.status")}
-            {status}
-          </Typography.Text>
-          {status === "downloading" && typeof progress === "number" && (
-            <Progress percent={progress} size="small" />
-          )}
-        </Space>
+            <Space orientation="vertical" style={{ width: "100%" }}>
+              <Typography.Text type="secondary">
+                {t("settings.model.status")}
+                {status}
+              </Typography.Text>
+              {status === "downloading" && typeof progress === "number" && (
+                <Progress percent={progress} size="small" />
+              )}
+            </Space>
+          </>
+        )}
       </Space>
     </Space>
   );

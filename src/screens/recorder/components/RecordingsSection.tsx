@@ -10,7 +10,10 @@ type Props = {
   audioUrls: Record<string, string>;
   preferAssetProtocol: boolean;
   toAssetUrl: (path: string) => string;
-  ensureBlobAudioUrl: (path: string) => Promise<string | null>;
+  ensureBlobAudioUrl: (
+    path: string,
+    opts?: { forceReload?: boolean }
+  ) => Promise<string | null>;
   addToAnki: (rec: Recording) => Promise<void>;
   lang: string;
 };

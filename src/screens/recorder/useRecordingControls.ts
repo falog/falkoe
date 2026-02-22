@@ -30,7 +30,7 @@ export function useRecordingControls({
   const { t } = useTranslation();
   const [isRecording, setIsRecording] = useState(false);
   const [pendingRecordedPath, setPendingRecordedPath] = useState<string | null>(
-    null
+    null,
   );
 
   const sentenceHashRef = useRef(sentenceHash);
@@ -39,6 +39,29 @@ export function useRecordingControls({
   const setRecognizingRef = useRef(setRecognizing);
   const setTranscriptsRef = useRef(setTranscripts);
   const setIsTranscribingRef = useRef(setIsTranscribing);
+
+  const ensureMicPermission = useCallback(async () => {
+    const ua =
+      typeof navigator !== "undefined" ? (navigator.userAgent ?? "") : "";
+    if (!/Android/i.test(ua)) return;
+    if (!navigator.mediaDevices?.getUserMedia) return;
+
+    // Best-effort: some WebView environments deny getUserMedia() even when the
+    // native (cpal-based) recorder can still work via the Tauri plugin.
+    // Never block recording start on this warm-up call.
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      for (const track of stream.getTracks()) {
+        try {
+          track.stop();
+        } catch {
+          // ignore
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
 
   useEffect(() => {
     sentenceHashRef.current = sentenceHash;
@@ -59,14 +82,15 @@ export function useRecordingControls({
   const handleStartRecording = useCallback(async () => {
     try {
       if (pendingRecordedPath) return;
+      await ensureMicPermission();
       await startRecording();
       setIsRecording(true);
     } catch (e) {
       message.error(
-        `${t("screens.recorder.messages.recordingStartFailed")}${String(e)}`
+        `${t("screens.recorder.messages.recordingStartFailed")}${String(e)}`,
       );
     }
-  }, [pendingRecordedPath, t]);
+  }, [ensureMicPermission, pendingRecordedPath, t]);
 
   const handleStopRecording = useCallback(async () => {
     setIsRecording(false);
@@ -75,7 +99,34 @@ export function useRecordingControls({
       const recordedPath = await stopRecording();
       setPendingRecordedPath(recordedPath);
     } catch (e) {
-      message.error(t("screens.recorder.messages.saveRecordingFailed"));
+      console.warn("[useRecordingControls] stopRecording failed; attempting recovery", e);
+
+      // Recovery: sometimes the recorder produces a temp wav but stopRecording()
+      // fails (e.g. finalize error). Try to locate the newest temp file.
+      try {
+        const temps = await invoke<string[]>("list_temp_recordings");
+        if (temps?.length) {
+          // Try newest-first and only accept a file that looks like a valid WAV
+          // (we use ensure_wav_pcm16 as a best-effort validator/normalizer).
+          for (let i = temps.length - 1; i >= 0; i--) {
+            const candidate = temps[i];
+            if (!candidate) continue;
+            try {
+              await invoke("ensure_wav_pcm16", { path: candidate });
+              setPendingRecordedPath(candidate);
+              return;
+            } catch {
+              // keep trying older temp files
+            }
+          }
+        }
+      } catch (recoverErr) {
+        console.warn("[useRecordingControls] temp recording recovery failed", recoverErr);
+      }
+
+      message.error(
+        `${t("screens.recorder.messages.saveRecordingFailed")}${String(e)}`,
+      );
       await refreshFilesRef.current();
       return;
     }
@@ -93,10 +144,12 @@ export function useRecordingControls({
         srcPath: recordedPath,
         sentenceHash: sentenceHashRef.current,
       });
-    } catch {
+    } catch (e) {
       // If moving failed, keep the pending path so user can retry.
       setPendingRecordedPath(recordedPath);
-      message.error(t("screens.recorder.messages.saveRecordingFailed"));
+      message.error(
+        `${t("screens.recorder.messages.saveRecordingFailed")}${String(e)}`,
+      );
       await refreshFilesRef.current();
       return;
     }
@@ -128,7 +181,7 @@ export function useRecordingControls({
       });
       setIsTranscribingRef.current(false);
       message.info(
-        t("screens.recorder.messages.recordingSavedTranscribeLater")
+        t("screens.recorder.messages.recordingSavedTranscribeLater"),
       );
     }
 

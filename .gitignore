@@ -37,6 +37,8 @@ npm-debug.log*
 # Whisper models
 models/
 *.bin
+# But keep MeCab dictionary .bin files
+!src-tauri/resources/mecab/**/*.bin
 
 # Local scratch / samples
 tmp/

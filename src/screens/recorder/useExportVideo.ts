@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { documentDir, join, videoDir } from "@tauri-apps/api/path";
+import { join, videoDir } from "@tauri-apps/api/path";
+import { getFalkoeStorageRootDir } from "../../utils/storageRoot";
 import {
   exists,
   mkdir,
@@ -130,39 +131,6 @@ const confirmExportWithMissingTranscripts = (
   });
 };
 
-const confirmCreateMissingReferenceAudio = (
-  t: TFunction,
-  kind: "model" | "uploaded",
-): Promise<boolean> => {
-  return new Promise((resolve) => {
-    const titleKey =
-      kind === "model"
-        ? "screens.recorder.export.confirmCreateModelAudio.title"
-        : "screens.recorder.export.confirmCreateUploadedAudio.title";
-    const contentKey =
-      kind === "model"
-        ? "screens.recorder.export.confirmCreateModelAudio.content"
-        : "screens.recorder.export.confirmCreateUploadedAudio.content";
-    const okKey =
-      kind === "model"
-        ? "screens.recorder.export.confirmCreateModelAudio.ok"
-        : "screens.recorder.export.confirmCreateUploadedAudio.ok";
-    const cancelKey =
-      kind === "model"
-        ? "screens.recorder.export.confirmCreateModelAudio.cancel"
-        : "screens.recorder.export.confirmCreateUploadedAudio.cancel";
-
-    Modal.confirm({
-      title: t(titleKey),
-      content: t(contentKey),
-      okText: t(okKey),
-      cancelText: t(cancelKey),
-      onOk: () => resolve(true),
-      onCancel: () => resolve(false),
-    });
-  });
-};
-
 const renderSvgToPngFile = async (
   svgResult: PitchChartSvgResult,
   outPath: string,
@@ -210,7 +178,6 @@ export function useExportVideo(params: {
   recordings: Recording[];
   transcripts: Record<string, any>;
   token: PitchChartSvgOptions["token"];
-  recognizeModel: () => Promise<void>;
 }) {
   const { t } = useTranslation();
   const {
@@ -224,7 +191,6 @@ export function useExportVideo(params: {
     recordings,
     transcripts,
     token,
-    recognizeModel,
   } = params;
 
   const [isExportingVideo, setIsExportingVideo] = useState(false);
@@ -248,8 +214,8 @@ export function useExportVideo(params: {
 
     const cleanupVideoTmp = async () => {
       try {
-        const doc = await documentDir();
-        const falkoeDir = await join(doc, "falkoe");
+        const storageRoot = await getFalkoeStorageRootDir();
+        const falkoeDir = await join(storageRoot, "falkoe");
 
         // Remove our temp base (PNG renders etc.).
         if (tmpBase && (await exists(tmpBase))) {
@@ -284,7 +250,7 @@ export function useExportVideo(params: {
         String(Date.now()),
       );
 
-      tmpBase = await join(await documentDir(), "falkoe", baseDir);
+      tmpBase = await join(await getFalkoeStorageRootDir(), "falkoe", baseDir);
       if (!(await exists(tmpBase))) {
         await mkdir(tmpBase, { recursive: true });
       }
@@ -306,7 +272,7 @@ export function useExportVideo(params: {
       }> = [];
 
       const sentenceDir = await join(
-        await documentDir(),
+        await getFalkoeStorageRootDir(),
         "falkoe",
         "sentences",
         sentenceHash,
@@ -343,20 +309,6 @@ export function useExportVideo(params: {
       );
 
       const ensureReferenceAnalyzed = async () => {
-        // Simulate pressing the "模範音声を音声認識する" button:
-        // reuse the same handler so UI state (spinner etc.) behaves consistently.
-        // Note: the actual whisper work happens in background; we wait on output files below.
-
-        if (sourceKind === "uploaded") {
-          if (!uploadedAudioPath) {
-            throw new Error(t("screens.recorder.export.missingUploadedPath"));
-          }
-        } else {
-          if (!sentenceAudioUrl) {
-            throw new Error(t("screens.recorder.export.missingModelUrl"));
-          }
-        }
-
         const wavExists = await exists(refWav);
         const transcriptCandidateExists = await exists(refTranscript);
         const pitchCandidateExists = await exists(refPitch);
@@ -368,12 +320,34 @@ export function useExportVideo(params: {
           ? Boolean(await waitForJsonFile<any>(refPitch, 1500))
           : false;
 
+        // Only invoke whisper when artifacts are missing.
         const shouldRun = !wavExists || !pitchOk || !transcriptOk;
         if (shouldRun) {
-          await recognizeModel();
+          // Validate that we have enough info to fetch/create the reference audio.
+          if (sourceKind === "uploaded") {
+            if (!uploadedAudioPath) {
+              throw new Error(t("screens.recorder.export.missingUploadedPath"));
+            }
+            await invoke("run_whisper_uploaded", {
+              uploadedPath: uploadedAudioPath,
+              sentenceHash,
+              lang: sentenceLang,
+            });
+          } else {
+            if (!sentenceAudioUrl) {
+              throw new Error(t("screens.recorder.export.missingModelUrl"));
+            }
+            await invoke("run_whisper_model", {
+              url: sentenceAudioUrl,
+              sentenceHash,
+              lang: sentenceLang,
+            });
+          }
         }
 
-        // Wait for required artifacts. Pitch is required for chart generation.
+        // Wait for required artifacts.  The invoke above already created the
+        // WAV synchronously; pitch analysis runs in a background thread so
+        // we still need to poll for it.
         const wavReady = await waitForFile(refWav, 120_000);
         const pitchJson = await waitForJsonFile<any>(refPitch, 120_000);
         if (!wavReady || !pitchJson) {
@@ -387,15 +361,6 @@ export function useExportVideo(params: {
 
         return { transcriptJson, pitchJson };
       };
-
-      // Reference segment (model/uploaded)
-      if (!(await exists(refWav))) {
-        const ok = await confirmCreateMissingReferenceAudio(
-          t,
-          sourceKind === "uploaded" ? "uploaded" : "model",
-        );
-        if (!ok) return;
-      }
 
       const { pitchJson: refPitchAnalysis } = await ensureReferenceAnalyzed();
       const refAccentWords = isJapanese(sentenceLang)
@@ -550,7 +515,6 @@ export function useExportVideo(params: {
   }, [
     isExportingVideo,
     recordings,
-    recognizeModel,
     sentenceAudioUrl,
     sentenceHash,
     sentenceLang,

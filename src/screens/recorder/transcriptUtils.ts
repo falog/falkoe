@@ -1,5 +1,7 @@
-import { BaseDirectory, readTextFile } from "@tauri-apps/plugin-fs";
+import { readTextFile } from "@tauri-apps/plugin-fs";
+import { join } from "@tauri-apps/api/path";
 import type { Recording, Transcript } from "../../types/recording";
+import { getFalkoeStorageRootDir } from "../../utils/storageRoot";
 
 export function parseRecording(str: string): Recording {
   // Backward-compatible: older builds returned "path|fileName|timestamp|dateLabel".
@@ -48,17 +50,13 @@ export async function loadModelTranscript(
   sentenceHash: string
 ): Promise<Transcript | null> {
   try {
-    const basePath = `falkoe/sentences/${sentenceHash}/model`;
+    const root = await getFalkoeStorageRootDir();
+    const baseDir = await join(root, "falkoe", "sentences", sentenceHash, "model");
 
-    const candidates = [
-      `${basePath}/model.json`,
-      `${basePath}/transcript.json`,
-    ];
+    const candidates = [await join(baseDir, "model.json"), await join(baseDir, "transcript.json")];
     for (const path of candidates) {
       try {
-        const text = await readTextFile(path, {
-          baseDir: BaseDirectory.Document,
-        });
+        const text = await readTextFile(path);
         return JSON.parse(text) as Transcript;
       } catch {}
     }

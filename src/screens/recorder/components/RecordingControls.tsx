@@ -1,11 +1,9 @@
 import { Button, Modal, Space, Typography } from "antd";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { ModelStatus } from "../../../types/model";
 
 type Props = {
   isRecording: boolean;
-  status: ModelStatus;
   onMimic?: () => void;
   mimicDisabled?: boolean;
   mimicLoading?: boolean;
@@ -19,7 +17,6 @@ type Props = {
 
 export function RecordingControls({
   isRecording,
-  status,
   onMimic,
   mimicDisabled,
   mimicLoading,
@@ -52,13 +49,7 @@ export function RecordingControls({
         <Space>
           <Button
             type="primary"
-            disabled={
-              !onMimic ||
-              mimicDisabled ||
-              mimicLoading ||
-              isRecording ||
-              status !== "ready"
-            }
+            disabled={!onMimic || mimicDisabled || mimicLoading || isRecording}
             loading={mimicLoading}
             onClick={onMimic}
             style={{ width: 120 }}
@@ -68,7 +59,7 @@ export function RecordingControls({
 
           <Button
             type="primary"
-            disabled={pendingSave || isRecording || status !== "ready"}
+            disabled={pendingSave || isRecording}
             onClick={onStartRecording}
             style={{ width: 120 }}
           >

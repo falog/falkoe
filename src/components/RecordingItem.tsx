@@ -35,7 +35,10 @@ type Props = {
   recognizing?: boolean;
   recognize?: (rec: Recording) => void;
   audioUrl?: string;
-  ensureAudioUrl?: (rec: Recording, opts?: { forceBlob?: boolean }) => void;
+  ensureAudioUrl?: (
+    rec: Recording,
+    opts?: { forceBlob?: boolean; forceReload?: boolean }
+  ) => Promise<string | null>;
   addToAnki: (rec: Recording) => void;
 };
 
@@ -71,6 +74,7 @@ export default function RecordingItem({
   const [playheadTime, setPlayheadTime] = useState<number | null>(null);
   const rafIdRef = useRef<number | null>(null);
   const lastSetRef = useRef<number>(0);
+  const repairTriedRef = useRef<Record<string, boolean>>({});
 
   const handleRecognizeClick = () => {
     recognize?.(rec);
@@ -84,6 +88,15 @@ export default function RecordingItem({
     if (audioUrl) return;
     ensureAudioUrl?.(rec);
   };
+
+  // On some mobile WebViews, the built-in <audio> play button is disabled
+  // until a valid src is present, and pointer events may not fire reliably
+  // on the disabled control. Eagerly load a Blob URL when needed.
+  useEffect(() => {
+    if (audioUrl) return;
+    if (!ensureAudioUrl) return;
+    void ensureAudioUrl(rec, { forceBlob: true });
+  }, [audioUrl, ensureAudioUrl, rec]);
 
   useEffect(() => {
     pitchRequestedRef.current = false;
@@ -170,8 +183,32 @@ export default function RecordingItem({
       mediaError: audioRef.current?.error,
     });
 
-    // asset protocol 等が失敗した場合は Blob にフォールバックする
-    ensureAudioUrl?.(rec, { forceBlob: true });
+    void (async () => {
+      // If the underlying WAV is in an incompatible format (e.g. float WAV),
+      // try to repair it in-place and force-reload the Blob URL.
+      if (/\.wav$/i.test(rec.path) && !repairTriedRef.current[rec.path]) {
+        repairTriedRef.current[rec.path] = true;
+        try {
+          await invoke("ensure_wav_pcm16", { path: rec.path });
+        } catch (e) {
+          console.warn("[RecordingItem] ensure_wav_pcm16 failed", e);
+        }
+      }
+
+      // asset protocol 等が失敗した場合は Blob にフォールバックする
+      const url = await ensureAudioUrl?.(rec, {
+        forceBlob: true,
+        forceReload: true,
+      });
+      if (url && audioRef.current) {
+        audioRef.current.src = url;
+        try {
+          audioRef.current.load();
+        } catch {
+          // ignore
+        }
+      }
+    })();
   };
 
   useEffect(() => {

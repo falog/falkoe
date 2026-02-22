@@ -4,10 +4,13 @@ import { message } from "antd";
 import { guessAudioMimeFromPath, isHttpUrl } from "./audioUtils";
 import type { SourceKind } from "../../types/speech";
 import { useTranslation } from "react-i18next";
+import { isAndroidRuntime } from "../../utils/runtimePlatform";
 
 type HeaderAudioArgs = {
   sourceKind: SourceKind;
   sentenceAudioUrl: string;
+  /** Additional URLs to try when the primary sentenceAudioUrl fails (e.g. 404). */
+  sentenceAudioUrlFallbacks?: string[];
   sentenceHash: string;
   uploadedAudioPath: string | null;
   preferAssetProtocol: boolean;
@@ -21,6 +24,7 @@ export function useHeaderAudioUrl(args: HeaderAudioArgs) {
   const {
     sourceKind,
     sentenceAudioUrl,
+    sentenceAudioUrlFallbacks,
     sentenceHash,
     uploadedAudioPath,
     preferAssetProtocol,
@@ -128,27 +132,46 @@ export function useHeaderAudioUrl(args: HeaderAudioArgs) {
         if (isHttpUrl(sentenceAudioUrl)) {
           try {
             // Prefer caching to local file to avoid repeated network fetches.
+            // Try the primary URL first, then fallbacks (e.g. the legacy
+            // audio.tatoeba.org path often 404s for non-English sentences).
             if (sentenceHash) {
-              const cachedPath = await invoke<string>(
-                "ensure_sentence_audio_cached",
-                {
-                  audioId: sentenceHash,
-                  url: sentenceAudioUrl,
-                }
-              );
+              const candidates = [
+                sentenceAudioUrl,
+                ...(sentenceAudioUrlFallbacks ?? []),
+              ].filter((u) => u.trim().length > 0);
 
-              // Use blob URLs for local cached audio for best WebView compatibility.
-              // Some WebViews can be picky about custom protocols / MIME handling.
-              const blobUrl = await ensureBlobAudioUrl(cachedPath);
-              if (!cancelled) {
-                setState({
-                  key: headerAudioKey,
-                  url: blobUrl ?? sentenceAudioUrl,
-                  loading: false,
-                  owner: blobUrl ? "cache" : "none",
-                });
+              let cachedPath: string | null = null;
+              for (const url of candidates) {
+                try {
+                  cachedPath = await invoke<string>(
+                    "ensure_sentence_audio_cached",
+                    {
+                      audioId: sentenceHash,
+                      url,
+                    },
+                  );
+                  break;
+                } catch {
+                  // try next candidate
+                }
               }
-              return;
+
+              if (cachedPath) {
+                // Use blob URLs for local cached audio for best WebView compatibility.
+                // Some WebViews can be picky about custom protocols / MIME handling.
+                const blobUrl = await ensureBlobAudioUrl(cachedPath);
+                if (!cancelled) {
+                  setState({
+                    key: headerAudioKey,
+                    url:
+                      blobUrl ?? (isAndroidRuntime() ? null : sentenceAudioUrl),
+                    loading: false,
+                    owner: blobUrl ? "cache" : "none",
+                  });
+                }
+                return;
+              }
+              // All candidates failed — fall through to base64 fetch path.
             }
 
             const base64Data = await invoke<string>("fetch_audio_base64", {
@@ -177,12 +200,12 @@ export function useHeaderAudioUrl(args: HeaderAudioArgs) {
           } catch (fetchError) {
             console.warn(
               "[useHeaderAudioUrl] fetch_audio_base64 failed; fallback to direct URL",
-              fetchError
+              fetchError,
             );
             if (!cancelled) {
               setState({
                 key: headerAudioKey,
-                url: sentenceAudioUrl,
+                url: isAndroidRuntime() ? null : sentenceAudioUrl,
                 loading: false,
                 owner: "none",
               });
@@ -204,7 +227,7 @@ export function useHeaderAudioUrl(args: HeaderAudioArgs) {
         console.error("[useHeaderAudioUrl] Failed:", e);
         if (!cancelled) {
           message.error(
-            `${t("screens.recorder.messages.audioLoadFailed")}${String(e)}`
+            `${t("screens.recorder.messages.audioLoadFailed")}${String(e)}`,
           );
           setState({
             key: headerAudioKey,
@@ -231,6 +254,7 @@ export function useHeaderAudioUrl(args: HeaderAudioArgs) {
     toAssetUrl,
     hasUploadedFile,
     headerAudioKey,
+    sentenceAudioUrlFallbacks,
     t,
   ]);
 

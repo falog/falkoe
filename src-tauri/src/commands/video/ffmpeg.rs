@@ -8,6 +8,14 @@ use tauri::{AppHandle, Manager};
 use std::os::windows::process::CommandExt;
 
 fn resolve_bundled_tool(app: &AppHandle, base_name: &str) -> Option<PathBuf> {
+    // On Android, binaries are bundled as lib<name>.so in the native library directory.
+    #[cfg(target_os = "android")]
+    {
+        if let Some(p) = resolve_android_native_lib(base_name) {
+            return Some(p);
+        }
+    }
+
     let resource_dir = app.path().resource_dir().ok()?;
     let exe_name = if cfg!(target_os = "windows") {
         format!("{base_name}.exe")
@@ -25,6 +33,68 @@ fn resolve_bundled_tool(app: &AppHandle, base_name: &str) -> Option<PathBuf> {
     ];
 
     candidates.into_iter().find(|p| p.is_file())
+}
+
+/// On Android, native libraries from jniLibs are extracted to a directory
+/// like `/data/app/.../lib/arm64/`.  We find that directory by parsing
+/// /proc/self/maps for our own library (`libfalkoe_lib.so`), then look for
+/// `lib<base_name>.so` next to it.
+#[cfg(target_os = "android")]
+fn resolve_android_native_lib(base_name: &str) -> Option<PathBuf> {
+    let so_name = format!("lib{base_name}.so");
+
+    // Fast path: derive from the directory of our own shared library.
+    if let Ok(maps) = std::fs::read_to_string("/proc/self/maps") {
+        for line in maps.lines() {
+            if line.contains("libfalkoe_lib.so") {
+                // line format: "addr-addr perms offset dev inode  /path/to/lib.so"
+                if let Some(path_start) = line.rfind('/') {
+                    let dir = &line[line.find('/').unwrap_or(0)..path_start];
+                    let candidate = PathBuf::from(dir).join(&so_name);
+                    if candidate.is_file() {
+                        return Some(candidate);
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback: check well-known locations.
+    let pkg = "com.fal.falkoe";
+    for abi_dir in ["arm64", "arm", "x86_64", "x86"] {
+        let candidate = PathBuf::from(format!("/data/data/{pkg}/lib/{abi_dir}/{so_name}"));
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+
+    None
+}
+
+/// Return video encoding arguments appropriate for the current platform.
+///
+/// On Android we use `ultrafast` preset to favour encoding speed on mobile;
+/// on desktop we use `veryfast` for a better size/speed balance.
+pub(crate) fn h264_encoding_args() -> Vec<String> {
+    #[cfg(target_os = "android")]
+    let preset = "ultrafast";
+    #[cfg(not(target_os = "android"))]
+    let preset = "veryfast";
+
+    vec![
+        "-c:v".into(),
+        "libx264".into(),
+        "-preset".into(),
+        preset.into(),
+        "-crf".into(),
+        "28".into(),
+        "-profile:v".into(),
+        "baseline".into(),
+        "-movflags".into(),
+        "+faststart".into(),
+        "-pix_fmt".into(),
+        "yuv420p".into(),
+    ]
 }
 
 pub(crate) fn run_ffmpeg(app: &AppHandle, args: &[String]) -> Result<()> {
@@ -116,22 +186,40 @@ pub(crate) fn escape_filter_path(p: &Path) -> String {
         .replace(']', "\\]")
 }
 
-fn windows_drawtext_fontfile_opt() -> String {
-    if !cfg!(target_os = "windows") {
-        return String::new();
+/// Return a `:fontfile='...'` fragment for the drawtext filter on platforms
+/// where fontconfig is unavailable (Windows, Android).  Returns an empty
+/// string on Linux/macOS where fontconfig handles font discovery.
+pub(crate) fn drawtext_fontfile_opt() -> String {
+    #[cfg(target_os = "windows")]
+    {
+        // Prefer fonts that usually exist on Windows and support Japanese.
+        let candidates = [
+            r"C:\\Windows\\Fonts\\meiryo.ttc",
+            r"C:\\Windows\\Fonts\\YuGothR.ttc",
+            r"C:\\Windows\\Fonts\\msgothic.ttc",
+        ];
+        for c in candidates {
+            let p = Path::new(c);
+            if p.is_file() {
+                return format!(":fontfile='{}'", escape_filter_path(p));
+            }
+        }
     }
 
-    // Prefer fonts that usually exist on Windows and support Japanese.
-    let candidates = [
-        r"C:\\Windows\\Fonts\\meiryo.ttc",
-        r"C:\\Windows\\Fonts\\YuGothR.ttc",
-        r"C:\\Windows\\Fonts\\msgothic.ttc",
-    ];
-
-    for c in candidates {
-        let p = Path::new(c);
-        if p.is_file() {
-            return format!(":fontfile='{}'", escape_filter_path(p));
+    #[cfg(target_os = "android")]
+    {
+        // Android system fonts that support Japanese / CJK.
+        let candidates = [
+            "/system/fonts/NotoSansCJK-Regular.ttc",
+            "/system/fonts/NotoSansJP-Regular.otf",
+            "/system/fonts/DroidSansFallback.ttf",
+            "/system/fonts/Roboto-Regular.ttf",
+        ];
+        for c in candidates {
+            let p = Path::new(c);
+            if p.is_file() {
+                return format!(":fontfile='{}'", escape_filter_path(p));
+            }
         }
     }
 
@@ -150,7 +238,7 @@ fn build_gap_clip_args(
     let dur = dur_sec.max(0.1);
     let color = format!("color=c=black:s={}x{}:d={:.3}", w.max(1), h.max(1), dur);
 
-    let font_opt = windows_drawtext_fontfile_opt();
+    let font_opt = drawtext_fontfile_opt();
     let mut vf_parts: Vec<String> = vec![
         format!(
             "drawtext=textfile='{}'{}:x=(w-text_w)/2:y=8:fontcolor=white:fontsize=26:box=1:boxcolor=black@0.35:boxborderw=8",
@@ -176,7 +264,7 @@ fn build_gap_clip_args(
 
     let vf = vf_parts.join(",");
 
-    vec![
+    let mut args = vec![
         "-y".into(),
         "-f".into(),
         "lavfi".into(),
@@ -191,18 +279,9 @@ fn build_gap_clip_args(
         "-vf".into(),
         vf,
         "-shortest".into(),
-        "-c:v".into(),
-        "libx264".into(),
-        "-preset".into(),
-        "veryfast".into(),
-        "-crf".into(),
-        "28".into(),
-        "-profile:v".into(),
-        "baseline".into(),
-        "-movflags".into(),
-        "+faststart".into(),
-        "-pix_fmt".into(),
-        "yuv420p".into(),
+    ];
+    args.extend(h264_encoding_args());
+    args.extend([
         "-c:a".into(),
         "aac".into(),
         "-b:a".into(),
@@ -212,7 +291,8 @@ fn build_gap_clip_args(
         "-ac".into(),
         "2".into(),
         out_path.to_string_lossy().to_string(),
-    ]
+    ]);
+    args
 }
 
 pub(crate) fn create_gap_clip_with_text(

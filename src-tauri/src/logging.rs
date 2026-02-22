@@ -288,7 +288,10 @@ pub(crate) fn init(app: &AppHandle) {
 
         // Route whisper.cpp / ggml logs into the Rust `log` backend.
         // With `log_backend` enabled, this captures Vulkan backend lines like `ggml_vulkan: ...`.
-        whisper_rs::install_logging_hooks();
+        #[cfg(feature = "whisper")]
+        {
+            whisper_rs::install_logging_hooks();
+        }
     });
 
     // Write an explicit marker so we know logging initialized.

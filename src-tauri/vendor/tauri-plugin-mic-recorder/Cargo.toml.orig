@@ -15,7 +15,7 @@ links = "tauri-plugin-mic-recorder"
 tauri = { version = "2" }
 serde = "1"
 thiserror = "2"
-cpal = "0.15"
+cpal = { version = "0.15", features = ["oboe-shared-stdcxx"] }
 hound = "3.5"
 clap = { version = "4", features = ["derive"] }
 chrono = "0.4"

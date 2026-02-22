@@ -23,7 +23,7 @@ exclude = [
     "/guest-js",
     "/node_modules",
 ]
-autolib = false
+#autolib = false
 autobins = false
 autoexamples = false
 autotests = false
@@ -55,6 +55,7 @@ features = ["derive"]
 
 [dependencies.cpal]
 version = "0.15"
+features = ["oboe-shared-stdcxx"]
 
 [dependencies.hound]
 version = "3.5"

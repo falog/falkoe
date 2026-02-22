@@ -38,9 +38,9 @@ pub struct TimedToken {
 }
 
 #[derive(Debug, Clone)]
-struct MecabToken {
-    surface: String,
-    pos: String,
+pub(crate) struct MecabToken {
+    pub(crate) surface: String,
+    pub(crate) pos: String,
 }
 
 fn char_len(s: &str) -> usize {
@@ -546,17 +546,34 @@ fn mecab_timed_tokens_inner(
         return None;
     }
 
-    // 1) MeCab tokenize (try candidates in order)
+    // 1) MeCab tokenize – prefer the embedded native tokenizer (works everywhere
+    //    including Android), then fall back to external MeCab binary.
     let mut mecab_raw: Option<Vec<MecabToken>> = None;
-    for rt in mecab_runtime_candidates(app) {
+
+    // 1a) Native tokenizer (lindera / embedded ipadic)
+    if let Some(tokens) = super::mecab_native::tokenize_native(text) {
+        mecab_raw = Some(tokens);
         if debug_enabled() {
-            println!("[mecab] trying cmd={:?} dicdir={:?}", rt.cmd, rt.dicdir);
+            println!("[mecab] native tokenizer succeeded (lindera/ipadic)");
         }
-        if let Some(v) = run_mecab(text, &rt, app) {
-            mecab_raw = Some(v);
-            break;
+        if let Some(app) = app {
+            crate::logging::log_line(app, "[mecab] using native tokenizer (lindera/ipadic)");
         }
     }
+
+    // 1b) External MeCab binary (fallback for diagnostic / custom-dictionary use)
+    if mecab_raw.is_none() {
+        for rt in mecab_runtime_candidates(app) {
+            if debug_enabled() {
+                println!("[mecab] trying cmd={:?} dicdir={:?}", rt.cmd, rt.dicdir);
+            }
+            if let Some(v) = run_mecab(text, &rt, app) {
+                mecab_raw = Some(v);
+                break;
+            }
+        }
+    }
+
     let mecab_raw = match mecab_raw {
         Some(v) => v,
         None => {
