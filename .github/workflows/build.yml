@@ -658,12 +658,14 @@ jobs:
           echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$ks_path"
           echo "[info] Keystore written to $ks_path ($(wc -c < "$ks_path") bytes)"
 
-          cat > src-tauri/gen/android/key.properties <<EOF
+          cat > src-tauri/gen/android/key.properties <<KEYEOF
           storeFile=$ks_path
           storePassword=$ANDROID_KEYSTORE_PASSWORD
           keyAlias=$ANDROID_KEY_ALIAS
           keyPassword=$ANDROID_KEY_PASSWORD
-          EOF
+          KEYEOF
+          # strip leading whitespace injected by YAML indentation
+          sed -i 's/^[[:space:]]*//' src-tauri/gen/android/key.properties
           echo "[info] key.properties created"
 
       # ── Build ──
