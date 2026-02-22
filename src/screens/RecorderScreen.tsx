@@ -2,6 +2,7 @@ import { useRef } from "react";
 import { Button, Space, Row, Col } from "antd";
 import { useTranslation } from "react-i18next";
 import { unlockAudioFromUserGesture } from "../utils/ipaPlayer";
+import { isAndroidRuntime } from "../utils/runtimePlatform";
 import TopNav from "../components/TopNav";
 import { RecorderHeader } from "./recorder/components/RecorderHeader";
 import { ModelTranscriptSection } from "./recorder/components/ModelTranscriptSection";
@@ -132,13 +133,15 @@ const RecorderScreen = ({
             status={status}
             progress={progress}
             headerRight={
-              <Button
-                onClick={handleExportVideo}
-                loading={isExportingVideo}
-                disabled={isExportingVideo}
-              >
-                {t("screens.recorder.exportVideo")}
-              </Button>
+              !isAndroidRuntime() && (
+                <Button
+                  onClick={handleExportVideo}
+                  loading={isExportingVideo}
+                  disabled={isExportingVideo}
+                >
+                  {t("screens.recorder.exportVideo")}
+                </Button>
+              )
             }
           />
         </Space>

@@ -72,6 +72,20 @@ if [[ ! -d "$FREETYPE_SRC" ]]; then
     tar -xf "$FREETYPE_TARBALL" -C "$BUILD_BASE"
 fi
 
+# --- harfbuzz source (needed for drawtext filter alongside freetype) ---
+HARFBUZZ_VERSION="${HARFBUZZ_VERSION:-10.4.0}"
+HARFBUZZ_SRC="$BUILD_BASE/harfbuzz-$HARFBUZZ_VERSION"
+if [[ ! -d "$HARFBUZZ_SRC" ]]; then
+    HARFBUZZ_TARBALL="$BUILD_BASE/harfbuzz-${HARFBUZZ_VERSION}.tar.xz"
+    if [[ ! -f "$HARFBUZZ_TARBALL" ]]; then
+        echo "Downloading harfbuzz $HARFBUZZ_VERSION ..."
+        curl -L "https://github.com/harfbuzz/harfbuzz/releases/download/${HARFBUZZ_VERSION}/harfbuzz-${HARFBUZZ_VERSION}.tar.xz" \
+            -o "$HARFBUZZ_TARBALL"
+    fi
+    echo "Extracting harfbuzz ..."
+    tar -xf "$HARFBUZZ_TARBALL" -C "$BUILD_BASE"
+fi
+
 # --- API level (must match Tauri minSdkVersion) ---
 API=26
 
@@ -239,6 +253,82 @@ build_freetype_for_abi() {
     echo "=> freetype installed to $PREFIX"
 }
 
+build_harfbuzz_for_abi() {
+    local abi="$1"
+    local triple="${ABI_TRIPLE[$abi]}"
+    local CC="$TOOLCHAIN/bin/${triple}${API}-clang"
+    local CXX="$TOOLCHAIN/bin/${triple}${API}-clang++"
+    local at_host="${ABI_AUTOTOOLS_HOST[$abi]}"
+    local PREFIX="$BUILD_BASE/harfbuzz-install-$abi"
+    local BUILD_DIR="$BUILD_BASE/harfbuzz-build-$abi"
+    local FT_PREFIX="$BUILD_BASE/freetype-install-$abi"
+
+    if [[ -f "$PREFIX/lib/libharfbuzz.a" ]]; then
+        echo "harfbuzz already built for $abi, skipping."
+        return
+    fi
+
+    echo "Building harfbuzz for $abi ..."
+    rm -rf "$BUILD_DIR"
+    mkdir -p "$BUILD_DIR"
+    cd "$BUILD_DIR"
+
+    # meson cpu_family: i686 → x86 (meson convention)
+    local meson_cpu_family="${ABI_ARCH[$abi]}"
+    if [[ "$meson_cpu_family" == "i686" ]]; then
+        meson_cpu_family="x86"
+    fi
+
+    # harfbuzz uses meson; fall back to the bundled autotools configure if available.
+    # For simplicity we use meson cross-compilation.
+    if command -v meson &>/dev/null; then
+        cat > "$BUILD_DIR/cross.txt" << CROSSEOF
+[binaries]
+c = '$CC'
+cpp = '$CXX'
+ar = '$TOOLCHAIN/bin/llvm-ar'
+strip = '$TOOLCHAIN/bin/llvm-strip'
+pkgconfig = 'pkg-config'
+
+[host_machine]
+system = 'android'
+cpu_family = '$meson_cpu_family'
+cpu = '${ABI_ARCH[$abi]}'
+endian = 'little'
+
+[built-in options]
+c_args = ['-fPIC', '-Os', '-I$FT_PREFIX/include/freetype2']
+cpp_args = ['-fPIC', '-Os', '-I$FT_PREFIX/include/freetype2']
+c_link_args = ['-L$FT_PREFIX/lib']
+cpp_link_args = ['-L$FT_PREFIX/lib']
+CROSSEOF
+
+        PKG_CONFIG_PATH="$FT_PREFIX/lib/pkgconfig" \
+        PKG_CONFIG_LIBDIR="$FT_PREFIX/lib/pkgconfig" \
+        meson setup "$BUILD_DIR/_meson" "$HARFBUZZ_SRC" \
+            --cross-file "$BUILD_DIR/cross.txt" \
+            --prefix="$PREFIX" \
+            --default-library=static \
+            --buildtype=release \
+            -Dfreetype=enabled \
+            -Dglib=disabled \
+            -Dgobject=disabled \
+            -Dcairo=disabled \
+            -Dicu=disabled \
+            -Dintrospection=disabled \
+            -Dtests=disabled \
+            -Ddocs=disabled
+
+        ninja -C "$BUILD_DIR/_meson" -j"$(nproc)"
+        ninja -C "$BUILD_DIR/_meson" install
+    else
+        echo "ERROR: meson is required to cross-compile harfbuzz. Install with: pip3 install meson ninja" >&2
+        exit 1
+    fi
+
+    echo "=> harfbuzz installed to $PREFIX"
+}
+
 build_for_abi() {
     local abi="$1"
     local arch="${ABI_ARCH[$abi]}"
@@ -278,13 +368,19 @@ TLSEOF
     "$CC" -c -fno-emulated-tls -fPIC "$BUILD_DIR/_force_tls_align.c" -o "$TLS_ALIGN_OBJ"
     echo "Built TLS alignment helper: $TLS_ALIGN_OBJ"
 
-    # --- Build x264 and freetype for this ABI ---
+    # --- Build x264, freetype, and harfbuzz for this ABI ---
     build_x264_for_abi "$abi"
     build_freetype_for_abi "$abi"
+    build_harfbuzz_for_abi "$abi"
+
+    # Return to build dir (the sub-builds cd elsewhere).
+    cd "$BUILD_DIR"
 
     local X264_PREFIX="$BUILD_BASE/x264-install-$abi"
     local FT_PREFIX="$BUILD_BASE/freetype-install-$abi"
-    export PKG_CONFIG_PATH="$X264_PREFIX/lib/pkgconfig:$FT_PREFIX/lib/pkgconfig"
+    local HB_PREFIX="$BUILD_BASE/harfbuzz-install-$abi"
+    export PKG_CONFIG_PATH="$X264_PREFIX/lib/pkgconfig:$FT_PREFIX/lib/pkgconfig:$HB_PREFIX/lib/pkgconfig"
+    export PKG_CONFIG_LIBDIR="$X264_PREFIX/lib/pkgconfig:$FT_PREFIX/lib/pkgconfig:$HB_PREFIX/lib/pkgconfig"
 
     "$FFMPEG_SRC/configure" \
         --prefix="$PREFIX" \
@@ -302,6 +398,8 @@ TLSEOF
         --enable-gpl \
         --enable-libx264 \
         --enable-libfreetype \
+        --enable-libharfbuzz \
+        --pkg-config=pkg-config \
         --disable-doc \
         --disable-htmlpages \
         --disable-manpages \
@@ -313,7 +411,6 @@ TLSEOF
         --disable-ffprobe \
         --disable-network \
         --disable-postproc \
-        --disable-avdevice \
         --disable-symver \
         --disable-debug \
         --disable-vulkan \
@@ -324,8 +421,8 @@ TLSEOF
         --enable-pic \
         --enable-jni \
         --enable-mediacodec \
-        --extra-cflags="-Os -fPIC -I$X264_PREFIX/include -I$FT_PREFIX/include/freetype2" \
-        --extra-ldflags="-static -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384 -L$X264_PREFIX/lib -L$FT_PREFIX/lib" \
+        --extra-cflags="-Os -fPIC -I$X264_PREFIX/include -I$FT_PREFIX/include/freetype2 -I$HB_PREFIX/include/harfbuzz" \
+        --extra-ldflags="-static -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384 -L$X264_PREFIX/lib -L$FT_PREFIX/lib -L$HB_PREFIX/lib" \
         --pkg-config-flags="--static" \
         --extra-ldexeflags="$TLS_ALIGN_OBJ" \
         $extra

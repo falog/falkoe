@@ -73,8 +73,7 @@ fn resolve_android_native_lib(base_name: &str) -> Option<PathBuf> {
 
 /// Return video encoding arguments appropriate for the current platform.
 ///
-/// The bundled ffmpeg is built with libx264 on all platforms.
-/// On Android we use `ultrafast` preset to favour encoding speed;
+/// On Android we use `ultrafast` preset to favour encoding speed on mobile;
 /// on desktop we use `veryfast` for a better size/speed balance.
 pub(crate) fn h264_encoding_args() -> Vec<String> {
     #[cfg(target_os = "android")]
