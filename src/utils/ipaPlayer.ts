@@ -299,7 +299,10 @@ function bytesLookLikeHtml(bytes: Uint8Array): boolean {
   for (let i = 0; i < max; i++) {
     const b = bytes[i];
     // skip leading whitespace
-    if (s.length === 0 && (b === 0x20 || b === 0x0a || b === 0x0d || b === 0x09)) {
+    if (
+      s.length === 0 &&
+      (b === 0x20 || b === 0x0a || b === 0x0d || b === 0x09)
+    ) {
       continue;
     }
     if (b === 0) break;
@@ -380,7 +383,10 @@ async function loadBundledAudioBytesViaHttp(
 
       // In dev, the frontend server can return index.html (200 OK) for unknown paths.
       // Don't treat that as audio.
-      if (/text\/html|application\/json|text\/plain/i.test(ct) || bytesLookLikeHtml(bytes)) {
+      if (
+        /text\/html|application\/json|text\/plain/i.test(ct) ||
+        bytesLookLikeHtml(bytes)
+      ) {
         continue;
       }
 
@@ -521,7 +527,16 @@ export async function playBundledAudio(resourcePath: string): Promise<void> {
     }
     const played = await playDecodedAudioWithWebAudio(bytes);
     if (played) return;
-    // fall back to HTMLAudio path below if decodeAudioData fails
+    // On Android, do NOT fall through to the HTMLAudio Blob-URL path.
+    // Some Android WebViews crash (native SIGSEGV) when loading audio from
+    // blob: URLs.  If WebAudio decoding also failed, give up gracefully.
+    console.warn(
+      "[ipaPlayer] Android: WebAudio decode failed, skipping Blob-URL fallback",
+      { path: mimeHintPath, bytes: bytes.byteLength },
+    );
+    throw new Error(
+      `Audio decode failed on Android (WebAudio unavailable) [path=${mimeHintPath} bytes=${bytes.byteLength}]`,
+    );
   }
 
   if (bytes && /\.wav$/i.test(mimeHintPath)) {
@@ -562,7 +577,7 @@ export async function playBundledAudio(resourcePath: string): Promise<void> {
     // Rapid hover can interrupt play() on many WebViews. Not a real error.
     if (isPlayInterruptedError(e)) return;
 
-     // Android WebView can fail to decode with HTMLAudio even when WebAudio works.
+    // Android WebView can fail to decode with HTMLAudio even when WebAudio works.
     if (isAndroidRuntime() && isNoSupportedSourceError(e)) {
       const played = await playDecodedAudioWithWebAudio(bytes);
       if (played) return;

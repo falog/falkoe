@@ -19,3 +19,11 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# ---------------------------------------------------------------------------
+# Keep classes called via JNI from Rust native code.
+# R8 cannot trace JNI call-sites, so these must be kept explicitly.
+# ---------------------------------------------------------------------------
+-keep class com.fal.falkoe.AssetReader {
+    public static *;
+}

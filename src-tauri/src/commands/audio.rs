@@ -24,6 +24,17 @@ use tauri::{AppHandle, Manager};
 fn read_android_asset(asset_path: &str) -> Result<Vec<u8>, String> {
     use jni::objects::{JByteArray, JClass, JValue};
 
+    /// Helper: if a Java exception is pending on `env`, clear it and return an
+    /// error string.  This guards against rare jni-rs edge-cases where
+    /// `ExceptionClear` is not called automatically (e.g. inside `.l()` or
+    /// `convert_byte_array`).  Leaving a pending exception would crash the
+    /// process on the *next* JNI call from any thread.
+    fn clear_any_pending_exception(env: &mut jni::JNIEnv) {
+        if env.exception_check().unwrap_or(false) {
+            let _ = env.exception_clear();
+        }
+    }
+
     // Get the JavaVM passed to JNI_OnLoad when this library was loaded.
     // This avoids referencing JNI_GetCreatedJavaVMs (not available on Android).
     let vm = crate::android_jni::java_vm()?;
@@ -34,76 +45,85 @@ fn read_android_asset(asset_path: &str) -> Result<Vec<u8>, String> {
         .attach_current_thread_permanently()
         .map_err(|e| format!("attach_current_thread: {e}"))?;
 
-    // ActivityThread.currentApplication() → Application (Context)
-    // ActivityThread is a framework class, so find_class (system classloader) works.
-    let activity_thread = env
-        .find_class("android/app/ActivityThread")
-        .map_err(|e| format!("find ActivityThread: {e}"))?;
-    let app = env
-        .call_static_method(
-            activity_thread,
-            "currentApplication",
-            "()Landroid/app/Application;",
-            &[],
-        )
-        .map_err(|e| format!("currentApplication: {e}"))?
-        .l()
-        .map_err(|e| format!("currentApplication .l(): {e}"))?;
+    // Wrap the entire JNI interaction so we can guarantee exception-clear on error.
+    let result = (|| -> Result<Vec<u8>, String> {
+        // ActivityThread.currentApplication() → Application (Context)
+        let activity_thread = env
+            .find_class("android/app/ActivityThread")
+            .map_err(|e| format!("find ActivityThread: {e}"))?;
+        let app = env
+            .call_static_method(
+                activity_thread,
+                "currentApplication",
+                "()Landroid/app/Application;",
+                &[],
+            )
+            .map_err(|e| format!("currentApplication: {e}"))?
+            .l()
+            .map_err(|e| format!("currentApplication .l(): {e}"))?;
 
-    if app.is_null() {
-        return Err("currentApplication() returned null".into());
+        if app.is_null() {
+            return Err("currentApplication() returned null".into());
+        }
+
+        let j_path = env
+            .new_string(asset_path)
+            .map_err(|e| format!("new_string: {e}"))?;
+
+        // On natively-attached threads (e.g. tokio workers), JNI FindClass uses the
+        // system classloader which cannot see app classes like AssetReader.
+        // Use the app context's ClassLoader.loadClass() instead.
+        let class_loader = env
+            .call_method(&app, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])
+            .map_err(|e| format!("getClassLoader: {e}"))?
+            .l()
+            .map_err(|e| format!("getClassLoader .l(): {e}"))?;
+        let reader_class_name = env
+            .new_string("com.fal.falkoe.AssetReader")
+            .map_err(|e| format!("new_string class name: {e}"))?;
+        let reader_class_obj = env
+            .call_method(
+                &class_loader,
+                "loadClass",
+                "(Ljava/lang/String;)Ljava/lang/Class;",
+                &[JValue::Object(&reader_class_name)],
+            )
+            .map_err(|e| format!("loadClass AssetReader: {e}"))?
+            .l()
+            .map_err(|e| format!("loadClass .l(): {e}"))?;
+        let reader_class = JClass::from(reader_class_obj);
+
+        let result = env
+            .call_static_method(
+                reader_class,
+                "readAsset",
+                "(Landroid/content/Context;Ljava/lang/String;)[B",
+                &[
+                    JValue::Object(&app),
+                    JValue::Object(&*j_path),
+                ],
+            )
+            .map_err(|e| format!("AssetReader.readAsset: {e}"))?
+            .l()
+            .map_err(|e| format!("readAsset .l(): {e}"))?;
+
+        if result.is_null() {
+            return Err(format!("asset not found: {asset_path}"));
+        }
+
+        // Convert JObject → &JByteArray → Vec<u8>
+        let byte_array_ref: &JByteArray = (&result).into();
+        env.convert_byte_array(byte_array_ref)
+            .map_err(|e| format!("convert_byte_array: {e}"))
+    })();
+
+    // Always clear any pending JNI exception before returning — a leftover
+    // exception would abort the process on the next JNI call from Tauri / WRY.
+    if result.is_err() {
+        clear_any_pending_exception(&mut env);
     }
 
-    // AssetReader.readAsset(context, path) → byte[] | null
-    let j_path = env
-        .new_string(asset_path)
-        .map_err(|e| format!("new_string: {e}"))?;
-
-    // On natively-attached threads (e.g. tokio workers), JNI FindClass uses the
-    // system classloader which cannot see app classes like AssetReader.
-    // Use the app context's ClassLoader.loadClass() instead.
-    let class_loader = env
-        .call_method(&app, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])
-        .map_err(|e| format!("getClassLoader: {e}"))?
-        .l()
-        .map_err(|e| format!("getClassLoader .l(): {e}"))?;
-    let reader_class_name = env
-        .new_string("com.fal.falkoe.AssetReader")
-        .map_err(|e| format!("new_string class name: {e}"))?;
-    let reader_class_obj = env
-        .call_method(
-            &class_loader,
-            "loadClass",
-            "(Ljava/lang/String;)Ljava/lang/Class;",
-            &[JValue::Object(&reader_class_name)],
-        )
-        .map_err(|e| format!("loadClass AssetReader: {e}"))?
-        .l()
-        .map_err(|e| format!("loadClass .l(): {e}"))?;
-    let reader_class = JClass::from(reader_class_obj);
-
-    let result = env
-        .call_static_method(
-            reader_class,
-            "readAsset",
-            "(Landroid/content/Context;Ljava/lang/String;)[B",
-            &[
-                JValue::Object(&app),
-                JValue::Object(&*j_path),
-            ],
-        )
-        .map_err(|e| format!("AssetReader.readAsset: {e}"))?
-        .l()
-        .map_err(|e| format!("readAsset .l(): {e}"))?;
-
-    if result.is_null() {
-        return Err(format!("asset not found: {asset_path}"));
-    }
-
-    // Convert JObject → &JByteArray → Vec<u8>
-    let byte_array_ref: &JByteArray = (&result).into();
-    env.convert_byte_array(byte_array_ref)
-        .map_err(|e| format!("convert_byte_array: {e}"))
+    result
 }
 
 #[tauri::command]
