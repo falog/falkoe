@@ -696,6 +696,21 @@ Alternatively, you can allow it from
 ### Setup
 
 ```bash
+sudo apt update
+
+sudo apt install \
+  build-essential \
+  cmake \
+  clang \
+  libclang-dev \
+  ffmpeg \
+  libglib2.0-dev \
+  libgtk-3-dev \
+  libsoup-3.0-dev \
+  libjavascriptcoregtk-4.1-dev \
+  libwebkit2gtk-4.1-dev \
+  libasound2-dev
+
 # Clone repository
 git clone https://github.com/falog/falkoe.git
 cd falkoe
@@ -705,14 +720,6 @@ pnpm install
 
 # Run development server
 pnpm run tauri dev
-```
-
-### Build
-
-```bash
-# Build for your platform
-pnpm tauri build
-```
 
 Bundled files are generated under:
 
