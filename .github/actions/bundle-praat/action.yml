@@ -12,11 +12,11 @@ runs:
 
         base="https://www.fon.hum.uva.nl/praat"
         index_html="$(curl -fsSL "${base}/" || true)"
-        asset="$(python3 -c 'import re,sys; html=sys.stdin.read(); ms=re.findall(r"praat(\d+)_linux-intel64-barren\.tar\.gz", html); print(f"praat{max(map(int, ms))}_linux-intel64-barren.tar.gz" if ms else "")' <<<"$index_html")"
+        asset="$(python3 -c 'import re,sys; html=sys.stdin.read(); ms=re.findall(r"praat(\d+)_linux-x64v(\d+)\.tar\.gz", html); print(f"praat{max(map(int, ms))}_linux-intel64-barren.tar.gz" if ms else "")' <<<"$index_html")"
         if [[ -z "$asset" ]]; then
           # Fallback (known-good at the time of writing). This may 404 in the future,
           # but in that case the index parsing above should be updated.
-          asset="praat6458_linux-intel64-barren.tar.gz"
+          asset="praat7002_linux-x64v3-barren.tar.gz"
         fi
         url="${base}/${asset}"
         tmpdir="$(mktemp -d)"
@@ -49,13 +49,13 @@ runs:
         New-Item -ItemType Directory -Force -Path 'src-tauri/resources/bin' | Out-Null
 
         $base = 'https://www.fon.hum.uva.nl/praat'
-        $fallbackAsset = 'praat6458_win-intel64.zip'
+        $fallbackAsset = 'praat7002_win-x64v1.zip'
         try {
           $html = Invoke-WebRequest -Uri "$base/" -UseBasicParsing
-          $matches = [regex]::Matches($html.Content, 'praat(\d+)_win-intel64\.zip')
+          $matches = [regex]::Matches($html.Content, 'praat(\d+)_win-x64v(\d+)\.zip')
           if ($matches.Count -gt 0) {
             $max = ($matches | ForEach-Object { [int]$_.Groups[1].Value } | Measure-Object -Maximum).Maximum
-            $asset = "praat$max`_win-intel64.zip"
+            $asset = "praat$max`_win-x64v1.zip"
           } else {
             $asset = $fallbackAsset
           }
@@ -94,7 +94,7 @@ runs:
         index_html="$(curl -fsSL "${base}/" || true)"
         asset="$(python3 -c 'import re,sys; html=sys.stdin.read(); ms=re.findall(r"praat(\d+)_mac\.dmg", html); print(f"praat{max(map(int, ms))}_mac.dmg" if ms else "")' <<<"$index_html")"
         if [[ -z "$asset" ]]; then
-          asset="praat6458_mac.dmg"
+          asset="praat7002_mac.dmg"
         fi
         url="${base}/${asset}"
         tmpdir="$(mktemp -d)"
