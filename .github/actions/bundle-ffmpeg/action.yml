@@ -44,7 +44,7 @@ runs:
         $ErrorActionPreference = 'Stop'
         New-Item -ItemType Directory -Force -Path 'src-tauri/resources/bin' | Out-Null
 
-        $asset = 'ffmpeg-master-latest-win64-gpl.zip
+        $asset = 'ffmpeg-master-latest-win64-gpl.zip'
         $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/$asset"
         $tmp = Join-Path $env:RUNNER_TEMP 'ffmpeg'
         $zip = Join-Path $tmp $asset
