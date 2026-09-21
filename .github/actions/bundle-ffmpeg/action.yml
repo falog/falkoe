@@ -10,7 +10,7 @@ runs:
         set -euo pipefail
         mkdir -p src-tauri/resources/bin
 
-        asset="ffmpeg-n8.0-latest-linux64-gpl-8.0.tar.xz"
+        asset="ffmpeg-master-latest-linux64-gpl.tar.xz"
         url="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/${asset}"
         tmpdir="$(mktemp -d)"
 
