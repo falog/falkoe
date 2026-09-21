@@ -720,9 +720,6 @@ pnpm install
 
 # Run development server
 pnpm run tauri dev
-
-Bundled files are generated under:
-
 ```
 
 ### Build
@@ -731,6 +728,8 @@ Bundled files are generated under:
 # Build for your platform
 pnpm tauri build
 ```
+
+Bundled files are generated under:
 
 ```
 src-tauri/target/release/bundle/
