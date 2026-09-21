@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   prepare_mecab_ipadic:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Install MeCab + IPADIC (UTF-8)
         shell: bash
@@ -83,10 +83,10 @@ jobs:
       matrix:
         include:
           # Default CPU builds
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             variant: default
             canary: false
-            artifact_name: falkoe-ubuntu-latest
+            artifact_name: falkoe-ubuntu-24.04
             needs_vulkan_deps: "1"
             bundle_transcribe_helpers: "1"
             build_vulkan_helper: "1"
@@ -128,7 +128,7 @@ jobs:
       # ========================================
 
       - name: Install Linux dependencies
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-24.04'
         run: |
           sudo apt update
           sudo apt install -y \
@@ -289,7 +289,7 @@ jobs:
       # ========================================
 
       - name: Build Tauri app (Linux)
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-24.04'
         run: pnpm tauri build
 
       - name: Build Tauri app (Windows)
@@ -565,7 +565,7 @@ jobs:
 
   build_android:
     needs: prepare_mecab_ipadic
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       # Tag of the GitHub Release that hosts pre-built ffmpeg shared libs.
       FFMPEG_ANDROID_RELEASE_TAG: ffmpeg-android-v1
