@@ -61,7 +61,7 @@ jobs:
           ls -lh "$out_dir" | head -n 30
 
       - name: Upload IPADIC dictionary artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: mecab-ipadic-utf8
           path: /tmp/mecab_ipadic_artifact
@@ -473,7 +473,7 @@ jobs:
         id: upload_artifacts_1
         if: github.ref == 'refs/heads/main'
         continue-on-error: true
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ARTIFACT_NAME }}
           overwrite: true
@@ -484,7 +484,7 @@ jobs:
         id: upload_artifacts_2
         if: github.ref == 'refs/heads/main' && steps.upload_artifacts_1.outcome == 'failure'
         continue-on-error: true
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ARTIFACT_NAME }}
           overwrite: true
@@ -495,7 +495,7 @@ jobs:
         id: upload_artifacts_3
         if: github.ref == 'refs/heads/main' && steps.upload_artifacts_2.outcome == 'failure'
         continue-on-error: true
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ARTIFACT_NAME }}
           overwrite: true
@@ -725,7 +725,7 @@ jobs:
       # ── Upload artifact (main branch) ──
       - name: Upload Android artifact (main branch)
         if: github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: falkoe-android
           overwrite: true
