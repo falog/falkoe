@@ -118,7 +118,7 @@ jobs:
 
       - name: Download IPADIC dictionary (shared)
         if: matrix.os == 'windows-latest'
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: mecab-ipadic-utf8
           path: src-tauri/resources/mecab/ipadic
@@ -575,7 +575,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Download IPADIC dictionary (shared)
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: mecab-ipadic-utf8
           path: src-tauri/resources/mecab/ipadic
@@ -589,7 +589,7 @@ jobs:
 
       # ── Android SDK / NDK ──
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
           packages: |
             platform-tools
@@ -720,7 +720,7 @@ jobs:
           new_name="falkoe_${version}_android_universal.apk"
           mv -f "${apks[0]}" "${apk_dir}/${new_name}"
           echo "[info] Renamed APK: ${new_name}"
-          echo "apk_path=${apk_dir}/${new_name}" >> "$GITHUB_ENV"
+          
 
       # ── Upload artifact (main branch) ──
       - name: Upload Android artifact (main branch)
@@ -729,12 +729,12 @@ jobs:
         with:
           name: falkoe-android
           overwrite: true
-          path: ${{ env.apk_path }}
+          path: src-tauri/gen/android/app/build/outputs/apk/universal/release/falkoe_${{ steps.version.outputs.version }}_android_universal.apk
 
       # ── Upload to GitHub Release (tags) ──
       - name: Upload Android APK to GitHub Release (tags)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ env.apk_path }}
+          files: src-tauri/gen/android/app/build/outputs/apk/universal/release/falkoe_${{ steps.version.outputs.version }}_android_universal.apk
           fail_on_unmatched_files: false
