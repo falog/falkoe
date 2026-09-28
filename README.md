@@ -589,9 +589,20 @@ chmod +x falkoe-*.AppImage
 
 #### ⚠️ Gatekeeper について / Notice
 
-本アプリは現在、コード署名されていません。
+macOS 版はアドホック署名のみです。Apple 公証はしていないため、Chrome などからダウンロードしたアプリは初回起動で止められます。
 
-初回起動時に警告が出る場合は、`Falkoe.app` を **右クリック → 開く** で起動できます。
+「開いていません。Apple は、…マルウェアが含まれていないことを検証できませんでした。」と出たら、**ゴミ箱には入れず「完了」** を押し、続けて次を実行してください。
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Falkoe.app
+```
+
+「壊れているため開けません」と出る場合は、署名が無効です。先に署名を付け直してから隔離属性を消します。
+
+```bash
+codesign --force --sign - /Applications/Falkoe.app
+xattr -dr com.apple.quarantine /Applications/Falkoe.app
+```
 
 ---
 
@@ -603,8 +614,20 @@ Download the `.dmg` file and open it:
 
 If the `.dmg` is not available, download `Falkoe.app` (or an archive containing it) and move it into `Applications`.
 
-This application is currently unsigned.
-If Gatekeeper blocks the first launch, you can open it via **Right-click → Open**.
+The macOS build is only ad-hoc signed and is not notarized. macOS blocks the first launch of an app downloaded by Chrome.
+
+If the dialog says Apple could not verify the app is free of malware, click **Done** (do not move it to the Trash), then run:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Falkoe.app
+```
+
+If it says the app is damaged, the bundle signature is invalid. Re-sign it, then clear quarantine:
+
+```bash
+codesign --force --sign - /Applications/Falkoe.app
+xattr -dr com.apple.quarantine /Applications/Falkoe.app
+```
 
 `.dmg` ファイルをダウンロードして開いてください。
 
@@ -616,19 +639,17 @@ If Gatekeeper blocks the first launch, you can open it via **Right-click → Ope
 1. **Falkoe.dmg** を **アプリケーション** フォルダにドラッグ
 2. アプリケーションからFalkoeを起動
 
-If macOS blocks the app on first launch:
+If macOS says it could not verify the app:
 
-初回起動時に警告が表示された場合は：
+初回の「マルウェアが含まれていないことを検証できませんでした」は、**完了** を押してから次のどちらかで開けます。
 
-1. Right-click the app in Applications
-2. Select **Open**
-3. Click **Open** again to confirm
+```bash
+xattr -dr com.apple.quarantine /Applications/Falkoe.app
+```
 
-または  
-**システム設定 → プライバシーとセキュリティ** から許可できます。
+または **システム設定 → プライバシーとセキュリティ** の「このまま開く」。
 
-Alternatively, you can allow it from  
-**System Settings → Privacy & Security**.
+Alternatively, allow it from **System Settings → Privacy & Security → Open Anyway**.
 
 ---
 
