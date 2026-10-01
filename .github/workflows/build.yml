@@ -322,6 +322,26 @@ jobs:
           RUST_BACKTRACE: "1"
         run: pnpm tauri build -- --features no-openmp
 
+      # Linker-signed bundles have no sealed resources. Gatekeeper then reports
+      # the downloaded app as damaged. Ad-hoc signing (signingIdentity "-")
+      # must leave a bundle signature that passes this check.
+      - name: Verify macOS app signature
+        if: startsWith(matrix.os, 'macos-')
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="src-tauri/target/release/bundle/macos/Falkoe.app"
+          if [[ ! -d "$app" ]]; then
+            echo "[error] app bundle not found: $app"
+            exit 1
+          fi
+          codesign --verify --strict --verbose=2 "$app"
+          if ! codesign -dv "$app" 2>&1 | grep -q "Sealed Resources version="; then
+            echo "[error] ${app} has no sealed resources; Gatekeeper will treat it as damaged"
+            codesign -dv --verbose=4 "$app" || true
+            exit 1
+          fi
+
       # ========================================
       # バージョン取得（統一ロジック）
       # ========================================
