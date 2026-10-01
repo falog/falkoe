@@ -95,13 +95,6 @@ jobs:
             variant: default
             canary: false
             artifact_name: falkoe-windows-latest
-          - os: macos-14
-            variant: default
-            canary: false
-            artifact_name: falkoe-macos-14
-            bundle_transcribe_helpers: "1"
-            build_metal_helper: "1"
-            require_metal_helper: "1"
 
           # Canary builds (macos-latest)
           - os: macos-latest
