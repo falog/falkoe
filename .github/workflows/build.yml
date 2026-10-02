@@ -770,7 +770,20 @@ jobs:
       # ── Upload to GitHub Release (tags) ──
       - name: Upload Android APK to GitHub Release (tags)
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: src-tauri/gen/android/app/build/outputs/apk/universal/release/falkoe_${{ steps.version.outputs.version }}_android_universal.apk
-          fail_on_unmatched_files: false
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+          APK_PATH: src-tauri/gen/android/app/build/outputs/apk/universal/release/falkoe_${{ steps.version.outputs.version }}_android_universal.apk
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f "$APK_PATH" ]]; then
+            echo "[error] Android APK not found: $APK_PATH" >&2
+            exit 1
+          fi
+
+          if ! gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release create "$TAG_NAME" --title "$TAG_NAME" --notes "Release ${TAG_NAME}"
+          fi
+
+          gh release upload "$TAG_NAME" "$APK_PATH" --clobber
