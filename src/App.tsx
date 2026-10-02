@@ -123,6 +123,22 @@ const App = () => {
     };
   }, []);
 
+  useEffect(() => {
+    const unlistenPromise = listen<{ wav_path: string }>(
+      "transcript-error",
+      (e) => {
+        const wavPath = e.payload?.wav_path;
+        if (typeof wavPath === "string" && wavPath) {
+          finishBackgroundTranscriptionByWavPath(wavPath);
+        }
+      },
+    );
+
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, []);
+
   const appShellStyle: CSSProperties = {
     width: "100%",
     minHeight: "100vh",

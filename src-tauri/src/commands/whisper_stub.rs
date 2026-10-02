@@ -146,17 +146,27 @@ fn run_whisper_for_wav(
     sentence_hash: &str,
     lang: &str,
 ) -> Result<()> {
+    run_whisper_for_wav_to_path(app, wav_path, wav_path, sentence_hash, lang)
+}
+
+fn run_whisper_for_wav_to_path(
+    app: &AppHandle,
+    audio_path: &str,
+    wav_path: &str,
+    sentence_hash: &str,
+    lang: &str,
+) -> Result<()> {
     crate::logging::log_line(
         app,
         format!(
-            "[whisper-remote] start wav_path={} sentence_hash={} lang={}",
-            wav_path, sentence_hash, lang
+            "[whisper-remote] start audio_path={} wav_path={} sentence_hash={} lang={}",
+            audio_path, wav_path, sentence_hash, lang
         ),
     );
 
     let wav_spec = {
-        let reader = hound::WavReader::open(wav_path)
-            .with_context(|| format!("invalid WAV file: {}", wav_path))?;
+        let reader = hound::WavReader::open(audio_path)
+            .with_context(|| format!("invalid WAV file: {}", audio_path))?;
         reader.spec()
     };
     if wav_spec.channels != 1
@@ -173,8 +183,8 @@ fn run_whisper_for_wav(
         );
     }
 
-    let audio_bytes = fs::read(wav_path)
-        .with_context(|| format!("failed to read audio file: {}", wav_path))?;
+    let audio_bytes = fs::read(audio_path)
+        .with_context(|| format!("failed to read audio file: {}", audio_path))?;
 
     crate::logging::log_line(
         app,
@@ -807,12 +817,46 @@ pub fn run_whisper(
     sentence_hash: String,
     lang: String,
 ) -> Result<(), String> {
+    let input_path = Path::new(&path);
+    let normalized_dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| e.to_string())?
+        .join("recording-transcriptions")
+        .join(&sentence_hash);
+    fs::create_dir_all(&normalized_dir).map_err(|e| e.to_string())?;
+    let recording_name = input_path
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or("recording");
+    let normalized_path = normalized_dir.join(format!("{recording_name}.wav"));
+    #[cfg(target_os = "android")]
+    crate::commands::recordings::normalize_recording_wav_for_remote(
+        input_path,
+        &normalized_path,
+    )?;
+
+    #[cfg(not(target_os = "android"))]
+    match ffmpeg_convert_to_wav(&app, input_path, &normalized_path) {
+        Ok(true) => {}
+        Ok(false) => return Err("ffmpeg is required to normalize recording audio".into()),
+        Err(e) => return Err(e.to_string()),
+    }
+
+    let normalized_path_string = normalized_path.to_string_lossy().to_string();
     let app_handle = app.clone();
 
     std::thread::spawn(move || {
         let res = catch_unwind(AssertUnwindSafe(|| {
-            run_whisper_for_wav(&app_handle, &path, &sentence_hash, &lang)
+            run_whisper_for_wav_to_path(
+                &app_handle,
+                &normalized_path_string,
+                &path,
+                &sentence_hash,
+                &lang,
+            )
         }));
+        let _ = fs::remove_file(&normalized_path_string);
         match res {
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
@@ -901,7 +945,15 @@ fn download_to_local(app: &AppHandle, url: &str, sentence_hash: &str) -> Result<
         }
     }
 
-    // Convert to proper 16 kHz mono WAV via ffmpeg.
+    #[cfg(target_os = "android")]
+    {
+        crate::logging::log_line(app, "[download] normalizing model MP3 with native decoder");
+        crate::commands::recordings::normalize_mp3_for_remote(&raw_path, &wav_path)
+            .map_err(anyhow::Error::msg)?;
+        let _ = fs::remove_file(&raw_path);
+    }
+
+    #[cfg(not(target_os = "android"))]
     match ffmpeg_convert_to_wav(app, &raw_path, &wav_path) {
         Ok(true) => {
             // Conversion succeeded; remove temp file.

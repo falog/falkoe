@@ -1,6 +1,6 @@
 [package]
 name = "falkoe"
-version = "0.3.8"
+version = "0.3.12"
 description = "Falkoe Voice-powered language learning app"
 authors = ["fal"]
 license = "GPL-3.0-or-later"
@@ -34,6 +34,7 @@ tauri-plugin-shell = "2"
 anyhow = "1.0"
 log = { version = "0.4", features = ["std"] }
 rubato = "0.16.2"
+symphonia = { version = "0.6.1", default-features = false, features = ["mp3"] }
 ureq = "2"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "json", "stream"] }
 dirs = "5"
