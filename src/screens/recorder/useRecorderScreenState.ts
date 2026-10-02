@@ -207,6 +207,7 @@ export function useRecorderScreenState(source: SpeechSource) {
       sentenceHash,
       lang: sentence.lang,
       sentenceAudioUrl: sentence.audioUrl,
+      sentenceAudioUrlFallbacks,
       waitingModel,
       modelText,
       setModelText,

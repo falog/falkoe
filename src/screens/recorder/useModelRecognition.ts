@@ -1,6 +1,8 @@
 import { useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { message } from "antd";
 import type { Dispatch, SetStateAction } from "react";
+import { useTranslation } from "react-i18next";
 import { confirmOverwriteExisting } from "./uiUtils";
 import { loadModelTranscript, loadUploadedTranscript } from "./transcriptUtils";
 import type { SourceKind } from "../../types/speech";
@@ -15,6 +17,7 @@ type Params = {
   sentenceHash: string;
   lang: string;
   sentenceAudioUrl: string;
+  sentenceAudioUrlFallbacks?: string[];
 
   waitingModel: boolean;
   modelText: string | null;
@@ -30,12 +33,15 @@ export function useModelRecognition({
   sentenceHash,
   lang,
   sentenceAudioUrl,
+  sentenceAudioUrlFallbacks,
   waitingModel,
   modelText,
   setModelText,
   setWaitingModel,
   setIsTranscribing,
 }: Params) {
+  const { t } = useTranslation();
+
   const recognizeModel = useCallback(async () => {
     // eslint-disable-next-line no-console
     console.log("model recognize clicked");
@@ -79,12 +85,51 @@ export function useModelRecognition({
         setIsTranscribing(false);
         // eslint-disable-next-line no-console
         console.error(e);
+        message.error(
+          `${t("screens.recorder.messages.recognizeStartFailed")}${String(e)}`,
+        );
       });
     } else {
       const key = `${sentenceHash}:model`;
       startBackgroundTranscription({ key, kind: "model" });
+
+      let modelAudioPath = sentenceAudioUrl;
+      if (sourceKind === "tatoeba") {
+        const audioUrls = Array.from(
+          new Set([sentenceAudioUrl, ...(sentenceAudioUrlFallbacks ?? [])]
+            .map((url) => url.trim())
+            .filter(Boolean)),
+        );
+        let cacheError: unknown;
+        let cachedPath: string | null = null;
+
+        for (const url of audioUrls) {
+          try {
+            cachedPath = await invoke<string>("ensure_sentence_audio_cached", {
+              audioId: sentenceHash,
+              url,
+            });
+            break;
+          } catch (e) {
+            cacheError = e;
+          }
+        }
+
+        if (!cachedPath) {
+          cancelBackgroundTranscription(key);
+          setWaitingModel(false);
+          setIsTranscribing(false);
+          message.error(
+            `${t("screens.recorder.messages.audioLoadFailed")}${String(cacheError ?? "No model audio URL available")}`,
+          );
+          return;
+        }
+
+        modelAudioPath = cachedPath;
+      }
+
       invoke("run_whisper_model", {
-        url: sentenceAudioUrl,
+        url: modelAudioPath,
         sentenceHash,
         lang,
       }).catch((e) => {
@@ -93,26 +138,31 @@ export function useModelRecognition({
         setIsTranscribing(false);
         // eslint-disable-next-line no-console
         console.error(e);
+        message.error(
+          `${t("screens.recorder.messages.recognizeStartFailed")}${String(e)}`,
+        );
       });
     }
   }, [
     lang,
     modelText,
     sentenceAudioUrl,
+    sentenceAudioUrlFallbacks,
     sentenceHash,
     setIsTranscribing,
     setModelText,
     setWaitingModel,
+    t,
     sourceKind,
     uploadedAudioPath,
     waitingModel,
   ]);
 
   const disabled =
+    !sentenceHash ||
     (sourceKind === "uploaded" && !uploadedAudioPath) ||
     (sourceKind !== "uploaded" && !sentenceAudioUrl) ||
-    waitingModel ||
-    Boolean(modelText?.trim());
+    waitingModel;
 
   return {
     recognizeModel,

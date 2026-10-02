@@ -15,7 +15,6 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 use tauri::AppHandle;
 use tauri::Emitter;
-use tauri::Manager;
 
 static CUTTER_DETECT_ABORT: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = OnceLock::new();
 

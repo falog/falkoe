@@ -1,11 +1,18 @@
 import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { message } from "antd";
+import { useTranslation } from "react-i18next";
 import type { Transcript } from "../../types/recording";
 import type { SourceKind } from "../../types/speech";
 
 type FinalResultPayload = {
   wav_path: string;
   segments: { text: string }[];
+};
+
+type TranscriptErrorPayload = {
+  wav_path: string;
+  error: string;
 };
 
 type Params = {
@@ -44,6 +51,7 @@ export function useWhisperEvents({
   setRecognizing,
   setTranscripts,
 }: Params) {
+  const { t } = useTranslation();
   const waitingModelRef = useRef(waitingModel);
   const sourceKindRef = useRef(sourceKind);
   const sentenceTextRef = useRef(sentenceText);
@@ -59,6 +67,28 @@ export function useWhisperEvents({
   useEffect(() => {
     sentenceTextRef.current = sentenceText;
   }, [sentenceText]);
+
+  useEffect(() => {
+    const unlisten = listen<TranscriptErrorPayload>("transcript-error", (e) => {
+      const { wav_path: wavPath, error } = e.payload;
+
+      setWaitingModel(false);
+      setIsTranscribing(false);
+      setRecognizing((prev) => {
+        if (!prev[wavPath]) return prev;
+        const next = { ...prev };
+        delete next[wavPath];
+        return next;
+      });
+      message.error(
+        `${t("screens.recorder.messages.recognizeStartFailed")}${error}`,
+      );
+    });
+
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, [setIsTranscribing, setRecognizing, setWaitingModel, t]);
 
   useEffect(() => {
     const unlisten = listen<string>("transcript-started", (e) => {

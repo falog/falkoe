@@ -1289,6 +1289,22 @@ fn run_whisper_for_wav(app: &AppHandle, wav_path: &str, sentence_hash: &str, lan
     Ok(())
 }
 
+#[derive(Clone, serde::Serialize)]
+struct TranscriptError {
+    wav_path: String,
+    error: String,
+}
+
+fn emit_transcript_error(app: &AppHandle, wav_path: &str, error: impl ToString) {
+    let _ = app.emit(
+        "transcript-error",
+        TranscriptError {
+            wav_path: wav_path.to_string(),
+            error: error.to_string(),
+        },
+    );
+}
+
 pub(crate) fn run_whisper_model_impl(
     app: AppHandle,
     url: String,
@@ -1303,10 +1319,12 @@ pub(crate) fn run_whisper_model_impl(
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
                 crate::logging::log_line(&app, format!("[whisper] model error: {e}"));
+                emit_transcript_error(&app, &wav_path, &e);
             }
             Err(payload) => {
                 let msg = crate::logging::panic_payload_to_string(&*payload);
                 crate::logging::log_line(&app, format!("[whisper] model panic (caught): {msg}"));
+                emit_transcript_error(&app, &wav_path, msg);
             }
         }
     });
@@ -1328,10 +1346,12 @@ pub(crate) fn run_whisper_uploaded_impl(
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
                 crate::logging::log_line(&app, format!("[whisper] uploaded error: {e}"));
+                emit_transcript_error(&app, &wav_path, &e);
             }
             Err(payload) => {
                 let msg = crate::logging::panic_payload_to_string(&*payload);
                 crate::logging::log_line(&app, format!("[whisper] uploaded panic (caught): {msg}"));
+                emit_transcript_error(&app, &wav_path, msg);
             }
         }
     });
@@ -1353,10 +1373,12 @@ pub(crate) fn run_whisper_impl(
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
                 crate::logging::log_line(&app_handle, format!("[whisper] error: {e}"));
+                emit_transcript_error(&app_handle, &path, &e);
             }
             Err(payload) => {
                 let msg = crate::logging::panic_payload_to_string(&*payload);
                 crate::logging::log_line(&app_handle, format!("[whisper] panic (caught): {msg}"));
+                emit_transcript_error(&app_handle, &path, msg);
             }
         }
     });
@@ -1408,8 +1430,19 @@ fn download_and_convert_to_wav(app: &AppHandle, url: &str, sentence_hash: &str) 
         // But when opening from history (recorded source), the "url" can be a local file path.
         // In that case, convert the local file directly.
         if url.starts_with("http://") || url.starts_with("https://") {
-            let resp = reqwest::blocking::get(url)?;
+            let resp = reqwest::blocking::get(url)?.error_for_status()?;
+            let content_type = resp
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or("");
+            if content_type.to_ascii_lowercase().starts_with("text/html") {
+                bail!("model audio URL returned HTML instead of audio");
+            }
             let bytes = resp.bytes()?;
+            if bytes.is_empty() {
+                bail!("model audio download returned an empty response");
+            }
             fs::write(&mp3_path, &bytes)?;
             ffmpeg_convert_to_wav(app, &mp3_path, &wav_path)?;
         } else {

@@ -39,7 +39,10 @@ pub(crate) fn read_wav_mono_f32(path: &Path) -> Result<(Vec<f32>, u32)> {
                     }
                 }
             } else {
-                bail!("unsupported int wav bits_per_sample={}", spec.bits_per_sample);
+                bail!(
+                    "unsupported int wav bits_per_sample={}",
+                    spec.bits_per_sample
+                );
             }
         }
         hound::SampleFormat::Float => {
@@ -57,9 +60,4 @@ pub(crate) fn read_wav_mono_f32(path: &Path) -> Result<(Vec<f32>, u32)> {
     }
 
     Ok((mono, sample_rate))
-}
-
-pub(crate) fn read_wav_sample_rate(path: &Path) -> Result<u32> {
-    let reader = hound::WavReader::open(path)?;
-    Ok(reader.spec().sample_rate)
 }
