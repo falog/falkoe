@@ -171,18 +171,18 @@ jobs:
         if: matrix.os == 'windows-latest'
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: UCRT64
           update: true
           install: >-
-            mingw-w64-x86_64-mecab
-            mingw-w64-x86_64-gettext
+            mingw-w64-ucrt-x86_64-mecab
+            mingw-w64-ucrt-x86_64-gettext
 
       - name: Verify MeCab installation (Windows)
         if: matrix.os == 'windows-latest'
         shell: msys2 {0}
         run: |
           set -euo pipefail
-          pacman -S --noconfirm --needed mingw-w64-x86_64-mecab mingw-w64-x86_64-gettext
+          pacman -S --noconfirm --needed mingw-w64-ucrt-x86_64-mecab mingw-w64-ucrt-x86_64-gettext
           echo "[info] mecab packages:" 
           pacman -Q | grep -i mecab || true
           echo "[info] mecab location:" 

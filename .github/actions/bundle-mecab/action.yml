@@ -64,7 +64,7 @@ runs:
           exit 1
         fi
 
-        pacman -S --noconfirm --needed mingw-w64-x86_64-mecab mingw-w64-x86_64-gettext
+        pacman -S --noconfirm --needed mingw-w64-ucrt-x86_64-mecab mingw-w64-ucrt-x86_64-gettext
 
         if ! command -v mecab >/dev/null 2>&1; then
           echo "[error] mecab not found on PATH"
