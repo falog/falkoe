@@ -154,6 +154,25 @@ fn run_whisper_for_wav(
         ),
     );
 
+    let wav_spec = {
+        let reader = hound::WavReader::open(wav_path)
+            .with_context(|| format!("invalid WAV file: {}", wav_path))?;
+        reader.spec()
+    };
+    if wav_spec.channels != 1
+        || wav_spec.sample_rate != 16_000
+        || wav_spec.sample_format != hound::SampleFormat::Int
+        || wav_spec.bits_per_sample != 16
+    {
+        bail!(
+            "remote Whisper requires mono 16-bit 16 kHz WAV; got channels={} sample_rate={} format={:?} bits_per_sample={}",
+            wav_spec.channels,
+            wav_spec.sample_rate,
+            wav_spec.sample_format,
+            wav_spec.bits_per_sample
+        );
+    }
+
     let audio_bytes = fs::read(wav_path)
         .with_context(|| format!("failed to read audio file: {}", wav_path))?;
 
@@ -695,6 +714,22 @@ fn generate_accent_json(
 // Tauri commands
 // ---------------------------------------------------------------------------
 
+#[derive(Clone, serde::Serialize)]
+struct RemoteTranscriptError {
+    wav_path: String,
+    error: String,
+}
+
+fn emit_remote_transcript_error(app: &AppHandle, wav_path: &str, error: impl ToString) {
+    let _ = app.emit(
+        "transcript-error",
+        RemoteTranscriptError {
+            wav_path: wav_path.to_string(),
+            error: error.to_string(),
+        },
+    );
+}
+
 #[tauri::command]
 pub fn run_whisper_model(
     app: tauri::AppHandle,
@@ -714,6 +749,7 @@ pub fn run_whisper_model(
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
                 crate::logging::log_line(&app, format!("[whisper-remote] model error: {e}"));
+                emit_remote_transcript_error(&app, &wav_path, &e);
             }
             Err(payload) => {
                 let msg = crate::logging::panic_payload_to_string(&*payload);
@@ -721,6 +757,7 @@ pub fn run_whisper_model(
                     &app,
                     format!("[whisper-remote] model panic (caught): {msg}"),
                 );
+                emit_remote_transcript_error(&app, &wav_path, msg);
             }
         }
     });
@@ -747,6 +784,7 @@ pub fn run_whisper_uploaded(
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
                 crate::logging::log_line(&app, format!("[whisper-remote] uploaded error: {e}"));
+                emit_remote_transcript_error(&app, &wav_path, &e);
             }
             Err(payload) => {
                 let msg = crate::logging::panic_payload_to_string(&*payload);
@@ -754,6 +792,7 @@ pub fn run_whisper_uploaded(
                     &app,
                     format!("[whisper-remote] uploaded panic (caught): {msg}"),
                 );
+                emit_remote_transcript_error(&app, &wav_path, msg);
             }
         }
     });
@@ -778,6 +817,7 @@ pub fn run_whisper(
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
                 crate::logging::log_line(&app_handle, format!("[whisper-remote] error: {e}"));
+                emit_remote_transcript_error(&app_handle, &path, &e);
             }
             Err(payload) => {
                 let msg = crate::logging::panic_payload_to_string(&*payload);
@@ -785,6 +825,7 @@ pub fn run_whisper(
                     &app_handle,
                     format!("[whisper-remote] panic (caught): {msg}"),
                 );
+                emit_remote_transcript_error(&app_handle, &path, msg);
             }
         }
     });
@@ -796,7 +837,7 @@ pub fn run_whisper(
 // Helpers for preparing audio files
 // ---------------------------------------------------------------------------
 
-/// Convert any audio file to 16 kHz mono WAV using the bundled ffmpeg.
+/// Convert any audio file to 16-bit 16 kHz mono WAV using the bundled ffmpeg.
 /// Returns Ok(true) if conversion succeeded, Ok(false) if ffmpeg unavailable.
 fn ffmpeg_convert_to_wav(app: &AppHandle, input: &Path, output_wav: &Path) -> Result<bool> {
     let args: Vec<String> = vec![
@@ -807,6 +848,8 @@ fn ffmpeg_convert_to_wav(app: &AppHandle, input: &Path, output_wav: &Path) -> Re
         "16000".into(),
         "-ac".into(),
         "1".into(),
+        "-c:a".into(),
+        "pcm_s16le".into(),
         output_wav.to_string_lossy().to_string(),
     ];
     match crate::commands::video::run_ffmpeg_raw(app, &args) {
@@ -834,8 +877,19 @@ fn download_to_local(app: &AppHandle, url: &str, sentence_hash: &str) -> Result<
     let raw_path = base_dir.join("model_raw");
 
     if url.starts_with("http://") || url.starts_with("https://") {
-        let resp = reqwest::blocking::get(url)?;
+        let resp = reqwest::blocking::get(url)?.error_for_status()?;
+        let content_type = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("");
+        if content_type.to_ascii_lowercase().starts_with("text/html") {
+            bail!("model audio URL returned HTML instead of audio");
+        }
         let bytes = resp.bytes()?;
+        if bytes.is_empty() {
+            bail!("model audio download returned an empty response");
+        }
         fs::write(&raw_path, &bytes)?;
     } else {
         // Local file path (e.g. from history).
@@ -854,17 +908,12 @@ fn download_to_local(app: &AppHandle, url: &str, sentence_hash: &str) -> Result<
             let _ = fs::remove_file(&raw_path);
         }
         Ok(false) => {
-            // ffmpeg not available; use raw file as-is (may fail pitch analysis).
-            crate::logging::log_line(app, "[download] ffmpeg unavailable, using raw audio");
-            fs::rename(&raw_path, &wav_path)?;
+            let _ = fs::remove_file(&raw_path);
+            bail!("ffmpeg is required to create a mono 16-bit 16 kHz model.wav");
         }
         Err(e) => {
-            // Conversion failed; fall back to raw file.
-            crate::logging::log_line(
-                app,
-                format!("[download] ffmpeg conversion failed: {e}, using raw audio"),
-            );
-            fs::rename(&raw_path, &wav_path)?;
+            let _ = fs::remove_file(&raw_path);
+            return Err(e);
         }
     }
 
@@ -904,10 +953,8 @@ fn prepare_uploaded(app: &AppHandle, uploaded_path: &str, sentence_hash: &str) -
         Ok(true) => {
             // Conversion succeeded.
         }
-        Ok(false) | Err(_) => {
-            // ffmpeg unavailable or failed; just copy as-is.
-            fs::copy(input_path, &wav_path)?;
-        }
+        Ok(false) => bail!("ffmpeg is required to create a mono 16-bit 16 kHz uploaded WAV"),
+        Err(e) => return Err(e),
     }
 
     Ok(wav_path.to_string_lossy().to_string())

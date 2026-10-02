@@ -178,6 +178,8 @@ pub(crate) fn ffmpeg_trim_with_padding_wav(
         "16000".into(),
         "-ac".into(),
         "1".into(),
+        "-c:a".into(),
+        "pcm_s16le".into(),
         output_wav
             .to_str()
             .ok_or_else(|| anyhow::anyhow!("invalid output path"))?
@@ -241,6 +243,10 @@ mod tests {
         assert_eq!(args[1], "-i");
         assert_eq!(args[2], "/tmp/in.mp3");
         assert!(args.contains(&"16000".to_string()));
+        assert!(args.windows(2).any(|pair| pair == ["-ac", "1"]));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair == ["-c:a", "pcm_s16le"]));
         assert_eq!(args.last().map(|s| s.as_str()), Some("/tmp/out.wav"));
     }
 }

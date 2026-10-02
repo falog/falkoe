@@ -1,7 +1,7 @@
 {
   "$schema": "./tauri.schema.json",
   "productName": "Falkoe",
-  "version": "0.3.10",
+  "version": "0.3.11",
   "identifier": "falkoe",
   "build": {
     "beforeDevCommand": "pnpm dev --host 0.0.0.0 --port 1420",
